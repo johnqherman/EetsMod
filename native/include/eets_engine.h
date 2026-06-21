@@ -88,6 +88,13 @@ inline unsigned long Object_GetID(Object* o) {
 inline MotionModel* Object_GetMotionModel(Object* o) {
 	return ((MotionModel*(*)(Object*))addr::Object_GetMotionModel)(o);
 }
+inline void Object_SetPosition(Object* o, const Vector2& p)   { ((void(*)(Object*, const Vector2&))addr::Object_SetPosition)(o, p); }
+inline void Object_ForcePosition(Object* o, const Vector2& p) { ((void(*)(Object*, const Vector2&))addr::Object_ForcePosition)(o, p); }
+inline void Object_SetFacing(Object* o, const Vector2& f)     { ((void(*)(Object*, const Vector2&))addr::Object_SetFacing)(o, f); }
+inline Vector2 Object_GetFacing(Object* o)                    { return ((Vector2(*)(Object*))addr::Object_GetFacing)(o); }
+inline void Object_SetFlipped(Object* o, bool f)             { ((void(*)(Object*, bool))addr::Object_SetFlipped)(o, f); }
+inline bool Object_GetFlipped(Object* o)                     { return ((bool(*)(Object*))addr::Object_GetFlipped)(o); }
+inline void Object_KillMe(Object* o)                        { ((void(*)(Object*))addr::Object_KillMe)(o); }
 
 // ---- MotionModel methods ---------------------------------------------------
 inline void MotionModel_PushMotion(MotionModel* m, const char* name, bool a, bool b) {

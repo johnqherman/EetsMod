@@ -93,6 +93,21 @@ constexpr uintptr_t Object_GetPosition                 = 0x5739c0;  // (Object*)
 constexpr uintptr_t Object_GetVelocity                 = 0x573a00;  // (Object*) -> Vector2
 constexpr uintptr_t Object_GetID                       = 0x574250;  // (Object*) -> unsigned long
 constexpr uintptr_t Object_GetMotionModel              = 0x5ca360;  // (Object*) -> MotionModel*
+constexpr uintptr_t Object_SetPosition                 = 0x5739a0;  // (Object*, Vector2 const&)
+constexpr uintptr_t Object_ForcePosition               = 0x5739d0;  // (Object*, Vector2 const&)
+constexpr uintptr_t Object_SetFacing                   = 0x573a10;  // (Object*, Vector2 const&)
+constexpr uintptr_t Object_GetFacing                   = 0x574280;  // (Object*) -> Vector2
+constexpr uintptr_t Object_SetFlipped                  = 0x5ca380;  // (Object*, bool)
+constexpr uintptr_t Object_GetFlipped                  = 0x5ca370;  // (Object*) -> bool
+constexpr uintptr_t Object_KillMe                      = 0x5742c0;  // (Object*)
+
+// ===== event hook targets (detoured by the loader to fire EetsMod_OnEvent) =====
+constexpr uintptr_t hook_Simulator_LoadWinCondition    = 0x62b770;  // -> "level_load"
+constexpr uintptr_t hook_Simulator_ResetSimulation     = 0x62e140;  // -> "level_reset"
+constexpr uintptr_t hook_LevelManager_CompleteLevel    = 0x5a7f00;  // -> "level_complete"
+constexpr uintptr_t hook_Creator_StartEetsDeadDialog   = 0x61cf30;  // -> "eets_death"
+constexpr uintptr_t hook_Object_KillMe                 = 0x5742c0;  // -> "object_killed"
+constexpr uintptr_t hook_ObjectMgr_CreateObject        = 0x576290;  // -> "object_spawn"
 constexpr uintptr_t MotionModel_PushMotion             = 0x50d830;  // (MotionModel*, char const*, bool, bool)
 constexpr uintptr_t MotionModel_PopMotion              = 0x50dc60;  // (MotionModel*)
 constexpr uintptr_t MotionModel_GetCurrentMotionName   = 0x50dc40;  // (MotionModel*) -> char const*

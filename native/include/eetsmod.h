@@ -62,6 +62,15 @@ namespace Eets {
 	// configured resolution and can differ from the render size in fullscreen.
 	int RenderWidth();
 	int RenderHeight();
+
+	// Persistent per-mod save data (mods/<mod>.save). Survives restarts; unlike
+	// config (user-editable settings) this is for mod-written state.
+	const char* SaveGet(const char* mod, const char* key, const char* def);
+	void  SaveSet(const char* mod, const char* key, const char* val);
+	int   SaveGetInt(const char* mod, const char* key, int def);
+	void  SaveSetInt(const char* mod, const char* key, int v);
+	float SaveGetFloat(const char* mod, const char* key, float def);
+	void  SaveSetFloat(const char* mod, const char* key, float v);
 }
 
 // Minimal SDL keycode / modifier constants (so mods don't need SDL headers).

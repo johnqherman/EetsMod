@@ -32,7 +32,7 @@
 #include "eets_engine.h"
 #include "hook.h"
 
-#define EETSMOD_VERSION "0.6.0"
+#define EETSMOD_VERSION "0.7.0"
 
 namespace {
 
@@ -272,7 +272,7 @@ void fire_event(const char* name, void* a, void* b) {
 		guard(&m, [&]{ m.onevent(name, a, b); });
 }
 
-// detour: ObjectMgr::CreateObject -> "object_spawn" event
+// detour: ObjectMgr::CreateObject -> "object_spawn"
 typedef void* (*CreateObjectFn)(void*, const char*, unsigned);
 CreateObjectFn orig_CreateObject = nullptr;
 void* det_CreateObject(void* self, const char* name, unsigned layer) {
@@ -280,11 +280,28 @@ void* det_CreateObject(void* self, const char* name, unsigned layer) {
 	fire_event("object_spawn", o, (void*)name);
 	return o;
 }
+// generic single-arg (this) detours for the other events
+typedef void (*ThisFn)(void*);
+ThisFn orig_LoadWin = nullptr, orig_Reset = nullptr, orig_EetsDead = nullptr, orig_KillMe = nullptr;
+typedef void (*ThisArgFn)(void*, void*);
+ThisArgFn orig_Complete = nullptr;
+void det_LoadWin(void* s)  { orig_LoadWin(s);  fire_event("level_load", s, nullptr); }
+void det_Reset(void* s)    { orig_Reset(s);    fire_event("level_reset", s, nullptr); }
+void det_EetsDead(void* s) { orig_EetsDead(s); fire_event("eets_death", s, nullptr); }
+void det_KillMe(void* s)   { fire_event("object_killed", s, nullptr); orig_KillMe(s); }
+void det_Complete(void* s, void* p) { orig_Complete(s, p); fire_event("level_complete", s, p); }
+
+void try_hook(const char* name, void* target, void* detour, void** orig) {
+	if (eets_hook::install(target, detour, orig)) logline("hook: %s", name);
+	else logline("hook: %s NOT installed (prologue not relocatable)", name);
+}
 void install_engine_event_hooks() {
-	if (eets_hook::install((void*)0x576290, (void*)det_CreateObject, (void**)&orig_CreateObject))
-		logline("hook: ObjectMgr::CreateObject -> object_spawn event");
-	else
-		logline("hook: ObjectMgr::CreateObject NOT hooked (prologue not relocatable)");
+	try_hook("object_spawn (ObjectMgr::CreateObject)",  (void*)Eets::addr::hook_ObjectMgr_CreateObject,    (void*)det_CreateObject, (void**)&orig_CreateObject);
+	try_hook("level_load (Simulator::LoadWinCondition)",(void*)Eets::addr::hook_Simulator_LoadWinCondition, (void*)det_LoadWin,      (void**)&orig_LoadWin);
+	try_hook("level_reset (Simulator::ResetSimulation)",(void*)Eets::addr::hook_Simulator_ResetSimulation,  (void*)det_Reset,        (void**)&orig_Reset);
+	try_hook("level_complete (LevelManager::Complete)", (void*)Eets::addr::hook_LevelManager_CompleteLevel,  (void*)det_Complete,     (void**)&orig_Complete);
+	try_hook("eets_death (Creator::StartEetsDeadDialog)",(void*)Eets::addr::hook_Creator_StartEetsDeadDialog,(void*)det_EetsDead,     (void**)&orig_EetsDead);
+	try_hook("object_killed (Object::KillMe)",          (void*)Eets::addr::hook_Object_KillMe,              (void*)det_KillMe,       (void**)&orig_KillMe);
 }
 
 // ---- discovery + load -----------------------------------------------------
@@ -375,6 +392,32 @@ void poll_reload() {
 }
 
 // ---- SDL event constants / views ------------------------------------------
+// ---- persistent per-mod save data (mods/<mod>.save, key=value) -------------
+std::map<std::string, std::map<std::string, std::string>> g_save;
+std::map<std::string, std::string>& save_for(const char* mod) {
+	auto it = g_save.find(mod); if (it != g_save.end()) return it->second;
+	auto& m = g_save[mod];
+	FILE* f = fopen((modsdir() + "/" + mod + ".save").c_str(), "r");
+	if (f) {
+		char line[1024];
+		while (fgets(line, sizeof(line), f)) {
+			std::string s = trim(line);
+			if (s.empty() || s[0] == '#') continue;
+			size_t eq = s.find('='); if (eq == std::string::npos) continue;
+			m[trim(s.substr(0, eq))] = trim(s.substr(eq + 1));
+		}
+		fclose(f);
+	}
+	return m;
+}
+void save_flush(const char* mod) {
+	FILE* f = fopen((modsdir() + "/" + mod + ".save").c_str(), "w");
+	if (!f) return;
+	fprintf(f, "# eetsmod save data for '%s'\n", mod);
+	for (auto& kv : save_for(mod)) fprintf(f, "%s = %s\n", kv.first.c_str(), kv.second.c_str());
+	fclose(f);
+}
+
 constexpr unsigned SDL_KEYDOWN = 0x300, SDL_KEYUP = 0x301;
 constexpr unsigned SDL_MOUSEMOTION = 0x400, SDL_MOUSEBUTTONDOWN = 0x401,
                    SDL_MOUSEBUTTONUP = 0x402, SDL_MOUSEWHEEL = 0x403;
@@ -404,6 +447,18 @@ namespace Eets {
 	// the configured backbuffer size before the first frame is drawn.
 	int   RenderWidth()  { return g_vp_w > 0 ? g_vp_w : ScreenWidth(); }
 	int   RenderHeight() { return g_vp_h > 0 ? g_vp_h : ScreenHeight(); }
+	// persistent per-mod save data (survives restarts; mods/<mod>.save)
+	const char* SaveGet(const char* mod, const char* key, const char* def) {
+		auto& m = save_for(mod); auto it = m.find(key);
+		return it != m.end() ? it->second.c_str() : def;
+	}
+	void SaveSet(const char* mod, const char* key, const char* val) {
+		save_for(mod)[key] = val ? val : ""; save_flush(mod);
+	}
+	int   SaveGetInt(const char* mod, const char* key, int def)   { const char* v = SaveGet(mod, key, nullptr); return v ? atoi(v) : def; }
+	void  SaveSetInt(const char* mod, const char* key, int v)     { char b[32]; snprintf(b, sizeof(b), "%d", v); SaveSet(mod, key, b); }
+	float SaveGetFloat(const char* mod, const char* key, float d) { const char* v = SaveGet(mod, key, nullptr); return v ? (float)atof(v) : d; }
+	void  SaveSetFloat(const char* mod, const char* key, float v) { char b[48]; snprintf(b, sizeof(b), "%g", v); SaveSet(mod, key, b); }
 }
 
 extern "C" {
