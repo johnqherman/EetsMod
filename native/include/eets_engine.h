@@ -75,6 +75,11 @@ inline void World_ChangeEmotion(unsigned long objHash, unsigned int emotion) {
 inline void Sound_CreateSound(const char* name, bool loop, float vol, const Vector2& pos) {
 	((void(*)(const char*, bool, float, const Vector2&))addr::Sound_CreateSound)(name, loop, vol, pos);
 }
+// convenience: play a named sound effect (e.g. "Explosion", "Bob Activation")
+inline void PlaySound(const char* name, float vol = 100.0f) {
+	Vector2 z{0.0f, 0.0f};
+	((void(*)(const char*, bool, float, const Vector2&))addr::Sound_CreateSound)(name, false, vol, z);
+}
 
 // ---- Object methods --------------------------------------------------------
 inline Vector2 Object_GetPosition(Object* o) {

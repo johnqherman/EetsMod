@@ -26,9 +26,15 @@ void EetsMod_OnMouse(int x, int y, int button, int down);
 // Mouse wheel scroll (dx, dy). Optional.
 void EetsMod_OnWheel(int dx, int dy);
 
-// Engine event. Currently fired: "object_spawn" (a = Object*, b = name string).
-// More events as engine hooks are added. Optional.
+// Engine events to EetsMod_OnEvent: "object_spawn" (a=Object*, b=name),
+// "object_killed", "level_load", "level_reset", "level_complete",
+// "emotion_change" (a=hash, b=emotion), "goal_check" (a=Object*), "eets_death".
+// Optional.
 void EetsMod_OnEvent(const char* name, void* a, void* b);
+
+// Typed text input (UTF-8). Call Eets::StartTextInput() first to receive these.
+// Optional.
+void EetsMod_OnText(const char* utf8);
 
 // Called before the mod is unloaded (hot-reload or shutdown). Optional.
 void EetsMod_Shutdown();
@@ -71,6 +77,14 @@ namespace Eets {
 	void  SaveSetInt(const char* mod, const char* key, int v);
 	float SaveGetFloat(const char* mod, const char* key, float def);
 	void  SaveSetFloat(const char* mod, const char* key, float v);
+
+	// Frame timing.
+	double Time();        // seconds since the first frame
+	double DeltaTime();   // seconds since the previous frame
+
+	// Text input: call StartTextInput to begin receiving EetsMod_OnText(utf8).
+	void StartTextInput();
+	void StopTextInput();
 }
 
 // Minimal SDL keycode / modifier constants (so mods don't need SDL headers).

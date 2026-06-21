@@ -29,10 +29,11 @@
 #include <map>
 #include <csetjmp>
 #include <csignal>
+#include <ctime>
 #include "eets_engine.h"
 #include "hook.h"
 
-#define EETSMOD_VERSION "0.11.0"
+#define EETSMOD_VERSION "0.12.0"
 
 namespace {
 
@@ -42,6 +43,7 @@ typedef void (*KeyFn)(int, int, int);
 typedef void (*MouseFn)(int, int, int, int);
 typedef void (*WheelFn)(int, int);
 typedef void (*EventFn)(const char*, void*, void*);
+typedef void (*TextFn)(const char*);
 typedef void (*ShutdownFn)();
 
 struct Mod {
@@ -63,6 +65,7 @@ struct Mod {
 	MouseFn     onmouse = nullptr;
 	WheelFn     onwheel = nullptr;
 	EventFn     onevent = nullptr;
+	TextFn      ontext = nullptr;
 	ShutdownFn  shutdown = nullptr;
 };
 
@@ -76,7 +79,9 @@ bool g_overlay = false;          // F1 toggles the mod-list overlay
 // fullscreen, where it differs from the window/configured resolution).
 int g_vp_w = 0, g_vp_h = 0;              // committed (last full frame)
 int g_vp_cur_w = 0, g_vp_cur_h = 0;     // max seen during the current frame
+double g_time = 0.0, g_dt = 0.0;        // seconds since first frame / last frame delta
 const int OV_X = 8, OV_Y = 8, OV_W = 320, OV_TITLE = 40, OV_ROWH = 26;  // F1 manager layout
+std::string g_selected;          // mod whose config is expanded in the manager
 
 FILE* logfile() { static FILE* f = fopen("Log/native_mods.log", "a"); return f; }
 void logline(const char* fmt, ...) {
@@ -199,6 +204,7 @@ void resolve(Mod& m) {
 	m.onmouse  = (MouseFn)   dlsym(m.handle, "EetsMod_OnMouse");
 	m.onwheel  = (WheelFn)   dlsym(m.handle, "EetsMod_OnWheel");
 	m.onevent  = (EventFn)   dlsym(m.handle, "EetsMod_OnEvent");
+	m.ontext   = (TextFn)    dlsym(m.handle, "EetsMod_OnText");
 	m.shutdown = (ShutdownFn)dlsym(m.handle, "EetsMod_Shutdown");
 }
 
@@ -249,6 +255,28 @@ std::map<std::string, std::string>& cfg_for(const char* mod) {
 	}
 	return m;
 }
+// write a mod's config map back to <mod>.cfg (used by the in-game editor)
+void cfg_flush(const std::string& mod) {
+	auto it = g_cfg.find(mod); if (it == g_cfg.end()) return;
+	FILE* f = fopen((modsdir() + "/" + mod + ".cfg").c_str(), "w");
+	if (!f) return;
+	for (auto& kv : it->second) fprintf(f, "%s = %s\n", kv.first.c_str(), kv.second.c_str());
+	fclose(f);
+}
+// adjust a config value in place: toggle 0/1, else numeric +/- step. Returns new text.
+std::string cfg_adjust(const std::string& v, int dir) {
+	if (v == "0" || v == "1") return v == "0" ? "1" : "0";
+	char* end = nullptr; double d = strtod(v.c_str(), &end);
+	if (end && *end == '\0') {
+		bool isf = v.find('.') != std::string::npos;
+		d += dir * (isf ? 0.5 : 1.0);
+		char b[48]; snprintf(b, sizeof(b), isf ? "%g" : "%d", isf ? d : (double)(long)d);
+		if (!isf) snprintf(b, sizeof(b), "%ld", (long)d);
+		return b;
+	}
+	return v;   // non-numeric: leave
+}
+
 void read_manifest(Mod& m) {
 	auto& c = cfg_for(m.name.c_str());
 	auto get = [&](const char* k)->std::string{ auto i=c.find(k); return i!=c.end()?i->second:std::string(); };
@@ -324,14 +352,21 @@ void* det_CreateObject(void* self, const char* name, unsigned layer) {
 }
 // generic single-arg (this) detours for the other events
 typedef void (*ThisFn)(void*);
-ThisFn orig_LoadWin = nullptr, orig_Reset = nullptr, orig_EetsDead = nullptr, orig_KillMe = nullptr;
+ThisFn orig_LoadWin = nullptr, orig_Reset = nullptr, orig_KillMe = nullptr;
 typedef void (*ThisArgFn)(void*, void*);
 ThisArgFn orig_Complete = nullptr;
 void det_LoadWin(void* s)  { orig_LoadWin(s);  fire_event("level_load", s, nullptr); }
 void det_Reset(void* s)    { orig_Reset(s);    fire_event("level_reset", s, nullptr); }
-void det_EetsDead(void* s) { orig_EetsDead(s); fire_event("eets_death", s, nullptr); }
 void det_KillMe(void* s)   { fire_event("object_killed", s, nullptr); orig_KillMe(s); }
 void det_Complete(void* s, void* p) { orig_Complete(s, p); fire_event("level_complete", s, p); }
+typedef void (*EmotionFn)(unsigned long, unsigned int);
+EmotionFn orig_Emotion = nullptr;
+void det_Emotion(unsigned long h, unsigned int e) { orig_Emotion(h, e); fire_event("emotion_change", (void*)h, (void*)(unsigned long)e); }
+typedef void (*GoalFn)(void*);
+GoalFn orig_Goal = nullptr;
+void det_Goal(void* o) { orig_Goal(o); fire_event("goal_check", o, nullptr); }
+// (eets_death has a short-jcc prologue that the inline hooker can't relocate;
+//  detect death via "object_killed" of World_GetEets() instead.)
 
 void try_hook(const char* name, void* target, void* detour, void** orig) {
 	if (eets_hook::install(target, detour, orig)) logline("hook: %s", name);
@@ -342,8 +377,9 @@ void install_engine_event_hooks() {
 	try_hook("level_load (Simulator::LoadWinCondition)",(void*)Eets::addr::hook_Simulator_LoadWinCondition, (void*)det_LoadWin,      (void**)&orig_LoadWin);
 	try_hook("level_reset (Simulator::ResetSimulation)",(void*)Eets::addr::hook_Simulator_ResetSimulation,  (void*)det_Reset,        (void**)&orig_Reset);
 	try_hook("level_complete (LevelManager::Complete)", (void*)Eets::addr::hook_LevelManager_CompleteLevel,  (void*)det_Complete,     (void**)&orig_Complete);
-	try_hook("eets_death (Creator::StartEetsDeadDialog)",(void*)Eets::addr::hook_Creator_StartEetsDeadDialog,(void*)det_EetsDead,     (void**)&orig_EetsDead);
 	try_hook("object_killed (Object::KillMe)",          (void*)Eets::addr::hook_Object_KillMe,              (void*)det_KillMe,       (void**)&orig_KillMe);
+	try_hook("emotion_change (World_ChangeEmotion)",    (void*)Eets::addr::hook_World_ChangeEmotion,        (void*)det_Emotion,      (void**)&orig_Emotion);
+	try_hook("goal_check (World_CheckGoal)",            (void*)Eets::addr::hook_World_CheckGoal,            (void*)det_Goal,         (void**)&orig_Goal);
 }
 
 // ---- asset bundling: mods/assets/<rel> -> Data/<rel> ----------------------
@@ -490,7 +526,7 @@ void save_flush(const char* mod) {
 	fclose(f);
 }
 
-constexpr unsigned SDL_KEYDOWN = 0x300, SDL_KEYUP = 0x301;
+constexpr unsigned SDL_KEYDOWN = 0x300, SDL_KEYUP = 0x301, SDL_TEXTINPUT = 0x303;
 constexpr unsigned SDL_MOUSEMOTION = 0x400, SDL_MOUSEBUTTONDOWN = 0x401,
                    SDL_MOUSEBUTTONUP = 0x402, SDL_MOUSEWHEEL = 0x403;
 struct KeyView { unsigned type, ts, win; unsigned char state, repeat, p0, p1; int scancode, sym; unsigned short mod; };
@@ -498,20 +534,45 @@ struct MotionView { unsigned type, ts, win, which, state; int x, y, xrel, yrel; 
 struct ButtonView { unsigned type, ts, win, which; unsigned char button, state, clicks, pad; int x, y; };
 struct WheelView { unsigned type, ts, win, which; int x, y; unsigned dir; };
 
-// F1 manager: toggle the mod whose row was clicked (render-space mx,my). Returns
-// true if the click landed on the manager (so it shouldn't pass through).
+// F1 manager click (render-space mx,my). ON/OFF zone toggles enable; the name
+// expands the mod's config; in the config section, [-]/[+] edit a value.
+// Returns true if the click landed on the manager (so it shouldn't pass through).
 bool manage_click(int mx, int my) {
 	if (mx < OV_X || mx >= OV_X + OV_W) return false;
+	int nMods = (int)g_mods.size();
 	int rel = my - (OV_Y + OV_TITLE);
-	if (rel < 0) return my >= OV_Y;                 // clicked title bar: consume, no-op
+	if (rel < 0) return my >= OV_Y;                 // title bar: consume
 	int i = rel / OV_ROWH;
-	if (i < 0 || i >= (int)g_mods.size()) return false;
-	Mod& m = g_mods[i];
-	bool dis = !m.disabled;
-	m.disabled = dis;
-	set_user_disabled(m.name, dis);
-	logline("manager: %s %s", m.name.c_str(), dis ? "disabled" : "enabled");
-	if (!dis && m.init) guard(&m, [&]{ m.init(); });   // re-enable -> re-init
+	if (i >= 0 && i < nMods) {
+		Mod& m = g_mods[i];
+		if (mx < OV_X + 58) {                       // ON/OFF zone -> enable toggle
+			bool dis = !m.disabled; m.disabled = dis; set_user_disabled(m.name, dis);
+			logline("manager: %s %s", m.name.c_str(), dis ? "disabled" : "enabled");
+			if (!dis && m.init) guard(&m, [&]{ m.init(); });
+		} else {                                    // name -> expand config
+			g_selected = (g_selected == m.name) ? std::string() : m.name;
+			if (!g_selected.empty()) cfg_for(g_selected.c_str());   // ensure loaded
+		}
+		return true;
+	}
+	// config section (below the mod list)
+	if (g_selected.empty()) return true;
+	auto& cfg = g_cfg[g_selected];
+	int cy0 = OV_Y + OV_TITLE + nMods * OV_ROWH;
+	int row = (my - cy0) / OV_ROWH - 1;             // -1: first row is the "config:" header
+	int k = 0;
+	for (auto& kv : cfg) {
+		if (k == row) {
+			int minusX = OV_X + OV_W - 70, plusX = OV_X + OV_W - 34;
+			if (mx >= plusX) kv.second = cfg_adjust(kv.second, +1);
+			else if (mx >= minusX) kv.second = cfg_adjust(kv.second, -1);
+			else return true;
+			cfg_flush(g_selected);
+			logline("config: %s.%s = %s", g_selected.c_str(), kv.first.c_str(), kv.second.c_str());
+			return true;
+		}
+		k++;
+	}
 	return true;
 }
 
@@ -548,6 +609,12 @@ namespace Eets {
 	void  SaveSetInt(const char* mod, const char* key, int v)     { char b[32]; snprintf(b, sizeof(b), "%d", v); SaveSet(mod, key, b); }
 	float SaveGetFloat(const char* mod, const char* key, float d) { const char* v = SaveGet(mod, key, nullptr); return v ? (float)atof(v) : d; }
 	void  SaveSetFloat(const char* mod, const char* key, float v) { char b[48]; snprintf(b, sizeof(b), "%g", v); SaveSet(mod, key, b); }
+	// frame timing
+	double Time()      { return g_time; }   // seconds since the first frame
+	double DeltaTime() { return g_dt; }     // seconds since the previous frame
+	// text input: call StartTextInput to begin receiving EetsMod_OnText(utf8)
+	void StartTextInput() { auto f = (void(*)())dlsym(RTLD_NEXT, "SDL_StartTextInput"); if (f) f(); }
+	void StopTextInput()  { auto f = (void(*)())dlsym(RTLD_NEXT, "SDL_StopTextInput");  if (f) f(); }
 }
 
 extern "C" {
@@ -565,6 +632,13 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 	static void (*real)(void*, void*, void*, void*) = nullptr;
 	if (!real) real = (decltype(real))dlsym(RTLD_NEXT, "FNA3D_SwapBuffers");
 	if (!g_loaded) { g_loaded = true; load_all(); }
+	// frame timing
+	{
+		struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+		double now = ts.tv_sec + ts.tv_nsec * 1e-9;
+		static double start = now, last = now;
+		g_dt = now - last; last = now; g_time = now - start;
+	}
 	if (g_vp_cur_w > 0) { g_vp_w = g_vp_cur_w; g_vp_h = g_vp_cur_h; }   // commit frame viewport
 	{ static bool vlog = false; if (!vlog && g_vp_w > 0) { vlog = true; logline("render dims: %dx%d (configured %dx%d)", g_vp_w, g_vp_h, Eets::ScreenWidth(), Eets::ScreenHeight()); } }
 	for (auto& m : g_mods) if (m.update && !m.disabled) guard(&m, [&]{ m.update(); });
@@ -580,10 +654,13 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		if (!once) { once = true; logline("menu banner: \"%s\" (screen h=%d)", banner, h); }
 	}
 
-	// F1 interactive mod manager (top-left); click a row to enable/disable
+	// F1 interactive mod manager: ON/OFF toggles enable, name expands config
 	if (g_loaded && g_overlay) {
 		using namespace Eets;
-		int H = OV_TITLE + (int)g_mods.size() * OV_ROWH + 14;
+		int nMods = (int)g_mods.size();
+		int cfgRows = 0;
+		if (!g_selected.empty()) cfgRows = (int)g_cfg[g_selected].size() + 1;   // +1 header
+		int H = OV_TITLE + nMods * OV_ROWH + cfgRows * OV_ROWH + 14;
 		FillRect(OV_X + 5, OV_Y + 6, OV_W, H, Colour(0, 0, 0, 110));
 		FillRect(OV_X, OV_Y, OV_W, H, Colour(205, 40, 35, 255));
 		DrawRect(OV_X, OV_Y, OV_W, H, Colour(0, 0, 0, 255), 4.0f);
@@ -593,13 +670,29 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		DrawTextOutlined(OV_X + 10, OV_Y + 8, line, FONT_BIG, Colour(255, 232, 40, 255));
 		int y = OV_Y + OV_TITLE;
 		for (auto& m : g_mods) {
-			bool hov = g_mouse_x >= OV_X && g_mouse_x < OV_X + OV_W && g_mouse_y >= y && g_mouse_y < y + OV_ROWH;
-			if (hov) FillRect(OV_X + 4, y, OV_W - 8, OV_ROWH, Colour(255, 120, 55, 160));
+			bool sel = (g_selected == m.name);
+			if (sel) FillRect(OV_X + 4, y, OV_W - 8, OV_ROWH, Colour(255, 120, 55, 160));
 			DrawTextOutlined(OV_X + 10, y + 4, m.disabled ? "OFF" : "ON",
 			                 FONT_NORMAL, m.disabled ? Colour(255, 90, 80, 255) : Colour(255, 210, 40, 255));
 			snprintf(line, sizeof(line), "%s%s", m.name.c_str(), m.version.empty() ? "" : (" v" + m.version).c_str());
 			DrawTextOutlined(OV_X + 64, y + 4, line, FONT_NORMAL, Colour(255, 255, 255, 255));
 			y += OV_ROWH;
+		}
+		// config editor for the selected mod
+		if (!g_selected.empty()) {
+			DrawTextOutlined(OV_X + 10, y + 4, ("config: " + g_selected).c_str(), FONT_SMALL, Colour(255, 232, 40, 255));
+			y += OV_ROWH;
+			for (auto& kv : g_cfg[g_selected]) {
+				snprintf(line, sizeof(line), "%s = %s", kv.first.c_str(), kv.second.c_str());
+				DrawTextOutlined(OV_X + 14, y + 4, line, FONT_SMALL, Colour(255, 255, 255, 255));
+				FillRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Colour(70, 50, 60, 255));
+				DrawRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Colour(0, 0, 0, 255), 2.0f);
+				DrawTextOutlined(OV_X + OV_W - 63, y + 4, "-", FONT_NORMAL, Colour(255, 255, 255, 255));
+				FillRect(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, Colour(70, 50, 60, 255));
+				DrawRect(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, Colour(0, 0, 0, 255), 2.0f);
+				DrawTextOutlined(OV_X + OV_W - 28, y + 4, "+", FONT_NORMAL, Colour(255, 255, 255, 255));
+				y += OV_ROWH;
+			}
 		}
 	}
 	g_vp_cur_w = g_vp_cur_h = 0;     // reset; recomputed next frame
@@ -640,6 +733,9 @@ int SDL_PollEvent(void* event) {
 			// manager click (consume on press so it doesn't pass to mods/game)
 			if (g_overlay && down && btn == 1 && manage_click(mx, my)) { return r; }
 			for (auto& m : g_mods) if (m.onmouse && !m.disabled) guard(&m, [&]{ m.onmouse(mx, my, btn, down); });
+		} else if (type == SDL_TEXTINPUT) {
+			const char* txt = (const char*)event + 12;   // SDL_TextInputEvent.text[32]
+			for (auto& m : g_mods) if (m.ontext && !m.disabled) guard(&m, [&]{ m.ontext(txt); });
 		} else if (type == SDL_MOUSEWHEEL) {
 			WheelView* w = (WheelView*)event;
 			for (auto& m : g_mods) if (m.onwheel && !m.disabled) guard(&m, [&]{ m.onwheel(w->x, w->y); });

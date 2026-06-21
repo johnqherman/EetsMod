@@ -61,13 +61,20 @@ Entry points (all optional, `extern "C"`):
 | `EetsMod_OnMouse(x,y,button,down)` | mouse (render-space coords) |
 | `EetsMod_OnWheel(dx,dy)` | scroll |
 | `EetsMod_OnEvent(name,a,b)` | engine events (below) |
+| `EetsMod_OnText(utf8)` | typed text (call `Eets::StartTextInput()` first) |
 | `EetsMod_Shutdown()` | before unload / hot-reload |
+
+Also: `Eets::Time()`/`DeltaTime()` (frame timing), `Eets::PlaySound(name)`,
+`Eets::DrawImage(path,x,y)` (custom images), the F1 manager edits each mod's
+config live (`-`/`+`).
 
 ## Engine events
 
 Fired to `EetsMod_OnEvent`: `object_spawn` (a=Object*, b=name), `object_killed`,
-`level_load`, `level_reset`, `level_complete`. (Detours on engine functions; more
-can be added in `eets_addr.h` + the loader.)
+`level_load`, `level_reset`, `level_complete`, `emotion_change` (a=hash, b=emotion),
+`goal_check` (a=Object*). Eets-death = `object_killed` of `World_GetEets()`. The
+inline hooker relocates rel32 call/jmp/jcc and puts the trampoline near the target,
+so it hooks short forwarder functions too.
 
 ## Config, manifest & save data
 
