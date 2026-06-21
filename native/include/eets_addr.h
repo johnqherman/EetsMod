@@ -135,5 +135,7 @@ constexpr uintptr_t Texture_UploadTexture              = 0x552b00;  // (Texture*
 constexpr uintptr_t IGraphicsEngine_i                  = 0x53e440;  // () -> IGraphicsEngine*
 constexpr uintptr_t IGraphicsEngine_DrawTexture        = 0x53e450;  // (IGE*, Texture const*, Vector2 const&)
 constexpr uintptr_t AnimExt_LoadAnimation              = 0x553940;  // (char const* path) -> anim
+constexpr uintptr_t TextureManager_instance            = 0x120b708; // TextureManager* (cache = unordered_map<string,KLEITEXTURE*> at +0)
+constexpr uintptr_t TextureManager_LoadTexture         = 0x5512c0;  // (TM*, string const&, ImageFormat, bool) load+cache
 
 }} // namespace Eets::addr

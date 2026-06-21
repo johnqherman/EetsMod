@@ -9,6 +9,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include "eets_addr.h"   // complete addr:: table (all 76 statics + methods/UI)
 
 namespace Eets {
@@ -207,6 +208,27 @@ inline void Object_EnableCollisions(Object* o, bool e) { ((void(*)(Object*, bool
 inline void Object_CallFunction(Object* o, const char* fn) { ((void(*)(Object*, const char*))addr::Object_CallFunction)(o, fn); }
 inline void Object_CreateEffect(Object* o, const char* fx) { ((void(*)(Object*, const char*))addr::Object_CreateEffect)(o, fx); }
 inline unsigned long Object_GetBlueprintHash(Object* o) { return ((unsigned long(*)(Object*))addr::Object_GetBlueprintHash)(o); }
+
+// ---- custom images (EXPERIMENTAL; verify visually) -------------------------
+// Loads an image via TextureManager (caches it), looks the texture up in the
+// engine's cache (a libstdc++ unordered_map<string, KLEITEXTURE*> at the manager
+// singleton - ABI-compatible because mods build with the same libstdc++), and
+// draws it with IGraphicsEngine::DrawTexture at render-space (x, y).
+// `path` is a DATA: path, e.g. "DATA:Images/foo.tga". Returns false if not drawn.
+inline bool DrawImage(const char* path, int x, int y) {
+	void* tm = *(void**)addr::TextureManager_instance;
+	if (!tm) return false;
+	auto* cache = (std::unordered_map<std::string, void*>*)tm;   // map at manager+0
+	std::string key = path;
+	((int(*)(void*, const std::string&, int, bool))addr::TextureManager_LoadTexture)(tm, key, 0, true);
+	auto it = cache->find(key);
+	if (it == cache->end() || !it->second) return false;
+	void* ige = ((void*(*)())addr::IGraphicsEngine_i)();
+	if (!ige) return false;
+	Vector2 pos{(float)x, (float)y};
+	((void(*)(void*, void*, const Vector2&))addr::IGraphicsEngine_DrawTexture)(ige, it->second, pos);
+	return true;
+}
 
 // ---- localization ----------------------------------------------------------
 // Resolve a localized string id ("$01701") to its text. Returns the id itself
