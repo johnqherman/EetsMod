@@ -262,10 +262,17 @@ std::string trim(const std::string& s) {
 }
 
 std::map<std::string, std::map<std::string, std::string>> g_cfg;
+// mods extracted from a .eetsmod keep their files in a hidden staging dir; this maps
+// a mod name to the real path of its .cfg (loose mods fall back to mods/<name>.cfg).
+std::map<std::string, std::string> g_cfgpath;
+std::string cfg_path(const std::string& mod) {
+	auto it = g_cfgpath.find(mod);
+	return it != g_cfgpath.end() ? it->second : modsdir() + "/" + mod + ".cfg";
+}
 std::map<std::string, std::string>& cfg_for(const char* mod) {
 	auto it = g_cfg.find(mod); if (it != g_cfg.end()) return it->second;
 	auto& m = g_cfg[mod];
-	std::string path = modsdir() + "/" + mod + ".cfg";
+	std::string path = cfg_path(mod);
 	FILE* f = fopen(path.c_str(), "r");
 	if (f) {
 		char line[512];
@@ -281,7 +288,7 @@ std::map<std::string, std::string>& cfg_for(const char* mod) {
 }
 void cfg_flush(const std::string& mod) {
 	auto it = g_cfg.find(mod); if (it == g_cfg.end()) return;
-	FILE* f = fopen((modsdir() + "/" + mod + ".cfg").c_str(), "w");
+	FILE* f = fopen(cfg_path(mod).c_str(), "w");
 	if (!f) return;
 	for (auto& kv : it->second) fprintf(f, "%s = %s\n", kv.first.c_str(), kv.second.c_str());
 	fclose(f);
@@ -403,8 +410,11 @@ void install_engine_event_hooks() {
 	try_hook("eets_death (Creator::StartEetsDeadDialog)",(void*)Eets::addr::hook_Creator_StartEetsDeadDialog,(void*)det_EetsDead,    (void**)&orig_EetsDead);
 }
 
-// a mod is one .eetsmod file (gzipped tar: <name>.so/.cpp + <name>.cfg + assets/).
-// extract each into mods/ once; re-extract only when the bundle is newer than its stamp.
+// a mod is one self-contained .eetsmod file (gzipped tar: <name>.so/.cpp + <name>.cfg
+// + assets/). extract each into a hidden per-bundle staging dir so the mods folder
+// keeps only the .eetsmod; (re)extract only when the bundle is newer than its stamp.
+std::string bundle_dir(const std::string& name) { return cachedir() + "/" + name + ".d"; }
+
 void extract_bundles() {
 	std::string dir = modsdir();
 	DIR* d = opendir(dir.c_str()); if (!d) return;
@@ -412,16 +422,32 @@ void extract_bundles() {
 	while ((ent = readdir(d)) != nullptr) {
 		std::string n = ent->d_name;
 		if (!ends_with(n, ".eetsmod")) continue;
-		std::string bundle = dir + "/" + n;
-		std::string stamp = cachedir() + "/" + stem(n) + ".eetsmod.stamp";
+		std::string name = stem(n), bundle = dir + "/" + n, sdir = bundle_dir(name);
+		std::string stamp = sdir + "/.stamp";
 		if (exists(stamp) && mtime_of(stamp) >= mtime_of(bundle)) continue;
-		std::string cmd = "tar xzf \"" + bundle + "\" -C \"" + dir + "\" 2>>Log/native_mods.log";
-		if (system(cmd.c_str()) == 0) {
-			logline("bundle: installed %s", n.c_str());
-			FILE* f = fopen(stamp.c_str(), "w"); if (f) fclose(f);
-		} else logline("bundle: extract FAILED %s (need tar)", n.c_str());
+		std::string cmd = "rm -rf \"" + sdir + "\" && mkdir -p \"" + sdir + "\" && "
+		                  "tar xzf \"" + bundle + "\" -C \"" + sdir + "\" 2>>Log/native_mods.log";
+		if (system(cmd.c_str()) != 0) { logline("bundle: extract FAILED %s (need tar)", n.c_str()); continue; }
+		// a bundle's assets/ tree mirrors Data/ and is installed on extract
+		std::string adir = sdir + "/assets";
+		if (exists(adir))
+			system(("cp -r --no-preserve=mode \"" + adir + "\"/. Data/ 2>>Log/native_mods.log").c_str());
+		FILE* f = fopen(stamp.c_str(), "w"); if (f) fclose(f);
+		logline("bundle: installed %s", n.c_str());
 	}
 	closedir(d);
+}
+
+// build a Mod from an extracted bundle staging dir; false if it has no .so/.cpp
+bool make_bundle_mod(const std::string& name, Mod& m) {
+	std::string sdir = bundle_dir(name);
+	std::string so = sdir + "/" + name + ".so", cpp = sdir + "/" + name + ".cpp", cfg = sdir + "/" + name + ".cfg";
+	m.name = name;
+	if (exists(so)) m.so = so;
+	else if (exists(cpp)) { m.src = cpp; m.so = cachedir() + "/" + name + ".so"; }
+	else return false;
+	if (exists(cfg)) g_cfgpath[name] = cfg;
+	return true;
 }
 
 // overwrites matching files under Data/ (intentional override)
@@ -455,7 +481,8 @@ void load_all() {
 		while ((ent = readdir(d)) != nullptr) {
 			std::string n = ent->d_name;
 			Mod m; m.name = stem(n);
-			if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + m.name + ".so"; }
+			if (ends_with(n, ".eetsmod")) { if (!make_bundle_mod(m.name, m)) continue; }  // one-file mod
+			else if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + m.name + ".so"; }
 			else if (ends_with(n, ".so")) { m.so = dir + "/" + n; }
 			else continue;
 			read_manifest(m);
@@ -524,11 +551,12 @@ void poll_reload() {
 	while ((ent = readdir(d)) != nullptr) {
 		std::string n = ent->d_name;
 		std::string st = stem(n);
-		if (!ends_with(n, ".cpp") && !ends_with(n, ".so")) continue;
+		if (!ends_with(n, ".cpp") && !ends_with(n, ".so") && !ends_with(n, ".eetsmod")) continue;
 		bool known = false; for (auto& m : g_mods) if (m.name == st) { known = true; break; }
 		if (known) continue;
 		Mod m; m.name = st;
-		if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + st + ".so"; }
+		if (ends_with(n, ".eetsmod")) { if (!make_bundle_mod(st, m)) continue; }
+		else if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + st + ".so"; }
 		else { m.so = dir + "/" + n; }
 		read_manifest(m);
 		if (open_mod(m)) { g_mods.push_back(m); logline("reload: new mod %s", st.c_str());
@@ -541,7 +569,7 @@ std::map<std::string, std::map<std::string, std::string>> g_save;
 std::map<std::string, std::string>& save_for(const char* mod) {
 	auto it = g_save.find(mod); if (it != g_save.end()) return it->second;
 	auto& m = g_save[mod];
-	FILE* f = fopen((modsdir() + "/" + mod + ".save").c_str(), "r");
+	FILE* f = fopen((cachedir() + "/" + mod + ".save").c_str(), "r");
 	if (f) {
 		char line[1024];
 		while (fgets(line, sizeof(line), f)) {
@@ -555,7 +583,7 @@ std::map<std::string, std::string>& save_for(const char* mod) {
 	return m;
 }
 void save_flush(const char* mod) {
-	FILE* f = fopen((modsdir() + "/" + mod + ".save").c_str(), "w");
+	FILE* f = fopen((cachedir() + "/" + mod + ".save").c_str(), "w");
 	if (!f) return;
 	fprintf(f, "# eetsmod save data for '%s'\n", mod);
 	for (auto& kv : save_for(mod)) fprintf(f, "%s = %s\n", kv.first.c_str(), kv.second.c_str());

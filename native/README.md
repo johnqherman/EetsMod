@@ -82,8 +82,14 @@ tools/check-mod.sh foo.cpp           # compile exactly like the loader, errors i
 
 - **One-file mods.** A `.eetsmod` (gzipped tar of `<name>.so` + `<name>.cpp` +
   `<name>.cfg` + optional `assets/`) is how mods are shipped - like a Minecraft `.jar`.
-  Players drop it in `<game>/mods`; the loader unpacks it on launch. `make bundles`
-  packs the examples this way into `examples/build/`.
+  Players drop it in `<game>/mods`; the loader unpacks it into a hidden staging dir
+  (so `mods/` only ever holds the `.eetsmod`) and runs it. `make bundles` packs the
+  examples this way into `examples/build/`.
+- **Custom assets travel with the mod.** Put files in a `<name>.assets/` dir next to
+  your `.cpp`, laid out as they sit under the game's `Data/` (e.g.
+  `soundtest.assets/Sound/Wav/pluh.snd` + `Sound/Patch/pluh.ptch`). `pack` folds them
+  into the bundle's `assets/`, and the loader installs them into `Data/` on extract -
+  no separate `add-sound.sh` step on the player's machine. See `examples/soundtest`.
 - **`compile_flags.txt`** is written next to a scaffolded mod (`eetsmod new`), so
   clangd / VS Code / any LSP editor resolves `eetsmod.h` and gives autocomplete +
   inline errors against the whole API. (It is *not* installed into a player's game.)

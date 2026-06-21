@@ -1,0 +1,7 @@
+Patch = 
+{
+	name = "pluh",
+	filepath = "DATA:Sound\\Wav\\pluh.snd",
+	max_polyphony = 5,
+	frequency = 44100,
+}

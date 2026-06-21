@@ -112,11 +112,13 @@ cmd_pack() {
 	[[ -n "$in" ]] || die "usage: eetsmod pack <dir|mod.cpp> [-o name.eetsmod]"
 	local tmp name; tmp="$(mktemp -d)"; trap "rm -rf '$tmp'" EXIT
 	if [[ -f "$in" && "$in" == *.cpp ]]; then
-		name="$(basename "${in%.cpp}")"
+		name="$(basename "${in%.cpp}")"; local base; base="$(dirname "$in")"
 		cp "$in" "$tmp/$name.cpp"
 		compile_so "$in" "$tmp/$name.so"            # ship a prebuilt .so so users need no compiler
-		local cfg="$(dirname "$in")/$name.cfg"
+		local cfg="$base/$name.cfg"
 		[[ -f "$cfg" ]] && cp "$cfg" "$tmp/$name.cfg" || printf 'version = 1.0\nauthor = unknown\n' > "$tmp/$name.cfg"
+		# custom assets ride along: a sibling <name>.assets/ tree (mirrors Data/) -> assets/ in the bundle
+		[[ -d "$base/$name.assets" ]] && cp -r "$base/$name.assets" "$tmp/assets"
 	elif [[ -d "$in" ]]; then
 		local cfg; cfg="$(ls "$in"/*.cfg 2>/dev/null | head -1)" || true
 		[[ -n "$cfg" ]] || die "no <name>.cfg in $in"
