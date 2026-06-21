@@ -95,6 +95,15 @@ cmd_doctor() {
 
 cmd_new()   { "$SELF/tools/new-mod.sh" "$@"; }
 
+# eetsmod add-sound [--music] <mod> <sound-name> <audiofile>
+# generates the sound into <mod>.assets/ so pack bundles it with the mod.
+cmd_add_sound() {
+	local music=""; [[ "${1:-}" == "--music" ]] && { music="--music"; shift; }
+	local mod="${1:-}" name="${2:-}" file="${3:-}"
+	[[ -n "$mod" && -n "$name" && -f "$file" ]] || die "usage: eetsmod add-sound [--music] <mod> <sound-name> <audiofile>"
+	"$SELF/tools/add-sound.sh" --into "${mod%.cpp}.assets" $music "$name" "$file"
+}
+
 cmd_build() {
 	local src="" out=""
 	while [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift 2;; *) src="$1"; shift;; esac; done
@@ -132,7 +141,12 @@ cmd_pack() {
 	else die "pack source must be a .cpp or a directory"; fi
 	[[ -n "$out" ]] || out="$name.eetsmod"
 	tar -C "$tmp" -czf "$out" .
-	info "packed $out (name=$name, $(du -h "$out" | cut -f1))"
+	# report contents so a forgotten asset is obvious
+	local has_so="no" has_src="no" nassets=0
+	[[ -f "$tmp/$name.so" ]] && has_so="yes"
+	[[ -f "$tmp/$name.cpp" ]] && has_src="yes"
+	[[ -d "$tmp/assets" ]] && nassets="$(find "$tmp/assets" -type f | wc -l)"
+	info "packed $out (name=$name, $(du -h "$out" | cut -f1)): prebuilt=$has_so source=$has_src assets=$nassets"
 }
 
 cmd_add() {
@@ -190,6 +204,7 @@ main() {
 		uninstall) cmd_uninstall "$@";;
 		doctor)  cmd_doctor  "$@";;
 		new)     cmd_new     "$@";;
+		add-sound) cmd_add_sound "$@";;
 		build)   cmd_build   "$@";;
 		pack)    cmd_pack    "$@";;
 		add)     cmd_add     "$@";;

@@ -88,8 +88,16 @@ tools/check-mod.sh foo.cpp           # compile exactly like the loader, errors i
 - **Custom assets travel with the mod.** Put files in a `<name>.assets/` dir next to
   your `.cpp`, laid out as they sit under the game's `Data/` (e.g.
   `soundtest.assets/Sound/Wav/pluh.snd` + `Sound/Patch/pluh.ptch`). `pack` folds them
-  into the bundle's `assets/`, and the loader installs them into `Data/` on extract -
-  no separate `add-sound.sh` step on the player's machine. See `examples/soundtest`.
+  into the bundle's `assets/` (and prints the count), and the loader installs them into
+  `Data/` on extract - no separate step on the player's machine. See `examples/soundtest`.
+  For sounds, one command builds the right files (ogg `.snd` + sample-rate-matched
+  `.ptch`) straight into your mod:
+  ```sh
+  eetsmod add-sound mymod pluh ~/pluh.ogg     # -> mymod.assets/Sound/{Wav,Patch}/
+  eetsmod add-sound --music mymod theme ~/song.ogg
+  ```
+  `pack` does not parse your code - it bundles whatever is in `<name>.assets/`, so if a
+  `PlaySound("x")` goes silent, check that `x` is in there (`pack` prints `assets=N`).
 - **`compile_flags.txt`** is written next to a scaffolded mod (`eetsmod new`), so
   clangd / VS Code / any LSP editor resolves `eetsmod.h` and gives autocomplete +
   inline errors against the whole API. (It is *not* installed into a player's game.)
