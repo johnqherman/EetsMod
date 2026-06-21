@@ -9,10 +9,41 @@
 #pragma once
 #include <cstdint>
 #include <cstring>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
 
 namespace eets_hook {
+
+// ---- platform glue (page protection / executable alloc) --------------------
+#ifdef _WIN32
+inline void* alloc_exec(size_t n) {
+	return VirtualAlloc(nullptr, n, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+}
+inline bool make_writable(void* addr, size_t len) {
+	DWORD old; return VirtualProtect(addr, len, PAGE_EXECUTE_READWRITE, &old) != 0;
+}
+inline void make_exec(void* addr, size_t len) {
+	DWORD old; VirtualProtect(addr, len, PAGE_EXECUTE_READ, &old);
+}
+#else
+inline void* alloc_exec(size_t n) {
+	void* p = mmap(nullptr, n, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	return p == MAP_FAILED ? nullptr : p;
+}
+inline long pagesz() { return sysconf(_SC_PAGESIZE); }
+inline bool prot(void* addr, size_t len, int flags) {
+	long pg = pagesz();
+	uintptr_t s = (uintptr_t)addr & ~(uintptr_t)(pg - 1);
+	uintptr_t e = ((uintptr_t)addr + len + pg - 1) & ~(uintptr_t)(pg - 1);
+	return mprotect((void*)s, e - s, flags) == 0;
+}
+inline bool make_writable(void* a, size_t l) { return prot(a, l, PROT_READ | PROT_WRITE | PROT_EXEC); }
+inline void make_exec(void* a, size_t l)     { prot(a, l, PROT_READ | PROT_EXEC); }
+#endif
 
 inline int modrm_len(const uint8_t* p);   // fwd
 
@@ -118,22 +149,9 @@ inline void write_abs_jmp(uint8_t* at, void* target) {
 	*(uint64_t*)(at + 6) = (uint64_t)target;
 }
 
-inline bool unprotect(void* addr, size_t len) {
-	long pg = sysconf(_SC_PAGESIZE);
-	uintptr_t start = (uintptr_t)addr & ~(uintptr_t)(pg - 1);
-	uintptr_t end = ((uintptr_t)addr + len + pg - 1) & ~(uintptr_t)(pg - 1);
-	return mprotect((void*)start, end - start, PROT_READ | PROT_WRITE | PROT_EXEC) == 0;
-}
-inline void reprotect(void* addr, size_t len) {
-	long pg = sysconf(_SC_PAGESIZE);
-	uintptr_t start = (uintptr_t)addr & ~(uintptr_t)(pg - 1);
-	uintptr_t end = ((uintptr_t)addr + len + pg - 1) & ~(uintptr_t)(pg - 1);
-	mprotect((void*)start, end - start, PROT_READ | PROT_EXEC);
-}
-
 // Install a detour at `target`. On success *original receives a callable
 // trampoline to the unhooked function. Returns false (no change) if the prologue
-// can't be safely relocated.
+// can't be safely relocated. Cross-platform (Linux/Windows x86-64).
 inline bool install(void* target, void* detour, void** original) {
 	uint8_t* t = (uint8_t*)target;
 	int copied = 0;
@@ -143,16 +161,15 @@ inline bool install(void* target, void* detour, void** original) {
 		copied += l;
 	}
 	// trampoline: copied prologue + abs jmp back to (target + copied)
-	uint8_t* tramp = (uint8_t*)mmap(nullptr, copied + JMP_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC,
-	                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (tramp == MAP_FAILED) return false;
+	uint8_t* tramp = (uint8_t*)alloc_exec(copied + JMP_SIZE);
+	if (!tramp) return false;
 	memcpy(tramp, t, copied);
 	write_abs_jmp(tramp + copied, t + copied);
 
 	// patch target prologue with jmp to detour
-	if (!unprotect(t, JMP_SIZE)) { munmap(tramp, copied + JMP_SIZE); return false; }
+	if (!make_writable(t, JMP_SIZE)) return false;
 	write_abs_jmp(t, detour);
-	reprotect(t, JMP_SIZE);
+	make_exec(t, JMP_SIZE);
 
 	if (original) *original = tramp;
 	return true;

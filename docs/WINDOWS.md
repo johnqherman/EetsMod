@@ -53,3 +53,28 @@ confirm register/stack placement).
 Roughly: proxy-DLL + VirtualProtect abstraction + Windows address header + IAT/
 inline hook of the two functions. The mod-facing API is unchanged. A Mac port
 would follow the same shape (`DYLD_INSERT_LIBRARIES`, Mach-O addresses).
+
+## Status (what's scaffolded)
+Done / portable:
+- `loader/hook.h` is now **cross-platform** — page protection + executable alloc
+  abstracted (`mprotect`/`mmap` vs `VirtualProtect`/`VirtualAlloc`); the x86-64
+  length decoder + detour logic are shared. (Validated on Linux.)
+- `loader/platform.h` — the OS seam: `load_library`/`get_symbol`/`real_symbol`/
+  `module_base` + `EETS_EXPORT`, with Windows and POSIX implementations.
+- `include/eets_addr_win.h` — RVA-based address skeleton + `resolve(rva)` =
+  `module_base() + rva`.
+
+TODO (needs a Windows box + the Windows `Eets.exe`):
+1. Generate Windows addresses: run `gen_engine_header.sh` on `Eets.exe` in
+   Ghidra, convert to RVAs, fill `eets_addr_win.h`.
+2. Route `loader.cpp`'s `dlopen`/`dlsym`/`RTLD_NEXT` through `platform.h`, and the
+   `FNA3D_SwapBuffers`/`SDL_PollEvent` interposition through an IAT or `hook.h`
+   inline hook (no `LD_PRELOAD` on Windows).
+3. Ship as a proxy DLL (`version.dll`/`winmm.dll` next to `Eets.exe`) whose
+   `DllMain` starts the loader; mods ship as prebuilt `.dll` (no runtime compile).
+4. Build with MSVC or mingw-w64; verify the `Vector2`/`Colour` by-value ABI on
+   the Windows build.
+
+Cannot be done on this machine: no Windows, no mingw-w64 cross-compiler, and no
+Windows `Eets.exe` to reverse. The above makes the codebase Windows-ready; the
+remaining work is mechanical once those are available.
