@@ -3,31 +3,29 @@
 -- ----------------------------------------------------------------------------
 -- Boot order (game.log): Lua Game Lib -> Register Extensions -> World/Simulator
 --   -> default key binds -> dofile(DATA:localexec.lua) -> here.
--- The full C API + luabind classes are live by now. Object blueprints &
--- extensions are already loaded, so brand-new *blueprints* must be drop-in
--- files; behaviour / config / event / per-frame mods work at runtime.
+-- Full C API + luabind classes are live. Object blueprints load LAZILY by name
+-- from DATA:Objects/<name>.lua on first World_CreateObject (verified via RE of
+-- ObjectMgr::CreateObject), so new objects are runtime drop-ins. Extensions are
+-- registered before this point, so new extension TYPES need a restart.
 --
--- Verified-real globals (from live _G dump, NOT the C++ symbol names):
---   Bind(key, luaCodeString)      -- bind a key to a Lua string  (e.g. "CTRL+G")
---   Print(string)                 -- engine console print
---   LoadFile(path)                -- engine resource-aware loader
---   Update(), OnPause(), OnUnpause()  -- GLOBAL hooks the engine calls
---   class(...)                    -- luabind class system
---   World_*/Object_*/Sound_*/FX_*/Profile_*  -- gameplay API
---   Vector2, Colour, Object, *Extension, MotionModel, Motion, Animation ... (ctors)
---   full stdlib: os io string table math debug coroutine
+-- Real globals (from live _G dump): Bind(key,code) Print(s) LoadFile(path)
+--   Update()/OnPause()/OnUnpause() engine hooks; class(); World_*/Object_*/...
+--   ctors Vector2/Colour/Object/MotionModel/*Extension; stdlib os io string
+--   table math debug coroutine (use table.getn / string.gfind / math.mod).
 -- ============================================================================
 
 Mods = {
-	version   = "0.2.0",
+	version   = "0.3.0",
 	root      = "Data/Mods",
+	gamedata  = "Data",
 	_list     = {},
 	_byname   = {},
-	_handlers = {},   -- id -> fn (key binds)
+	_handlers = {},
 	_hid      = 0,
-	_ticks    = {},   -- per-frame callbacks
+	_ticks    = {},
 	_onpause  = {},
 	_onunpause= {},
+	_installed= {},
 	frame     = 0,
 }
 
@@ -39,25 +37,32 @@ function Mods.log(msg)
 	if f then f:write(msg .. "\n"); f:close() end
 end
 
--- ---- registration ---------------------------------------------------------
--- mod.lua calls Mods.register{ name=, version=, init=, update=, onpause=,
---                              onunpause=, keys={ ["CTRL+G"]=fn } }
-function Mods.register(def)
-	if type(def) ~= "table" or not def.name then Mods.log("register: needs .name"); return end
-	if Mods._byname[def.name] then Mods.log("register: dup '"..def.name.."'"); return end
-	Mods._byname[def.name] = def
-	table.insert(Mods._list, def)
-
-	if def.keys then for key, fn in pairs(def.keys) do Mods.bindkey(key, fn) end end
-	if type(def.update)    == "function" then table.insert(Mods._ticks,     def.update) end
-	if type(def.onpause)   == "function" then table.insert(Mods._onpause,   def.onpause) end
-	if type(def.onunpause) == "function" then table.insert(Mods._onunpause, def.onunpause) end
-	if type(def.init) == "function" then
-		local ok, err = pcall(def.init)
-		if not ok then Mods.log("'"..def.name.."' init error: "..tostring(err)) end
-	end
-	Mods.log("loaded '"..def.name.."' "..tostring(def.version or ""))
+-- ---- filesystem helpers ---------------------------------------------------
+local function fileexists(path)
+	local f = io.open(path, "r"); if f then f:close(); return true end; return false
 end
+local function readall(path, bin)
+	local f = io.open(path, bin and "rb" or "r"); if not f then return nil end
+	local s = f:read("*a"); f:close(); return s
+end
+local function writeall(path, data, bin)
+	local f = io.open(path, bin and "wb" or "w"); if not f then return false end
+	f:write(data); f:close(); return true
+end
+local function listentries(path)
+	local out, p = {}, io.popen('ls -1 "'..path..'" 2>/dev/null')
+	if not p then return out end
+	while true do local l = p:read("*l"); if not l then break end
+		if l ~= "" then table.insert(out, l) end end
+	p:close(); return out
+end
+local function copyfile(src, dst)
+	local data = readall(src, true); if not data then return false end
+	return writeall(dst, data, true)
+end
+Mods.fileexists = fileexists
+Mods.readall = readall
+Mods.writeall = writeall
 
 -- ---- key binds (engine global: Bind(key, luaCodeString)) -------------------
 function Mods.bindkey(key, fn)
@@ -72,20 +77,82 @@ function Mods._fire(id)
 	if f then local ok, err = pcall(f); if not ok then Mods.log("key err: "..tostring(err)) end end
 end
 
--- ---- global hook chaining (Update / OnPause / OnUnpause) ------------------
--- Engine-invoked global hooks. We wrap any pre-existing one so we don't clobber
--- the game's own, then fan out to registered mod callbacks.
-local function chain(globalName, queue)
-	local prev = rawget(getfenv(1), globalName)
-	setfenv(1, getfenv(1))  -- no-op guard; keep env
-	_G[globalName] = function(...)
-		if prev then pcall(prev) end           -- call original (arg-less hooks)
-		for _, fn in ipairs(queue) do pcall(fn) end
+-- ---- convenience ----------------------------------------------------------
+function Mods.spawn(name, x, y)        -- World_CreateObject wrapper
+	return World_CreateObject(name, Vector2(x, y))
+end
+
+-- ---- registration (phase 1: just record; init happens after sort) ---------
+function Mods.register(def)
+	if type(def) ~= "table" or not def.name then Mods.log("register: needs .name"); return end
+	if Mods._byname[def.name] then Mods.log("register: dup '"..def.name.."'"); return end
+	def.priority = tonumber(def.priority) or 0
+	Mods._byname[def.name] = def
+	table.insert(Mods._list, def)
+end
+
+-- per-mod config: Data/Mods/<mod>/config.lua returns a table; merged over defaults
+function Mods.config(name, defaults)
+	local cfg = {}
+	if type(defaults) == "table" then for k, v in pairs(defaults) do cfg[k] = v end end
+	local path = Mods.root.."/"..name.."/config.lua"
+	if fileexists(path) then
+		local chunk = loadfile(path)
+		if chunk then
+			local ok, t = pcall(chunk)
+			if ok and type(t) == "table" then for k, v in pairs(t) do cfg[k] = v end
+			else Mods.log("config '"..name.."' error: "..tostring(t)) end
+		end
+	end
+	return cfg
+end
+
+-- ---- asset / object drop-in sync (copies a mod's files into game Data) -----
+-- A mod dir may contain:
+--   objects/*.lua      -> copied to Data/Objects/      (new blueprints, lazy-loaded)
+--   extensions/*.lua   -> copied to Data/Extensions/   (needs restart to register)
+--   assets/<rel>       -> copied to Data/<rel>          (texture/sound/anim overrides)
+-- Copies are skipped if the destination exists and is NOT framework-managed,
+-- to avoid clobbering stock files. Managed files are tracked in mods_installed.txt.
+local function syncTree(moddir, sub, destroot, label)
+	local srcdir = moddir.."/"..sub
+	if not fileexists(srcdir) and table.getn(listentries(srcdir)) == 0 then return end
+	for _, name in ipairs(listentries(srcdir)) do
+		local src = srcdir.."/"..name
+		local dst = destroot.."/"..name
+		if fileexists(dst) and not Mods._installed[dst] then
+			Mods.log("skip "..label.." '"..name.."' (stock file exists)")
+		else
+			if copyfile(src, dst) then
+				Mods._installed[dst] = true
+				Mods.log("installed "..label..": "..dst)
+			end
+		end
 	end
 end
 
+local function syncAssets(moddir)
+	syncTree(moddir, "objects",    Mods.gamedata.."/Objects",    "object")
+	syncTree(moddir, "extensions", Mods.gamedata.."/Extensions", "extension")
+	-- assets/: mirror arbitrary relative paths under Data/
+	local adir = moddir.."/assets"
+	for _, top in ipairs(listentries(adir)) do
+		-- one level deep is enough for the common case (Images/, Sound/, ...)
+		local p = io.popen('find "'..adir..'" -type f 2>/dev/null')
+		if p then
+			while true do local rel = p:read("*l"); if not rel then break end
+				local tail = string.sub(rel, string.len(adir) + 2)  -- strip "adir/"
+				local dst = Mods.gamedata.."/"..tail
+				if copyfile(rel, dst) then Mods._installed[dst] = true; Mods.log("asset: "..dst) end
+			end
+			p:close()
+		end
+		break
+	end
+end
+
+-- ---- global hook chaining (Update / OnPause / OnUnpause) ------------------
 function Mods._installHooks()
-	-- per-frame
 	local prevUpdate = _G.Update
 	_G.Update = function(...)
 		Mods.frame = Mods.frame + 1
@@ -93,7 +160,6 @@ function Mods._installHooks()
 		local i, n = 1, table.getn(Mods._ticks)
 		while i <= n do pcall(Mods._ticks[i]); i = i + 1 end
 	end
-	-- pause events
 	local prevPause = _G.OnPause
 	_G.OnPause = function(...)
 		if prevPause then pcall(prevPause) end
@@ -106,33 +172,100 @@ function Mods._installHooks()
 	end
 end
 
--- ---- discovery ------------------------------------------------------------
-local function listdirs(path)
-	local out, p = {}, io.popen('ls -1 "'..path..'" 2>/dev/null')
-	if not p then return out end
-	while true do
-		local line = p:read("*l"); if not line then break end
-		if line ~= "" and string.sub(line, -4) ~= ".lua" then table.insert(out, line) end
+-- ---- discovery + two-phase load ------------------------------------------
+local function moddirs()
+	local out = {}
+	for _, name in ipairs(listentries(Mods.root)) do
+		if string.sub(name, -4) ~= ".lua" and name ~= "" then
+			if fileexists(Mods.root.."/"..name.."/mod.lua") then table.insert(out, name) end
+		end
 	end
-	p:close(); return out
-end
-local function fileexists(path)
-	local f = io.open(path, "r"); if f then f:close(); return true end; return false
+	return out
 end
 
 function Mods.loadAll()
 	Mods.log("framework "..Mods.version.." scanning "..Mods.root)
 	Mods._installHooks()
-	local count = 0
-	for _, name in ipairs(listdirs(Mods.root)) do
+
+	-- phase 1: dofile every mod.lua (each calls Mods.register to record its def)
+	local dirByName = {}
+	for _, name in ipairs(moddirs()) do
 		local modfile = Mods.root.."/"..name.."/mod.lua"
-		if fileexists(modfile) then
-			count = count + 1
-			local ok, err = pcall(dofile, modfile)
-			if not ok then Mods.log("dofile '"..modfile.."' failed: "..tostring(err)) end
+		local before = table.getn(Mods._list)
+		local ok, err = pcall(dofile, modfile)
+		if not ok then Mods.log("dofile '"..modfile.."' failed: "..tostring(err))
+		else
+			-- associate the just-registered def(s) with this dir
+			for i = before + 1, table.getn(Mods._list) do dirByName[Mods._list[i].name] = name end
 		end
 	end
-	Mods.log("done; "..table.getn(Mods._list).." mod(s) from "..count.." candidate(s)")
+
+	-- phase 2: sort by priority (high first), then activate
+	table.sort(Mods._list, function(a, b) return (a.priority or 0) > (b.priority or 0) end)
+	for _, def in ipairs(Mods._list) do
+		local dir = Mods.root.."/"..(dirByName[def.name] or def.name)
+		syncAssets(dir)
+		if def.keys then for key, fn in pairs(def.keys) do Mods.bindkey(key, fn) end end
+		if type(def.update)    == "function" then table.insert(Mods._ticks,     def.update) end
+		if type(def.onpause)   == "function" then table.insert(Mods._onpause,   def.onpause) end
+		if type(def.onunpause) == "function" then table.insert(Mods._onunpause, def.onunpause) end
+		if type(def.init) == "function" then
+			local ok, err = pcall(def.init)
+			if not ok then Mods.log("'"..def.name.."' init error: "..tostring(err)) end
+		end
+		Mods.log("loaded '"..def.name.."' "..tostring(def.version or "").." (prio "..def.priority..")")
+	end
+	Mods.log("done; "..table.getn(Mods._list).." mod(s)")
 end
+
+-- ---- level (.eet) toolchain ----------------------------------------------
+-- .eet = Lua 5.0 precompiled chunk that builds the level's global table.
+-- The engine's own VM is used, so output is byte-compatible (verified).
+Mods.eet = {}
+
+-- compile Lua level source -> .eet bytes
+function Mods.eet.compile(src)
+	local chunk, err = loadstring(src, "level")
+	if not chunk then return nil, err end
+	return string.dump(chunk)
+end
+
+-- write Lua level source straight to a .eet file
+function Mods.eet.build(src, outpath)
+	local bytes, err = Mods.eet.compile(src)
+	if not bytes then Mods.log("eet compile error: "..tostring(err)); return false end
+	return writeall(outpath, bytes, true)
+end
+
+-- load a .eet (or .lua) level chunk in a sandbox and return the globals table
+-- it produced (a "decompile to data" -- gives the Level/Objects schema).
+function Mods.eet.read(path)
+	local chunk = loadfile(path)
+	if not chunk then return nil, "loadfile failed" end
+	local env = {}
+	setfenv(chunk, env)
+	local ok, err = pcall(chunk)
+	if not ok then return nil, err end
+	return env
+end
+
+-- serialize a Lua table back to source (for .eet -> readable .lua)
+local function ser(v, ind)
+	local t = type(v)
+	if t == "string" then return string.format("%q", v) end
+	if t == "number" or t == "boolean" then return tostring(v) end
+	if t == "table" then
+		local s, ni = "{\n", ind.."  "
+		for k, val in pairs(v) do
+			local key
+			if type(k) == "string" and string.find(k, "^[%a_][%w_]*$") then key = k.." = "
+			else key = "["..ser(k, ni).."] = " end
+			s = s..ni..key..ser(val, ni)..",\n"
+		end
+		return s..ind.."}"
+	end
+	return "nil"
+end
+function Mods.eet.serialize(name, tbl) return name.." = "..ser(tbl, "").."\n" end
 
 Mods.loadAll()

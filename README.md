@@ -53,8 +53,9 @@ To verify: launch the game and check `<game>/Log/mods.log`:
 
 ```lua
 Mods.register{
-    name    = "mymod",
-    version = "1.0",
+    name     = "mymod",
+    version  = "1.0",
+    priority = 0,                                    -- higher loads first
     init      = function() Mods.log("hello") end,   -- once at boot
     update    = function() end,                      -- every frame (Mods.frame)
     onpause   = function() end,
@@ -63,21 +64,65 @@ Mods.register{
 }
 ```
 
+A mod directory may also contain:
+
+```
+mymod/
+  mod.lua            required
+  config.lua         optional: `return { ... }` -> Mods.config("mymod", defaults)
+  objects/*.lua      new blueprints, copied to Data/Objects/ (lazy-loaded, no restart)
+  extensions/*.lua   copied to Data/Extensions/ (needs a restart to register)
+  assets/<rel>       file overrides, copied to Data/<rel> (textures/sounds/anims)
+```
+
+Framework auto-copies `objects/`, `extensions/`, and `assets/` into the game's
+`Data/` at boot. Stock files are never clobbered (only framework-managed ones).
+
 Full API in [`src/Mods/API_REFERENCE.md`](src/Mods/API_REFERENCE.md).
+See `example_lowgrav` (config + keys) and `example_customobject` (drop-in blueprint).
+
+## `Mods` API
+
+```lua
+Mods.log(s)                       -- -> Log/mods.log + engine console
+Mods.register(def)                -- register a mod (see above)
+Mods.config(name, defaults)       -- load <mod>/config.lua merged over defaults
+Mods.spawn(name, x, y)            -- World_CreateObject(name, Vector2(x,y))
+Mods.bindkey(key, fn)             -- bind a key to a Lua function
+Mods.frame                        -- running frame counter
+-- level (.eet) toolchain (uses the engine's own VM -> byte-compatible):
+Mods.eet.compile(src) -> bytes    -- Lua level source -> .eet bytecode
+Mods.eet.build(src, outpath)      -- compile and write a .eet file
+Mods.eet.read(path) -> table      -- run a .eet/.lua level in a sandbox, get its globals
+Mods.eet.serialize(name, tbl)     -- table -> readable Lua source (.eet -> .lua)
+```
 
 ## Capabilities
 
 **Runtime (this framework):** boot init, per-frame `update`, `onpause`/`onunpause`,
-key binds, the gameplay API (`World_*`, `Object_*`, `Sound_*`, `FX_*`, `Profile_*`),
-luabind class ctors (`Vector2`, `Colour`, `Object`, `MotionModel`, `*Extension`),
-and the full Lua 5.0 stdlib (`os io string table math debug coroutine`).
+key binds, config, load-order, the gameplay API (`World_*`, `Object_*`, `Sound_*`,
+`FX_*`, `Profile_*`), luabind class ctors (`Vector2`, `Colour`, `Object`,
+`MotionModel`, `*Extension`), and the full Lua 5.0 stdlib.
 
-**Static drop-ins (loaded before `localexec`):** new object blueprints need a
-`Data/Objects/<x>.lua` file plus an entry in `Data/AllObjects.lua`; new extensions
-go in `Data/Extensions/`.
+**New object blueprints — runtime drop-in.** Verified by reverse-engineering
+`ObjectMgr::CreateObject`: blueprints load lazily by name from
+`DATA:Objects/<name>.lua` on first `World_CreateObject` and are then cached. So a
+mod just ships `objects/<name>.lua` and calls `World_CreateObject("<name>", pos)` —
+no `AllObjects.lua` entry, no restart. (`AllObjects.lua` only populates the level
+editor's toolbar palette.) New objects may use any of the ~27 existing extensions.
 
-**Assets** (textures/sounds/anims/levels): replace the file on disk under `Data/`;
-the `DATA:`/`USER:`/`LEVELS:` virtual mounts are C-side only, not exposed to Lua.
+**New extension *types*** are registered before `localexec`, so adding one needs a
+file in `Data/Extensions/` and a restart.
+
+**Levels** are Lua 5.0 precompiled chunks (`.eet`). The toolchain above compiles
+Lua source to byte-compatible `.eet` using the engine's own `string.dump`, and
+reads existing `.eet` back to a data table — so procedural level generation and
+`.eet`-to-readable-Lua both work. The in-game editor (CTRL+S) remains the
+interactive authoring path.
+
+**Asset overrides** (textures/sounds/anims): drop the file in `<mod>/assets/<rel>`;
+the framework copies it to `Data/<rel>`. (The `DATA:`/`USER:`/`LEVELS:` virtual
+mounts are C-side only, not exposed to Lua, so there is no live path remap.)
 
 > Lua 5.0 notes: no `#` length operator (use `table.getn`), `string.gfind` not
 > `gmatch`, `math.mod` not `%`.

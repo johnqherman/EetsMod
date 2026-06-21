@@ -1,28 +1,29 @@
--- Example mod: toggle low gravity with CTRL+G.
--- Demonstrates: register, init, key binds, World_GetGravity/World_SetGravity, Vector2.
+-- Example: toggle low gravity with a configurable key + factor.
+-- Demonstrates Mods.config, priority, key binds, World gravity API.
 
-local normal = nil   -- captured first toggle
-local low    = false
+local cfg = Mods.config("example_lowgrav", {
+	key    = "CTRL+G",   -- toggle key
+	factor = 0.25,       -- gravity multiplier when "low" is on
+})
+
+local normal, low = nil, false
 
 Mods.register{
-	name    = "example_lowgrav",
-	version = "1.0",
+	name     = "example_lowgrav",
+	version  = "1.1",
+	priority = 0,
 
 	init = function()
-		Mods.log("example_lowgrav ready - press CTRL+G in a level")
+		Mods.log("example_lowgrav ready - press "..cfg.key.." in a level (factor "..cfg.factor..")")
 	end,
 
 	keys = {
-		["CTRL+G"] = function()
-			if normal == nil then normal = World_GetGravity() end   -- Vector2
+		[cfg.key] = function()
+			if normal == nil then normal = World_GetGravity() end
 			low = not low
-			if low then
-				World_SetGravity(Vector2(normal.x, normal.y * 0.25), 0)
-				Mods.log("low gravity ON")
-			else
-				World_SetGravity(Vector2(normal.x, normal.y), 0)
-				Mods.log("low gravity OFF")
-			end
+			local m = low and cfg.factor or 1
+			World_SetGravity(Vector2(normal.x, normal.y * m), 0)
+			Mods.log(low and "low gravity ON" or "low gravity OFF")
 		end,
 	},
 }
