@@ -1,75 +1,53 @@
 # Eets native (C++) modding
 
 Write a mod by dropping a single `.cpp` file in `<game>/mods/`. The loader
-compiles it on launch, injects it, calls it every frame, and forwards input.
-No Makefile, no build step — just edit and relaunch (or save while running for
-hot-reload).
+compiles it on launch, injects it, calls it every frame, forwards input/events,
+and isolates crashes. Mods call engine functions directly.
 
 ## How it works
 
-Eets is a native, **non-PIE** C++ ELF that links SDL2 and FNA3D dynamically:
+Eets is a native, **non-PIE** C++ ELF that links SDL2/FNA3D dynamically. The
+preloaded `libeetsmod.so` interposes their PLT calls:
+- `FNA3D_SwapBuffers` → per-frame tick (compile+load mods on first frame; run
+  `EetsMod_Update`; poll for hot-reload; capture the render viewport; draw the
+  banner / F1 manager),
+- `SDL_PollEvent` → keyboard + mouse → mod callbacks,
+- `FNA3D_SetViewport` → the true render size (correct in fullscreen).
 
-1. **Fixed addresses** — engine functions sit at stable absolute addresses, so a
-   mod calls `World_SetGravity`, `World_CreateObject`, etc. directly
-   (`include/eets_engine.h`).
-2. **Interposable frame + input** — SDL2/FNA3D calls go through the PLT, so the
-   preloaded `libeetsmod.so` interposes:
-   - `FNA3D_SwapBuffers` → per-frame tick (compile + load mods on the first
-     frame, `EetsMod_Update` after, poll sources for hot-reload),
-   - `SDL_PollEvent` → keyboard events → `EetsMod_OnKey`.
+Engine functions sit at fixed addresses (`eets_engine.h` / `eets_addr.h`); the
+detour engine (`hook.h`) can hook arbitrary engine functions.
 
-```
-Eets (native C++)
-  └─ LD_PRELOAD libeetsmod.so
-       ├─ compile mods/*.cpp → mods/.cache/*.so   (only when changed)
-       ├─ dlopen + EetsMod_Init()
-       ├─ FNA3D_SwapBuffers → EetsMod_Update() each frame
-       ├─ SDL_PollEvent     → EetsMod_OnKey(key, mods, down)
-       └─ main-menu banner: "Eets Mods vX.Y.Z, N mods loaded"
-```
-
-## Install (one time)
+## Install & run
 
 ```sh
 cd native
-make                                   # builds build/libeetsmod.so
-make install GAME=/path/to/Eets        # loader + headers + sample mods -> <game>
+make
+make install GAME=/path/to/Eets        # loader + headers + sample mods
+EETS_DIR=/path/to/Eets ../run-eets.sh   # or Steam launch option (below)
 ```
 
-This installs the loader, the headers (to `<game>/eetsmod-include/`), and the
-sample mods (`lowgrav.cpp`, `sandbox.cpp` + `sandbox.cfg`) into `<game>/mods/`.
-
-## Run
-
-```sh
-EETS_DIR=/path/to/Eets ./run-eets.sh        # from the repo root
-```
-
-Or set the Steam launch option (Properties → Launch Options):
-
-```
-LD_PRELOAD=/full/path/to/Eets/libeetsmod.so %command%
-```
-
-The main menu shows `Eets Mods vX.Y.Z, N mods loaded` bottom-left.
-`<game>/Log/native_mods.log` has compile output and load status.
+Steam: Properties → Launch Options → `LD_PRELOAD=/full/path/Eets/libeetsmod.so %command%`
+(`tools/steam-launch-option.sh` prints it). Mods are `.cpp` compiled on launch, so
+`g++` must be on PATH; Steam's runtime may lack it — run once from a terminal to
+cache builds, or ship prebuilt `.so`. Logs: `<game>/Log/native_mods.log`.
+`F1` = interactive mod manager (click rows to enable/disable; persists).
 
 ## Writing a mod
 
-Create `<game>/mods/mymod.cpp` — that's it. Relaunch (or just save it while the
-game runs; it recompiles and reloads within ~0.5s).
+`tools/new-mod.sh <name>` scaffolds one, or create `<game>/mods/mymod.cpp`:
 
 ```cpp
 #include "eetsmod.h"
+// #include "eets_ui.h"   // for custom menus
 using namespace Eets;
 
-extern "C" void EetsMod_Init() {
-    Eets::Log("mymod: loaded");
-}
-
+extern "C" void EetsMod_Init() { Eets::Log("mymod loaded"); }
 extern "C" void EetsMod_OnKey(int key, int mods, int down) {
     if (down && key == 'g' && (mods & EKMOD_CTRL))
         World_SetGravity({0, World_GetGravity().y * 0.25f}, 0);
+}
+extern "C" void EetsMod_OnEvent(const char* ev, void* a, void* b) {
+    if (!strcmp(ev, "object_spawn")) { /* a = Object*, b = name */ }
 }
 ```
 
@@ -77,86 +55,93 @@ Entry points (all optional, `extern "C"`):
 
 | Symbol | When |
 |--------|------|
-| `EetsMod_Init()` | once, on the first frame |
-| `EetsMod_Update()` | every frame, before present |
-| `EetsMod_OnKey(key, mods, down)` | each keyboard event (SDL keycode/modmask) |
-| `EetsMod_Shutdown()` | before unload (hot-reload / exit) |
+| `EetsMod_Init()` | once, first frame |
+| `EetsMod_Update()` | every frame |
+| `EetsMod_OnKey(key,mods,down)` | keyboard (SDL keycode/modmask) |
+| `EetsMod_OnMouse(x,y,button,down)` | mouse (render-space coords) |
+| `EetsMod_OnWheel(dx,dy)` | scroll |
+| `EetsMod_OnEvent(name,a,b)` | engine events (below) |
+| `EetsMod_Shutdown()` | before unload / hot-reload |
 
-You never run the compiler yourself — but for reference the loader builds each
-mod as `g++ -O2 -fPIC -std=c++17 -shared -I<headers> -o .cache/<name>.so <name>.cpp`.
-Set `$CXX` to use a different compiler; set `$EETS_MODS` to use a different folder.
+## Engine events
 
-## Config
+Fired to `EetsMod_OnEvent`: `object_spawn` (a=Object*, b=name), `object_killed`,
+`level_load`, `level_reset`, `level_complete`. (Detours on engine functions; more
+can be added in `eets_addr.h` + the loader.)
 
-Drop `<game>/mods/<modname>.cfg` (simple `key = value` lines, `#` comments):
+## Config, manifest & save data
+
+`<game>/mods/<mod>.cfg` (`key = value`, `#` comments) is both config and manifest:
 
 ```ini
-explosion_radius = 250
-enable_speed = 1
+version = 1.0
+author = you
+priority = 0          # higher loads first
+requires = othermod   # comma-separated deps (missing dep disables the mod)
+sim = 1               # affects simulation -> replay/leaderboard integrity warning
+min_framework = 0.8.0 # disabled if the framework is older
+my_setting = 42       # your own keys -> Eets::ConfigGet*
 ```
-
-Read it from the mod:
 
 ```cpp
-float r = Eets::ConfigGetFloat("mymod", "explosion_radius", 200.0f);
-int   n = Eets::ConfigGetInt("mymod", "enable_speed", 1);
-const char* s = Eets::ConfigGet("mymod", "name", "default");
+int n = Eets::ConfigGetInt("mymod", "my_setting", 0);
+Eets::SaveSetInt("mymod", "highscore", 100);   // persists in mods/mymod.save
+int hs = Eets::SaveGetInt("mymod", "highscore", 0);
 ```
 
-## Hot-reload
+## Hooks (detour any engine function)
 
-While the game runs, edit and save a `mods/*.cpp`; the loader recompiles and
-reloads it within ~0.5s (calling `EetsMod_Shutdown` then `EetsMod_Init`). Newly
-added `.cpp` files are picked up too. Compile errors are logged and the old
-build keeps running.
-
-## Engine API (include/eets_engine.h)
-
-Provided by the loader: `Eets::Log(fmt, ...)`, `Eets::ConfigGet*`.
-
-Direct engine calls (fixed addresses):
-
+```cpp
+static void (*orig)(void*, Vector2, int) = nullptr;
+static void detour(void* self, Vector2 g, int m) { /* ... */ orig(self, g, m); }
+Eets::Hook((void*)0x5bc6d0, (void*)detour, (void**)&orig);  // World_SetGravity
 ```
-World_GetGravity() / World_SetGravity(Vector2, mode)
-World_CreateObject(name, Vector2) -> Object*
-World_GetEets() -> Object*          World_GetObjectByID(id) -> Object*
-World_CreateExplosion(pos, radius)  World_CreateExplosionSpecial()
-World_CreateEffect(name, pos)       World_Scare(pos, radius, strength)
-World_SetGameSpeed(0|1|2)           World_ChangeEmotion(hash, emotion)
-Sound_CreateSound(name, loop, vol, pos)
-Object_GetPosition/GetVelocity/GetID/GetMotionModel(o)
-Object_ApplyImpulse(o, v)           Object_EnablePhysics(o, bool)
-MotionModel_PushMotion/PopMotion/GetCurrentMotionName(m)
-ForEachObject([](Object* o){ ... }) // live object list
-World_IsInMainMenu()  ScreenWidth()/ScreenHeight()  DrawText(x, y, text, Colour)
+The decoder refuses (returns false) rather than corrupt a prologue it can't
+relocate safely.
+
+## Custom menus (`eets_ui.h`)
+
+Immediate-mode, Eets-styled (red panels, black outlines, geek font):
+
+```cpp
+#include "eets_ui.h"
+extern "C" void EetsMod_OnMouse(int x,int y,int b,int d){ Eets::UI::FeedMouse(x,y,b,d); }
+extern "C" void EetsMod_Update() {
+    Eets::UI::Begin(40, 80, 240, "My Menu");
+    if (Eets::UI::Button("Spawn whale")) Eets::World_CreateObject("whale", {500,300});
+    static bool on=false; Eets::UI::Toggle("Option", on);
+    Eets::UI::End();
+}
 ```
 
-Samples: `mods/lowgrav.cpp` (CTRL+G low gravity), `mods/sandbox.cpp` (CTRL+1/2/3
-speed, CTRL+E explosion, CTRL+O object count; config-driven).
+## Engine API
 
-## Adding more engine functions
+`eets_addr.h` has the **complete address table** for all 76 Lua-binding statics
+plus curated methods/UI; `eets_engine.h` adds typed wrappers and 2D primitives
+(`FillRect`/`DrawRect`/`DrawLine`/`FillCircle`, `DrawText`/`DrawTextOutlined`,
+`World_*`, `Object_*`, `MotionModel_*`, `ForEachObject`, `RenderWidth/Height`).
+For any binding without a wrapper, cast `addr::X` to its signature (shown in the
+comment). Regenerate addresses after a game update: `gen_engine_header.sh`.
 
-The binary isn't stripped, so anything is callable. Find a symbol, add its
-address to `eets_engine.h` (`namespace addr`) and a typed wrapper:
+## Robustness
 
-```sh
-nm /path/to/Eets | c++filt | grep World_
-./gen_engine_header.sh /path/to/Eets   # regenerate addresses after a game update
-```
+- **Crash isolation** — a faulting mod callback is caught and the mod disabled;
+  the game keeps running.
+- **Hot-reload** — edit + save a `.cpp` while running; recompiles & reloads.
+- **BuildID guard** — warns if the running binary differs from the bound build.
+- **Fullscreen-correct** — HUD + mouse use the real render viewport.
 
-Prefer the `World_*` / `Object_*` binding statics (plain pointer / `Vector2` /
-scalar args) over functions that take or return `std::string` or luabind
-iterators by value, whose ABI is fragile.
+## Build / release / CI
+
+`make release` → `dist/eetsmod-<ver>.tar.gz` (loader + headers + sample mods +
+`install.sh`). CI (`.github/workflows/ci.yml`) builds the loader + syntax-checks
+the sample mods. Windows port plan: `docs/WINDOWS.md`.
 
 ## Layout
-
 ```
 native/
-  include/eetsmod.h        mod author API (entry points, config, key constants)
-  include/eets_engine.h    engine bindings at fixed addresses (regenerable)
-  loader/loader.cpp        libeetsmod.so (compile + inject + dispatch)
-  mods/lowgrav.cpp         sample mods (plain .cpp, no Makefile)
-  mods/sandbox.cpp .cfg
-  gen_engine_header.sh     regenerate addresses for a new game build
-  Makefile                 build/install the loader
+  include/  eetsmod.h  eets_engine.h  eets_addr.h  eets_ui.h
+  loader/   loader.cpp  hook.h
+  mods/     lowgrav.cpp  sandbox.cpp(.cfg)  spawner.cpp  menudemo.cpp
+  gen_engine_header.sh   Makefile
 ```

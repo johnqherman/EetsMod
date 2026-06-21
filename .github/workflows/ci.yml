@@ -1,0 +1,25 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build-loader:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native loader
+        run: make -C native
+      - name: Syntax-check sample mods against headers
+        run: |
+          for f in native/mods/*.cpp; do
+            echo "checking $f"
+            g++ -fsyntax-only -fPIC -std=c++17 -Inative/include "$f"
+          done
+      - name: Upload loader artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libeetsmod.so
+          path: native/build/libeetsmod.so

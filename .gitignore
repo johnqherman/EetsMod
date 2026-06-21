@@ -4,6 +4,7 @@ Log/
 
 # native build artifacts
 native/build/
+native/dist/
 *.so
 *.o
 
