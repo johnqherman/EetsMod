@@ -249,7 +249,8 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		char banner[128];
 		snprintf(banner, sizeof(banner), "v%s, %zu mods loaded", EETSMOD_VERSION, g_mods.size());
 		int h = Eets::ScreenHeight(); if (h <= 0) h = 720;
-		Eets::DrawTextSized(10, h - 18, banner, Eets::FONT_TINY, Eets::Colour(255, 255, 255, 255));
+		// half of the original 20px font (= ~10px)
+		Eets::DrawTextSized(10, h - 16, banner, Eets::FONT_NORMAL, Eets::Colour(255, 255, 255, 255), 0.5f);
 		static bool once = false;
 		if (!once) { once = true; logline("menu banner: \"%s\" (screen h=%d)", banner, h); }
 	}

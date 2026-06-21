@@ -161,10 +161,12 @@ inline int ScreenHeight() {
 inline void DrawText(int x, int y, const char* text, Colour c = Colour()) {
 	((void(*)(int, int, const char*, const Colour&))addr::printText)(x, y, text, c);
 }
-// Draw text at a chosen font size (FONT_TINY..FONT_HUGE).
-inline void DrawTextSized(int x, int y, const char* text, int size, Colour c = Colour()) {
+// Draw text at a chosen font size (FONT_TINY..FONT_HUGE) and scale multiplier.
+// e.g. size=FONT_NORMAL (20px) with scale=0.5 renders ~10px.
+inline void DrawTextSized(int x, int y, const char* text, int size,
+                          Colour c = Colour(), float scaleMul = 1.0f) {
 	std::string s = text ? text : "";
-	Vector2 pos{(float)x, (float)y}, scale{1.0f, 1.0f};
+	Vector2 pos{(float)x, (float)y}, scale{scaleMul, scaleMul};
 	((void(*)(const std::string&, int, int, Colour, Vector2, bool, const Vector2&))
 	 addr::TextPrinter_DrawString)(s, size, 3, c, pos, false, scale);
 }
