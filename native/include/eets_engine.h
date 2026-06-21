@@ -9,11 +9,12 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include "eets_addr.h"   // complete addr:: table (all 76 statics + methods/UI)
 
 namespace Eets {
 
-// Addresses below are valid for this exact game build. The loader warns if the
-// running binary's BuildID differs (regenerate with gen_engine_header.sh).
+// Addresses are valid for this exact game build. The loader warns if the running
+// binary's BuildID differs (regenerate with gen_engine_header.sh).
 constexpr const char* EXPECTED_BUILDID = "e81cc5504d3ef03324805df3e9fc508c1bf8c628";
 
 struct Vector2 { float x, y; };
@@ -21,51 +22,9 @@ struct Colour { unsigned char r, g, b, a;          // 4-byte packed (engine ABI)
 	Colour(unsigned char R=255, unsigned char G=255, unsigned char B=255, unsigned char A=255)
 		: r(R), g(G), b(B), a(A) {}
 };
-struct Object;   // opaque engine type
-
+struct Object;        // opaque engine type
 struct MotionModel;   // opaque
 struct ObjectMgr;     // opaque
-
-namespace addr {
-	// World_* (Lua-binding statics; thin forwarders to the Simulator singleton)
-	constexpr uintptr_t World_GetGravity            = 0x5bc710;
-	constexpr uintptr_t World_SetGravity            = 0x5bc6d0;
-	constexpr uintptr_t World_CreateObject          = 0x5bc660;
-	constexpr uintptr_t World_GetEets               = 0x5bca40;
-	constexpr uintptr_t World_GetObjectByID         = 0x5bc6b0;
-	constexpr uintptr_t World_CreateExplosion       = 0x5bc0d0;
-	constexpr uintptr_t World_CreateExplosionSpecial= 0x5bc170;
-	constexpr uintptr_t World_CreateEffect          = 0x5bc090;
-	constexpr uintptr_t World_Scare                 = 0x5bc9e0;
-	constexpr uintptr_t World_SetGameSpeed          = 0x5bc070;
-	constexpr uintptr_t World_ChangeEmotion         = 0x5bcb90;
-	constexpr uintptr_t World_Pause                 = 0x5bc920;
-	constexpr uintptr_t World_IsPaused              = 0x5bc950;
-	constexpr uintptr_t World_IsSimulating          = 0x5bc860;
-	constexpr uintptr_t World_SetMaximumSpeed       = 0x5bbc20;
-	constexpr uintptr_t Sound_CreateSound           = 0x5bcdd0;
-	constexpr uintptr_t Sound_PlayMusic             = 0x5bcd80;
-	constexpr uintptr_t Sound_SetMusicVolume        = 0x5bcdb0;
-	// Object_* (take an Object*)
-	constexpr uintptr_t Object_ApplyImpulse         = 0x5c9d40;
-	constexpr uintptr_t Object_EnablePhysics        = 0x5c9d10;
-	// Object methods (__thiscall: Object* in first arg)
-	constexpr uintptr_t Object_GetPosition          = 0x5739c0;
-	constexpr uintptr_t Object_GetVelocity          = 0x573a00;
-	constexpr uintptr_t Object_GetID                = 0x574250;
-	constexpr uintptr_t Object_GetMotionModel       = 0x5ca360;
-	// MotionModel methods (__thiscall)
-	constexpr uintptr_t MotionModel_PushMotion      = 0x50d830;
-	constexpr uintptr_t MotionModel_PopMotion       = 0x50dc60;
-	constexpr uintptr_t MotionModel_GetCurrentMotionName = 0x50dc40;
-	// singletons / state / UI
-	constexpr uintptr_t ObjectMgr_i                 = 0x576280;
-	constexpr uintptr_t Simulator_i                 = 0x62ae90;
-	constexpr uintptr_t GraphicsEngine_i            = 0x549100;
-	constexpr uintptr_t World_IsInMainMenu          = 0x5bc870;
-	constexpr uintptr_t printText                   = 0x58a020;  // (int x,int y,const char*,Colour const&)
-	constexpr uintptr_t TextPrinter_DrawString      = 0x541380;  // (string,size,style,Colour,pos,bool,scale)
-}
 
 // FontPrintSizes enum -> pixel height: 1=13 2=14 3=20 4=28 5=35
 enum FontSize { FONT_TINY = 1, FONT_SMALL = 2, FONT_NORMAL = 3, FONT_BIG = 4, FONT_HUGE = 5 };
@@ -191,5 +150,39 @@ inline void DrawTextOutlined(int x, int y, const char* text, int size,
 			if (dx || dy) DrawTextSized(x + dx, y + dy, text, size, outline);
 	DrawTextSized(x, y, text, size, c);
 }
+
+// ---- 2D primitives (for custom menus / HUD) --------------------------------
+inline void* GraphicsEngine_i() { return ((void*(*)())addr::GraphicsEngine_i)(); }
+inline void DrawLine(Vector2 a, Vector2 b, Colour c, float width = 1.0f) {
+	void* g = GraphicsEngine_i(); if (!g) return;
+	((void(*)(void*, const Vector2&, const Vector2&, const Colour&, float))
+	 addr::GraphicsEngine_DrawLine)(g, a, b, c, width);
+}
+// filled rectangle (a horizontal line of thickness h)
+inline void FillRect(int x, int y, int w, int h, Colour c) {
+	float cy = y + h * 0.5f;
+	DrawLine(Vector2{(float)x, cy}, Vector2{(float)(x + w), cy}, c, (float)h);
+}
+// rectangle outline
+inline void DrawRect(int x, int y, int w, int h, Colour c, float t = 2.0f) {
+	DrawLine({(float)x, (float)y},       {(float)(x + w), (float)y},       c, t);
+	DrawLine({(float)(x + w), (float)y}, {(float)(x + w), (float)(y + h)}, c, t);
+	DrawLine({(float)(x + w),(float)(y+h)},{(float)x, (float)(y + h)},     c, t);
+	DrawLine({(float)x, (float)(y + h)}, {(float)x, (float)y},             c, t);
+}
+
+// ---- more engine wrappers --------------------------------------------------
+inline void World_Pause()            { ((void(*)())addr::World_Pause)(); }
+inline bool World_IsPaused()         { return ((bool(*)())addr::World_IsPaused)(); }
+inline bool World_IsSimulating()     { return ((bool(*)())addr::World_IsSimulating)(); }
+inline void World_SetMaximumSpeed(float s) { ((void(*)(float))addr::World_SetMaximumSpeed)(s); }
+inline void Sound_PlayMusic(const char* name, bool loop) { ((void(*)(const char*, bool))addr::Sound_PlayMusic)(name, loop); }
+inline void Sound_SetMusicVolume(long v) { ((void(*)(long))addr::Sound_SetMusicVolume)(v); }
+inline void Misc_Print(const char* s) { ((void(*)(const char*))addr::Misc_Print)(s); }
+inline void Misc_SaveScreenshot()    { ((void(*)())addr::Misc_SaveScreenshot)(); }
+inline void Object_EnableCollisions(Object* o, bool e) { ((void(*)(Object*, bool))addr::Object_EnableCollisions)(o, e); }
+inline void Object_CallFunction(Object* o, const char* fn) { ((void(*)(Object*, const char*))addr::Object_CallFunction)(o, fn); }
+inline void Object_CreateEffect(Object* o, const char* fx) { ((void(*)(Object*, const char*))addr::Object_CreateEffect)(o, fx); }
+inline unsigned long Object_GetBlueprintHash(Object* o) { return ((unsigned long(*)(Object*))addr::Object_GetBlueprintHash)(o); }
 
 } // namespace Eets
