@@ -81,7 +81,7 @@ tools/check-mod.sh foo.cpp           # compile exactly like the loader, errors i
 ```
 
 - **One-file mods.** A `.eetsmod` (gzipped tar of `<name>.so` + `<name>.cpp` +
-  `<name>.cfg` + optional `assets/`) is how mods are shipped - like a Minecraft `.jar`.
+  `<name>.cfg` + optional `assets/`) is how mods are shipped.
   Players drop it in `<game>/mods`; the loader unpacks it into a hidden staging dir
   (so `mods/` only ever holds the `.eetsmod`) and runs it. `make bundles` packs the
   examples this way into `examples/build/`.

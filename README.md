@@ -6,8 +6,7 @@ one self-contained `.eetsmod` file - and managed from inside the game.
 
 ## Play with mods
 
-A mod is one file: **`mymod.eetsmod`** (like a Minecraft `.jar`). It has everything
-inside - code, settings, art.
+A mod is one file: **`mymod.eetsmod`**, with everything inside - code, settings, art.
 
 1. **Turn on mod support once.** In the repo or a release, run `eetsmod setup`, then
    paste the line it prints into the Eets **Steam launch options** (right-click Eets
