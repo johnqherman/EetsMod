@@ -14,7 +14,7 @@ jobs:
         run: make -C native
       - name: Syntax-check sample mods against headers
         run: |
-          for f in native/mods/*.cpp; do
+          for f in native/examples/*.cpp; do
             echo "checking $f"
             g++ -fsyntax-only -fPIC -std=c++17 -Inative/include "$f"
           done

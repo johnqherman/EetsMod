@@ -24,7 +24,7 @@ struct ObjectMgr;     // opaque
 // FontPrintSizes enum -> pixel height: 1=13 2=14 3=20 4=28 5=35
 enum FontSize { FONT_TINY = 1, FONT_SMALL = 2, FONT_NORMAL = 3, FONT_BIG = 4, FONT_HUGE = 5 };
 // FontPrintStyles -> typeface. STYLE_GEEK (geekabyte) is the in-game gui font.
-enum FontStyle { STYLE_KOMIKA = 1, STYLE_GEEK = 2, STYLE_BRADY = 4 };
+enum FontStyle { STYLE_KOMIKA = 1, STYLE_GEEK = 2, STYLE_NORMAL = 3, STYLE_BRADY = 4 };
 
 inline Vector2 World_GetGravity() {
 	return ((Vector2(*)())addr::World_GetGravity)();
@@ -134,7 +134,7 @@ inline void DrawText(int x, int y, const char* text, Colour c = Colour()) {
 }
 // warning: dir is the baseline DIRECTION not a scale - keep horizontal {1,0} or text rotates; dirx<1 shrinks horizontally.
 inline void DrawTextSized(int x, int y, const char* text, int size,
-                          Colour c = Colour(), int style = STYLE_GEEK, float dirx = 1.0f) {
+                          Colour c = Colour(), int style = STYLE_NORMAL, float dirx = 1.0f) {
 	std::string s = text ? text : "";
 	Vector2 pos{(float)x, (float)y}, dir{dirx, 0.0f};
 	((void(*)(const std::string&, int, int, Colour, Vector2, bool, const Vector2&))
@@ -142,7 +142,7 @@ inline void DrawTextSized(int x, int y, const char* text, int size,
 }
 inline void DrawTextOutlined(int x, int y, const char* text, int size,
                              Colour c = Colour(), Colour shadow = Colour(0, 0, 0, 200),
-                             int style = STYLE_GEEK) {
+                             int style = STYLE_NORMAL) {
 	DrawTextSized(x + 2, y + 2, text, size, shadow, style);
 	DrawTextSized(x, y, text, size, c, style);
 }

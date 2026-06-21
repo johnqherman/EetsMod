@@ -150,6 +150,6 @@ the sample mods. Windows port plan: `docs/WINDOWS.md`.
 native/
   include/  eetsmod.h  eets_engine.h  eets_addr.h  eets_ui.h
   loader/   loader.cpp  hook.h
-  mods/     lowgrav.cpp  sandbox.cpp(.cfg)  spawner.cpp  menudemo.cpp
+  examples/ lowgrav.cpp sandbox.cpp(.cfg) spawner.cpp menudemo.cpp imagedemo.cpp ...
   gen_engine_header.sh   Makefile
 ```
