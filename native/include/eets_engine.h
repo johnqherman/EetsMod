@@ -274,4 +274,58 @@ inline const char* Localize(const char* id) {
 	return ((const char*(*)(void*, const char*))addr::StringPool_Resolve)(sp, id);
 }
 
+// ---- remaining binding statics (auto-wrapped; return types best-effort) ----
+inline unsigned Anim_GetCurrentFrameIndex(void* a) { return ((unsigned(*)(void*))addr::Anim_GetCurrentFrameIndex)(a); }
+inline void Anim_SetCurrentFrameIndex(void* a, unsigned int b) { ((void(*)(void*, unsigned int))addr::Anim_SetCurrentFrameIndex)(a, b); }
+inline void Creator_Undo() { ((void(*)())addr::Creator_Undo)(); }
+inline void Misc_BindKey(const char* a, const char* b) { ((void(*)(const char*, const char*))addr::Misc_BindKey)(a, b); }
+inline void Misc_PauseProfile() { ((void(*)())addr::Misc_PauseProfile)(); }
+inline void Misc_Profile() { ((void(*)())addr::Misc_Profile)(); }
+inline const char* Object_GetBlueprintName(Object* a) { return ((const char*(*)(Object*))addr::Object_GetBlueprintName)(a); }
+inline void Object_HoldObject(Object* a, Object* b) { ((void(*)(Object*, Object*))addr::Object_HoldObject)(a, b); }
+inline bool Object_IsHolding(Object* a, Object* b) { return ((bool(*)(Object*, Object*))addr::Object_IsHolding)(a, b); }
+inline bool Object_IsPhysicsEnabled(Object* a) { return ((bool(*)(Object*))addr::Object_IsPhysicsEnabled)(a); }
+inline bool Object_IsRolling(Object* a) { return ((bool(*)(Object*))addr::Object_IsRolling)(a); }
+inline bool Object_IsWalker(Object* a) { return ((bool(*)(Object*))addr::Object_IsWalker)(a); }
+inline void Object_ReleaseAll(Object* a) { ((void(*)(Object*))addr::Object_ReleaseAll)(a); }
+inline void Object_SetAltCollision(Object* a, const char* b) { ((void(*)(Object*, const char*))addr::Object_SetAltCollision)(a, b); }
+inline void World_AddBackgroundImage(const char* a, const Vector2& b, const Vector2& c, float d, const Colour& e, float f) { ((void(*)(const char*, const Vector2&, const Vector2&, float, const Colour&, float))addr::World_AddBackgroundImage)(a, b, c, d, e, f); }
+inline void World_AddForegroundImage(const char* a, const Vector2& b, const Vector2& c, float d, const Colour& e, float f) { ((void(*)(const char*, const Vector2&, const Vector2&, float, const Colour&, float))addr::World_AddForegroundImage)(a, b, c, d, e, f); }
+inline void World_Alert(const Vector2& a, float b) { ((void(*)(const Vector2&, float))addr::World_Alert)(a, b); }
+inline bool World_AnimationsEqual(void* a, void* b) { return ((bool(*)(void*, void*))addr::World_AnimationsEqual)(a, b); }
+inline void World_CheckGoal(Object* a) { ((void(*)(Object*))addr::World_CheckGoal)(a); }
+inline void World_CopyItem() { ((void(*)())addr::World_CopyItem)(); }
+inline void World_CreateLight(const Vector2& a, const Colour& b, float c, float d) { ((void(*)(const Vector2&, const Colour&, float, float))addr::World_CreateLight)(a, b, c, d); }
+inline double World_GetDeterministicDouble() { return ((double(*)())addr::World_GetDeterministicDouble)(); }
+inline int World_GetDeterministicIntRange(int a, int b) { return ((int(*)(int, int))addr::World_GetDeterministicIntRange)(a, b); }
+inline void World_IncrementStat(const char* a) { ((void(*)(const char*))addr::World_IncrementStat)(a); }
+inline bool World_IsInLevelEditor() { return ((bool(*)())addr::World_IsInLevelEditor)(); }
+inline bool World_LightExists(unsigned short a) { return ((bool(*)(unsigned short))addr::World_LightExists)(a); }
+inline void World_MerchMerchPickUp() { ((void(*)())addr::World_MerchMerchPickUp)(); }
+inline void World_MoveLight(unsigned short a, const Vector2& b) { ((void(*)(unsigned short, const Vector2&))addr::World_MoveLight)(a, b); }
+inline void World_PasteItem() { ((void(*)())addr::World_PasteItem)(); }
+inline void World_RemoveLight(unsigned short a) { ((void(*)(unsigned short))addr::World_RemoveLight)(a); }
+inline void World_SaveLevel() { ((void(*)())addr::World_SaveLevel)(); }
+inline Object* World_ScanForClosestEdible(Object* a, const Vector2& b, float c, float d, bool e) { return ((Object*(*)(Object*, const Vector2&, float, float, bool))addr::World_ScanForClosestEdible)(a, b, c, d, e); }
+inline void World_SelectAll() { ((void(*)())addr::World_SelectAll)(); }
+inline void World_SetFPS(int a) { ((void(*)(int))addr::World_SetFPS)(a); }
+inline void World_SetGFXViewOffset(const Vector2& a, const Vector2& b) { ((void(*)(const Vector2&, const Vector2&))addr::World_SetGFXViewOffset)(a, b); }
+inline void World_SetGlobalAmbient(const Colour& a) { ((void(*)(const Colour&))addr::World_SetGlobalAmbient)(a); }
+inline void World_SetLevelModulate(const Colour& a) { ((void(*)(const Colour&))addr::World_SetLevelModulate)(a); }
+inline void World_SetLightAttenuation(unsigned short a, float b, float c, float d) { ((void(*)(unsigned short, float, float, float))addr::World_SetLightAttenuation)(a, b, c, d); }
+inline void World_SetTextHint(const char* a, const Vector2& b) { ((void(*)(const char*, const Vector2&))addr::World_SetTextHint)(a, b); }
+inline void World_SetWinFlag() { ((void(*)())addr::World_SetWinFlag)(); }
+inline void World_ShowClickables() { ((void(*)())addr::World_ShowClickables)(); }
+inline void World_ShowGoalBox(const char* a, const Vector2& b, const char* c, const char* d, const char* e) { ((void(*)(const char*, const Vector2&, const char*, const char*, const char*))addr::World_ShowGoalBox)(a, b, c, d, e); }
+inline void World_ShowGoalBoxFX(const char* a, const Vector2& b) { ((void(*)(const char*, const Vector2&))addr::World_ShowGoalBoxFX)(a, b); }
+inline void World_ShowPuzzleAsNew() { ((void(*)())addr::World_ShowPuzzleAsNew)(); }
+inline void World_ShowSolutionTime(float a) { ((void(*)(float))addr::World_ShowSolutionTime)(a); }
+inline void World_ShowTutorialDialog(const char* a) { ((void(*)(const char*))addr::World_ShowTutorialDialog)(a); }
+
+// pure math on our Vector2 (no engine call needed)
+inline float VecDot(const Vector2& a, const Vector2& b) { return a.x*b.x + a.y*b.y; }
+inline float VecLenSqr(const Vector2& v) { return v.x*v.x + v.y*v.y; }
+inline float VecLen(const Vector2& v) { float d = VecLenSqr(v); return d > 0 ? __builtin_sqrtf(d) : 0; }
+inline Vector2 VecNormalize(const Vector2& v) { float l = VecLen(v); return l > 0 ? Vector2{v.x/l, v.y/l} : Vector2{0,0}; }
+
 } // namespace Eets
