@@ -13,7 +13,7 @@ extern "C" void EetsMod_OnKey(int key, int, int down) {
 }
 extern "C" void EetsMod_Update() {
 	if (!g_on) return;
-	bool ok = DrawImage("DATA:Images/default.tga", 120, 120);
+	bool ok = DrawImage("Eets.png", 200, 150);
 	static bool logged = false;
-	if (!logged) { logged = true; Eets::Log("imagedemo: DrawImage returned %d", ok ? 1 : 0); }
+	if (!logged) { logged = true; Eets::Log("imagedemo: DrawImage('Eets.png') returned %d", ok ? 1 : 0); }
 }
