@@ -95,13 +95,29 @@ cmd_doctor() {
 
 cmd_new()   { "$SELF/tools/new-mod.sh" "$@"; }
 
-# eetsmod add-sound [--music] <mod> <sound-name> <audiofile>
-# generates the sound into <mod>.assets/ so pack bundles it with the mod.
+# generate custom sound(s) into <mod>.assets/ so pack bundles them. forms:
+#   eetsmod add-sound [--music] <mod> <name> <audiofile>   one sound, explicit name
+#   eetsmod add-sound [--music] <mod> <audiofile>          one sound, name = filename
+#   eetsmod add-sound [--music] <mod> <folder>             every audio file in folder
 cmd_add_sound() {
 	local music=""; [[ "${1:-}" == "--music" ]] && { music="--music"; shift; }
-	local mod="${1:-}" name="${2:-}" file="${3:-}"
-	[[ -n "$mod" && -n "$name" && -f "$file" ]] || die "usage: eetsmod add-sound [--music] <mod> <sound-name> <audiofile>"
-	"$SELF/tools/add-sound.sh" --into "${mod%.cpp}.assets" $music "$name" "$file"
+	local mod="${1:-}"; shift || true
+	[[ -n "$mod" ]] || die "usage: eetsmod add-sound [--music] <mod> [<name>] <file|folder>"
+	local assets="${mod%.cpp}.assets" one; one="$SELF/tools/add-sound.sh"
+	if [[ $# -eq 2 && -f "$2" ]]; then
+		"$one" --into "$assets" $music "$1" "$2"
+	elif [[ $# -eq 1 && -d "$1" ]]; then
+		local n=0 f name
+		for f in "$1"/*; do
+			[[ -f "$f" ]] || continue
+			case "$(file -b --mime-type "$f" 2>/dev/null)" in audio/*) ;; *) continue;; esac
+			name="$(basename "$f")"; name="${name%.*}"
+			"$one" --into "$assets" $music "$name" "$f" >/dev/null && n=$((n+1))
+		done
+		[[ $n -gt 0 ]] && info "added $n sound(s) from $1/ -> $assets" || die "no audio files in $1"
+	elif [[ $# -eq 1 && -f "$1" ]]; then
+		name="$(basename "$1")"; "$one" --into "$assets" $music "${name%.*}" "$1"
+	else die "usage: eetsmod add-sound [--music] <mod> [<name>] <file|folder>"; fi
 }
 
 cmd_build() {
@@ -139,6 +155,7 @@ cmd_pack() {
 		[[ -f "$tmp/$name.so" ]] || { [[ -f "$tmp/$name.cpp" ]] && compile_so "$in/$name.cpp" "$tmp/$name.so" 2>/dev/null || true; }
 		[[ -d "$in/assets" ]] && cp -r "$in/assets" "$tmp/"
 	else die "pack source must be a .cpp or a directory"; fi
+	pack_audit "$tmp" "$name"     # warn about sound refs in code that are not bundled
 	[[ -n "$out" ]] || out="$name.eetsmod"
 	tar -C "$tmp" -czf "$out" .
 	# report contents so a forgotten asset is obvious
@@ -147,6 +164,25 @@ cmd_pack() {
 	[[ -f "$tmp/$name.cpp" ]] && has_src="yes"
 	[[ -d "$tmp/assets" ]] && nassets="$(find "$tmp/assets" -type f | wc -l)"
 	info "packed $out (name=$name, $(du -h "$out" | cut -f1)): prebuilt=$has_so source=$has_src assets=$nassets"
+}
+
+# best-effort lint: the convention dir bundles assets; this just parses code for sound
+# string-literals and flags any with no matching patch in the bundle (could be a stock
+# game sound, or a forgotten custom one). literals only - dynamic names are invisible.
+pack_audit() {
+	local tmp="$1" name="$2" src="$1/$name.cpp"
+	[[ -f "$src" ]] || return 0
+	local n flag missing=""
+	for n in $(grep -oE '(PlaySound|Sound_CreateSound)[[:space:]]*\([[:space:]]*"[^"]+"' "$src" 2>/dev/null \
+	           | sed -E 's/.*"([^"]+)"/\1/' | sort -u); do
+		[[ -f "$tmp/assets/Sound/Patch/$n.ptch" ]] || missing+=" $n"
+	done
+	for n in $(grep -oE 'Sound_PlayMusic[[:space:]]*\([[:space:]]*"[^"]+"' "$src" 2>/dev/null \
+	           | sed -E 's/.*"([^"]+)"/\1/' | sort -u); do
+		[[ -f "$tmp/assets/Sound/Music/$n.ogg" ]] || missing+=" $n"
+	done
+	[[ -n "$missing" ]] && info "note: sound(s) used in code but not bundled (ok if stock game sounds):$missing"
+	return 0
 }
 
 cmd_add() {
