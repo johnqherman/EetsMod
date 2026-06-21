@@ -65,8 +65,9 @@ Entry points (all optional, `extern "C"`):
 | `EetsMod_Shutdown()` | before unload / hot-reload |
 
 Also: `Eets::Time()`/`DeltaTime()` (frame timing), `Eets::PlaySound(name)`,
-`Eets::DrawImage(path,x,y)` (custom images), the F1 manager edits each mod's
-config live (`-`/`+`).
+`Eets::DrawImage(path,x,y)` (custom images), `Eets::DrawAnim(path,x,y,dt)`
+(animated `.anim`, native rate), `Eets::DrawImageHUD` (screen-locked), the F1
+manager edits each mod's config live (`-`/`+`).
 
 ## Engine events
 

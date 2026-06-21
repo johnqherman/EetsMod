@@ -138,6 +138,12 @@ constexpr uintptr_t Texture_UploadTexture              = 0x552b00;  // (Texture*
 constexpr uintptr_t IGraphicsEngine_i                  = 0x53e440;  // () -> IGraphicsEngine*
 constexpr uintptr_t IGraphicsEngine_DrawTexture        = 0x53e450;  // (IGE*, Texture const*, Vector2 const&)
 constexpr uintptr_t AnimExt_LoadAnimation              = 0x553940;  // (char const* path) -> anim
+constexpr uintptr_t Animation_ctor                     = 0x5016a0;  // (Animation* this[0x78], char const* path, bool)
+constexpr uintptr_t Animation_Update                   = 0x5049d0;  // (Animation*, float dt)
+constexpr uintptr_t Animation_GetCurrentFrame          = 0x504920;  // (Animation*) -> Sprite*
+constexpr uintptr_t Animation_FrameCount               = 0x504bc0;  // (Animation*) -> unsigned
+constexpr uintptr_t Animation_SetCurrentFrame          = 0x504bd0;  // (Animation*, unsigned idx)
+constexpr uintptr_t Animation_Restart                  = 0x502500;  // (Animation*)
 constexpr uintptr_t TextureManager_instance            = 0x120b708; // TextureManager* (cache = unordered_map<string,KLEITEXTURE*> at +0)
 constexpr uintptr_t TextureManager_LoadTexture         = 0x5512c0;  // (TM*, string const&, ImageFormat, bool) load+cache
 constexpr uintptr_t SpriteManager_i                    = 0x545c50;  // () -> SpriteManager*
@@ -145,5 +151,6 @@ constexpr uintptr_t SpriteManager_Load                 = 0x546940;  // (sret{Spr
 constexpr uintptr_t GraphicsEngine_DrawSprite          = 0x54be10;  // (GE*, Sprite*, Vector2 pos, Vector2 uv0, Vector2 uv1, Colour)
 constexpr uintptr_t Sprite_GetWidth                    = 0x545510;  // (Sprite*) -> unsigned
 constexpr uintptr_t Sprite_GetHeight                   = 0x545520;  // (Sprite*) -> unsigned
+constexpr uintptr_t Sprite_GetDiffuseUV                = 0x5459d0;  // (Sprite*, Vector2& uv0, Vector2& uv1) per-frame texcoords
 
 }} // namespace Eets::addr

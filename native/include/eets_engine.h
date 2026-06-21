@@ -8,6 +8,8 @@
 // xmm0 exactly as the engine's own C++ does, so matching the type matches the ABI.
 #pragma once
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <unordered_map>
 #include "eets_addr.h"   // complete addr:: table (all 76 statics + methods/UI)
@@ -236,6 +238,18 @@ inline void* LoadSprite(const char* path, int format = 0) {
 inline int  SpriteWidth(void* s)  { return s ? (int)((unsigned(*)(void*))addr::Sprite_GetWidth)(s)  : 0; }
 inline int  SpriteHeight(void* s) { return s ? (int)((unsigned(*)(void*))addr::Sprite_GetHeight)(s) : 0; }
 
+// draw a sprite at (x,y) using its OWN per-frame UV sub-rect (so spritesheet
+// frames render correctly, not the whole sheet).
+inline void DrawSpriteAt(void* sprite, int x, int y, Colour tint = Colour()) {
+	void* ge = GraphicsEngine_i();
+	if (!ge || !sprite) return;
+	Vector2 uv0{0.0f, 0.0f}, uv1{1.0f, 1.0f};
+	((void(*)(void*, Vector2&, Vector2&))addr::Sprite_GetDiffuseUV)(sprite, uv0, uv1);
+	Vector2 pos{(float)x, (float)y};
+	((void(*)(void*, void*, const Vector2&, const Vector2&, const Vector2&, const Colour&))
+	 addr::GraphicsEngine_DrawSprite)(ge, sprite, pos, uv0, uv1, tint);
+}
+
 // Draw an image with its top-left at (x, y), at the sprite's native pixel size,
 // optionally tinted. Uses the engine's Sprite path (SpriteManager::Load +
 // GraphicsEngine::DrawSprite - the same renderer the game's load screen uses).
@@ -244,11 +258,61 @@ inline int  SpriteHeight(void* s) { return s ? (int)((unsigned(*)(void*))addr::S
 inline bool DrawImage(const char* path, int x, int y, Colour tint = Colour()) {
 	void* sprite = LoadSprite(path);
 	if (!sprite) return false;
-	void* ge = GraphicsEngine_i();
-	if (!ge) return false;
-	Vector2 pos{(float)x, (float)y}, uv0{0.0f, 0.0f}, uv1{1.0f, 1.0f};
-	((void(*)(void*, void*, const Vector2&, const Vector2&, const Vector2&, const Colour&))
-	 addr::GraphicsEngine_DrawSprite)(ge, sprite, pos, uv0, uv1, tint);
+	DrawSpriteAt(sprite, x, y, tint);
+	return true;
+}
+// Screen-locked image (HUD): resets the sprite view to screen space first so it
+// ignores the in-level camera. Safe because mod drawing happens after the world
+// is rendered. (In menus DrawImage is already screen-aligned.)
+inline bool DrawImageHUD(const char* path, int x, int y, Colour tint = Colour()) {
+	if (((bool(*)())addr::World_IsSimulating)()) {
+		Vector2 z{0.0f, 0.0f};
+		((void(*)(const Vector2&, const Vector2&))addr::World_SetGFXViewOffset)(z, z);
+	}
+	return DrawImage(path, x, y, tint);
+}
+
+// ---- animated sprites (.anim) ----------------------------------------------
+// Load (and cache) an Animation from a .anim path (e.g.
+// "DATA:Animations/Eets/eets_blink.anim"). Returns an opaque Animation* or null.
+inline void* LoadAnim(const char* path) {
+	static std::unordered_map<std::string, void*> cache;
+	auto it = cache.find(path);
+	if (it != cache.end()) return it->second;
+	void* a = malloc(0x78);                 // sizeof(Anim::Animation)
+	if (a) {
+		memset(a, 0, 0x78);
+		((void(*)(void*, const char*, bool))addr::Animation_ctor)(a, path, true);  // loop
+	}
+	cache[path] = a;
+	return a;
+}
+// the anim's native seconds-per-frame (drives the engine's own playback speed)
+inline float AnimFrameDuration(void* a) { return a ? *(float*)((char*)a + 0x30) : 0.0f; }
+inline int AnimFrameCount(void* a) { return a ? (int)((unsigned(*)(void*))addr::Animation_FrameCount)(a) : 0; }
+
+// Advance an animation by `dt` seconds and draw its current frame at (x, y),
+// looping. `fps`: 0 (default) = the anim's native rate (1 / frame-duration); >0 =
+// a fixed override rate.
+inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Colour tint = Colour()) {
+	void* a = LoadAnim(path);
+	if (!a) return false;
+	unsigned frames = (unsigned)AnimFrameCount(a);
+	if (frames > 1) {
+		if (fps <= 0.0f) {                      // native rate from the anim's frame duration
+			float d = AnimFrameDuration(a);
+			fps = (d > 0.0001f) ? 1.0f / d : 12.0f;
+		}
+		static std::unordered_map<std::string, double>   acc;
+		static std::unordered_map<std::string, unsigned> idx;
+		double step = 1.0 / fps;
+		double& t = acc[path]; t += dt;
+		while (t >= step) { t -= step; idx[path] = (idx[path] + 1) % frames; }
+		((void(*)(void*, unsigned))addr::Animation_SetCurrentFrame)(a, idx[path]);
+	}
+	void* sprite = ((void*(*)(void*))addr::Animation_GetCurrentFrame)(a);
+	if (!sprite) return false;
+	DrawSpriteAt(sprite, x, y, tint);
 	return true;
 }
 
