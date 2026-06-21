@@ -33,7 +33,7 @@
 #include "eets_engine.h"
 #include "hook.h"
 
-#define EETSMOD_VERSION "0.12.0"
+#define EETSMOD_VERSION "0.13.0"
 
 namespace {
 
@@ -352,12 +352,13 @@ void* det_CreateObject(void* self, const char* name, unsigned layer) {
 }
 // generic single-arg (this) detours for the other events
 typedef void (*ThisFn)(void*);
-ThisFn orig_LoadWin = nullptr, orig_Reset = nullptr, orig_KillMe = nullptr;
+ThisFn orig_LoadWin = nullptr, orig_Reset = nullptr, orig_KillMe = nullptr, orig_EetsDead = nullptr;
 typedef void (*ThisArgFn)(void*, void*);
 ThisArgFn orig_Complete = nullptr;
 void det_LoadWin(void* s)  { orig_LoadWin(s);  fire_event("level_load", s, nullptr); }
 void det_Reset(void* s)    { orig_Reset(s);    fire_event("level_reset", s, nullptr); }
 void det_KillMe(void* s)   { fire_event("object_killed", s, nullptr); orig_KillMe(s); }
+void det_EetsDead(void* s) { orig_EetsDead(s); fire_event("eets_death", s, nullptr); }
 void det_Complete(void* s, void* p) { orig_Complete(s, p); fire_event("level_complete", s, p); }
 typedef void (*EmotionFn)(unsigned long, unsigned int);
 EmotionFn orig_Emotion = nullptr;
@@ -380,6 +381,7 @@ void install_engine_event_hooks() {
 	try_hook("object_killed (Object::KillMe)",          (void*)Eets::addr::hook_Object_KillMe,              (void*)det_KillMe,       (void**)&orig_KillMe);
 	try_hook("emotion_change (World_ChangeEmotion)",    (void*)Eets::addr::hook_World_ChangeEmotion,        (void*)det_Emotion,      (void**)&orig_Emotion);
 	try_hook("goal_check (World_CheckGoal)",            (void*)Eets::addr::hook_World_CheckGoal,            (void*)det_Goal,         (void**)&orig_Goal);
+	try_hook("eets_death (Creator::StartEetsDeadDialog)",(void*)Eets::addr::hook_Creator_StartEetsDeadDialog,(void*)det_EetsDead,    (void**)&orig_EetsDead);
 }
 
 // ---- asset bundling: mods/assets/<rel> -> Data/<rel> ----------------------

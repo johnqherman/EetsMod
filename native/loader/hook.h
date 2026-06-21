@@ -140,8 +140,15 @@ inline int insn_len(const uint8_t* p) {
 			return len + 1;
 		case 0xE8: case 0xE9:                             // call/jmp rel32 (relocated in trampoline)
 			return len + 4;
+		case 0xEB:                                        // short jmp rel8 (re-encoded to rel32)
+			return len + 1;
+		case 0x70: case 0x71: case 0x72: case 0x73:       // short jcc rel8 (re-encoded to rel32)
+		case 0x74: case 0x75: case 0x76: case 0x77:
+		case 0x78: case 0x79: case 0x7A: case 0x7B:
+		case 0x7C: case 0x7D: case 0x7E: case 0x7F:
+			return len + 1;
 		default:
-			return 0;                                     // unknown / short jmp: refuse
+			return 0;                                     // unknown encoding: refuse
 	}
 
 modrm:
@@ -182,48 +189,67 @@ inline void write_abs_jmp(uint8_t* at, void* target) {
 // Install a detour at `target`. On success *original receives a callable
 // trampoline to the unhooked function. Returns false (no change) if the prologue
 // can't be safely relocated. Cross-platform (Linux/Windows x86-64).
-// find the rel32 operand offset within an instruction (call/jmp/jcc rel32), or -1
-inline int rel32_at(const uint8_t* ins, int len) {
+inline int prefix_len(const uint8_t* ins) {   // legacy prefixes + REX
 	int i = 0;
 	while (ins[i] == 0x66 || ins[i] == 0x67 || ins[i] == 0xF2 || ins[i] == 0xF3 ||
 	       ins[i] == 0x2E || ins[i] == 0x36 || ins[i] == 0x3E || ins[i] == 0x26 ||
 	       ins[i] == 0x64 || ins[i] == 0x65) i++;
-	if ((ins[i] & 0xF0) == 0x40) i++;                    // REX
-	if (ins[i] == 0xE8 || ins[i] == 0xE9) return (i + 1 + 4 == len) ? i + 1 : -1;
-	if (ins[i] == 0x0F && (ins[i+1] & 0xF0) == 0x80) return (i + 2 + 4 == len) ? i + 2 : -1;
-	return -1;
+	if ((ins[i] & 0xF0) == 0x40) i++;
+	return i;
+}
+inline bool emit_rel(uint8_t* tramp, int& tp, const uint8_t* op, int opbytes, uint8_t* target) {
+	for (int k = 0; k < opbytes; k++) tramp[tp++] = op[k];      // opcode byte(s)
+	int64_t rel = (int64_t)target - (int64_t)(tramp + tp + 4);
+	if (rel < INT32_MIN || rel > INT32_MAX) return false;
+	*(int32_t*)(tramp + tp) = (int32_t)rel; tp += 4;
+	return true;
 }
 
+// Install a detour. Copies the prologue to a trampoline near the target,
+// re-encoding relative branches (rel8/rel32 call/jmp/jcc) to reach their original
+// targets, then patches the target with an absolute jmp to the detour.
 inline bool install(void* target, void* detour, void** original) {
 	uint8_t* t = (uint8_t*)target;
 	int copied = 0;
 	while (copied < JMP_SIZE) {
 		int l = insn_len(t + copied);
-		if (l <= 0) return false;                        // can't decode/relocate: refuse
+		if (l <= 0) return false;
 		copied += l;
 	}
-	// trampoline near the target so relocated rel32 calls/jmps still reach
-	uint8_t* tramp = (uint8_t*)alloc_exec_near(t, copied + JMP_SIZE);
+	uint8_t* tramp = (uint8_t*)alloc_exec_near(t, copied * 2 + JMP_SIZE + 16);
 	if (!tramp) return false;
-	memcpy(tramp, t, copied);
 
-	// relocate any copied rel32 branches (call/jmp/jcc) to point at the original
-	// targets from the trampoline's new location; bail if a fixup won't fit.
+	int tp = 0;
 	for (int o = 0; o < copied; ) {
-		int l = insn_len(t + o);
-		int ro = rel32_at(t + o, l);
-		if (ro >= 0) {
-			int32_t oldrel = *(int32_t*)(t + o + ro);
-			uint8_t* tgt = t + o + l + oldrel;           // absolute target
-			int64_t newrel = (int64_t)tgt - (int64_t)(tramp + o + l);
-			if (newrel < INT32_MIN || newrel > INT32_MAX) return false;   // out of range
-			*(int32_t*)(tramp + o + ro) = (int32_t)newrel;
+		const uint8_t* ins = t + o;
+		int l = insn_len(ins);
+		int pi = prefix_len(ins);
+		uint8_t op = ins[pi];
+		bool ok = true;
+		if (op >= 0x70 && op <= 0x7F) {                  // short jcc rel8 -> rel32
+			uint8_t buf[2] = { 0x0F, (uint8_t)(0x80 | (op & 0x0F)) };
+			ok = emit_rel(tramp, tp, buf, 2, (uint8_t*)ins + l + (int8_t)ins[pi + 1]);
+		} else if (op == 0xEB) {                         // short jmp rel8 -> rel32
+			uint8_t buf[1] = { 0xE9 };
+			ok = emit_rel(tramp, tp, buf, 1, (uint8_t*)ins + l + (int8_t)ins[pi + 1]);
+		} else if (op == 0xE8 || op == 0xE9) {           // rel32 call/jmp -> relocate
+			uint8_t* tgt = (uint8_t*)ins + l + *(int32_t*)(ins + pi + 1);
+			for (int k = 0; k < pi; k++) tramp[tp++] = ins[k];
+			uint8_t b[1] = { op };
+			ok = emit_rel(tramp, tp, b, 1, tgt);
+		} else if (op == 0x0F && (ins[pi + 1] & 0xF0) == 0x80) {   // rel32 jcc -> relocate
+			uint8_t* tgt = (uint8_t*)ins + l + *(int32_t*)(ins + pi + 2);
+			for (int k = 0; k < pi; k++) tramp[tp++] = ins[k];
+			uint8_t b[2] = { 0x0F, ins[pi + 1] };
+			ok = emit_rel(tramp, tp, b, 2, tgt);
+		} else {                                         // verbatim (no rel operand)
+			for (int k = 0; k < l; k++) tramp[tp++] = ins[k];
 		}
+		if (!ok) return false;
 		o += l;
 	}
-	write_abs_jmp(tramp + copied, t + copied);
+	write_abs_jmp(tramp + tp, t + copied);
 
-	// patch target prologue with an absolute jmp to the detour (range-independent)
 	if (!make_writable(t, JMP_SIZE)) return false;
 	write_abs_jmp(t, detour);
 	make_exec(t, JMP_SIZE);
