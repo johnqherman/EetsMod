@@ -10,11 +10,17 @@
 | Use for | tools, gameplay overhauls, UI, dev | content, tweaks, level logic |
 
 Native mods are unrestricted machine code — treat them like any executable.
-**Only run native mods you trust.** The Lua tier is the safer surface for
-sharing untrusted content; it still has file/io access (Lua 5.0 `io`), so it is
-not a hard sandbox, but it cannot call arbitrary syscalls the way native can. A
-fully sandboxed content tier (stripped Lua env, no `io`/`os`) would be the next
-step for safe distribution — not yet implemented.
+**Only run native mods you trust.**
+
+### Sandboxed Lua content tier (implemented)
+Drop a `.lua` in `Data/Mods/content/`. It runs in a restricted environment with
+**no `io`/`os`/`dofile`/`loadfile`/`loadstring`/`require`/`package`/`debug`** —
+only the gameplay API (`World_*`, `Object_*`, class ctors), safe stdlib
+(`math`/`string`/`table` + base), and a limited `Mods` API (`register`/`log`/
+`spawn`/`config`). This is the safer surface for sharing untrusted content
+(verified: `io`/`os`/`dofile` resolve to `nil` inside a content mod). It is not a
+hard *resource* sandbox — infinite loops / huge allocations are still possible.
+Trusted full-access Lua mods still go in `Data/Mods/<name>/mod.lua`.
 
 ## Content modding status
 
@@ -27,6 +33,7 @@ step for safe distribution — not yet implemented.
 | **Custom textures/sprites** | advanced/experimental | `Texture::Load` + `IGraphicsEngine::DrawTexture` addresses exposed; no validated wrapper (caller-allocated Texture + GPU upload). File-replace under `Data/` is the reliable route today |
 | **Custom animations** | advanced | `AnimExt::LoadAnimation` address exposed |
 | **Sound** | partial | `Sound_CreateSound`/`Sound_PlayMusic` bindings; add files by replacing under `Data/Sound` |
+| **Asset bundling** | works | native loader copies `mods/assets/<rel>` -> `Data/<rel>` at boot; reference by name via the engine's content path |
 | **Asset replacement** | works | overwrite the file under `Data/` (the `DATA:` alias is C-side only) |
 
 ## Integrity (replays / leaderboards)
@@ -38,8 +45,9 @@ active. An official build should additionally disable score submission while a
 `sim` mod is enabled.
 
 ## Recommended for an official launch
-1. A stripped, sandboxed Lua content tier (no `io`/`os`) for Workshop-style
-   sharing of untrusted content.
-2. A validated asset pipeline (texture/anim/sound import) wrapping the addresses
-   above, so content mods don't ship raw machine code.
-3. Score/replay gating driven by the `sim` flag.
+1. ~~Sandboxed Lua content tier~~ — **done** (`Data/Mods/content/`).
+2. ~~Asset bundling~~ — **done** (`mods/assets/` → `Data/`). Still open: a
+   validated *immediate* texture-draw wrapper (the engine renders via Sprites/
+   anims, not raw `DrawTexture`; needs visual iteration to land safely).
+3. Score/replay gating driven by the `sim` flag (warning emitted today; actual
+   gating needs the score-submit hook).

@@ -183,6 +183,41 @@ local function moddirs()
 	return out
 end
 
+-- ---- sandboxed content tier ----------------------------------------------
+-- Content mods (Data/Mods/content/*.lua) run in a restricted environment with
+-- NO io/os/dofile/loadfile/loadstring/require/package/debug - only the gameplay
+-- API, safe stdlib, and a limited Mods API. For sharing untrusted content.
+-- (Not a hard resource sandbox - infinite loops/huge allocs are still possible.)
+function Mods.makeSandbox()
+	local g = getfenv(1)
+	local sb = {}
+	-- gameplay API: any global Word_Word function (World_*, Object_*, FX_*, ...)
+	for k, v in pairs(g) do
+		if type(v) == "function" and string.find(k, "^[A-Z][A-Za-z]+_") then sb[k] = v end
+		if type(v) == "userdata" then sb[k] = v end          -- class ctors (Vector2, Object, ...)
+	end
+	-- safe base + stdlib
+	local allow = { "tostring","tonumber","type","pairs","ipairs","next","select",
+		"unpack","assert","error","pcall","xpcall","rawget","rawset","rawequal",
+		"setmetatable","getmetatable","print","class","_VERSION","math","string","table" }
+	for _, k in ipairs(allow) do sb[k] = g[k] end
+	-- restricted Mods API (no fs helpers, no eet/raw access)
+	sb.Mods = {
+		register = Mods.register, log = Mods.log, spawn = Mods.spawn,
+		config = Mods.config, frame = 0,
+	}
+	sb._G = sb
+	return sb
+end
+
+local function contentfiles()
+	local out = {}
+	for _, name in ipairs(listentries(Mods.root.."/content")) do
+		if string.sub(name, -4) == ".lua" then table.insert(out, name) end
+	end
+	return out
+end
+
 function Mods.loadAll()
 	Mods.log("framework "..Mods.version.." scanning "..Mods.root)
 	Mods._installHooks()
@@ -197,6 +232,20 @@ function Mods.loadAll()
 		else
 			-- associate the just-registered def(s) with this dir
 			for i = before + 1, table.getn(Mods._list) do dirByName[Mods._list[i].name] = name end
+		end
+	end
+
+	-- phase 1b: sandboxed content mods (Data/Mods/content/*.lua)
+	local sb = Mods.makeSandbox()
+	for _, f in ipairs(contentfiles()) do
+		local path = Mods.root.."/content/"..f
+		local chunk, err = loadfile(path)
+		if not chunk then Mods.log("content '"..f.."' load error: "..tostring(err))
+		else
+			setfenv(chunk, sb)
+			local ok, e = pcall(chunk)
+			if not ok then Mods.log("content '"..f.."' error: "..tostring(e))
+			else Mods.log("loaded content (sandboxed): "..f) end
 		end
 	end
 

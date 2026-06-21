@@ -32,7 +32,7 @@
 #include "eets_engine.h"
 #include "hook.h"
 
-#define EETSMOD_VERSION "0.9.0"
+#define EETSMOD_VERSION "0.10.0"
 
 namespace {
 
@@ -346,10 +346,28 @@ void install_engine_event_hooks() {
 	try_hook("object_killed (Object::KillMe)",          (void*)Eets::addr::hook_Object_KillMe,              (void*)det_KillMe,       (void**)&orig_KillMe);
 }
 
+// ---- asset bundling: mods/assets/<rel> -> Data/<rel> ----------------------
+// Lets a mod ship custom textures/anims/sounds/levels that the engine then loads
+// by name via its normal content path (World_CreateEffect, blueprints, Sound, GUI).
+// NOTE: overwrites matching files under Data/ (intentional override) - originals
+// are the user's game files; back up Data/ if unsure.
+void install_assets() {
+	std::string adir = modsdir() + "/assets";
+	if (!exists(adir)) return;
+	int n = 0;
+	FILE* p = popen(("find \"" + adir + "\" -type f 2>/dev/null | wc -l").c_str(), "r");
+	if (p) { char b[32]; if (fgets(b, sizeof(b), p)) n = atoi(b); pclose(p); }
+	if (n <= 0) return;
+	if (system(("cp -r --no-preserve=mode \"" + adir + "\"/. Data/ 2>>Log/native_mods.log").c_str()) == 0)
+		logline("assets: installed %d file(s) from mods/assets/ into Data/", n);
+	else logline("assets: install failed");
+}
+
 // ---- discovery + load -----------------------------------------------------
 void load_all() {
 	install_guards();
 	check_buildid();
+	install_assets();
 	std::string dir = modsdir();
 	mkdir(cachedir().c_str(), 0755);
 	load_disabled();
