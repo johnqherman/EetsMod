@@ -131,6 +131,23 @@ plus curated methods/UI; `eets_engine.h` adds typed wrappers and 2D primitives
 For any binding without a wrapper, cast `addr::X` to its signature (shown in the
 comment). Regenerate addresses after a game update: `gen_engine_header.sh`.
 
+**Object extensions** - the behaviour components Eets and objects carry are
+reachable from native, same surface as Lua. `Object_Get<Type>Extension(o)` returns
+a typed pointer or null; the methods take that pointer:
+
+```cpp
+if (WalkingExtension* w = Object_GetWalkingExtension(World_GetEets())) {
+    if (WalkingExtension_GetState(w) == WES_Falling) WalkingExtension_SetWalkSpeed(w, 0);
+}
+ForEachHeld(Object_GetHoldingExtension(o), [](Object* held){ /* ... */ });
+ForEachCollision(o, [](const CollisionReport& r){ /* r.id_2, r.relative_velocity */ });
+```
+
+Covered types: Walking, Thwacker, Edible, Lighting, Suckable, Position, Rolling,
+Holding, Flying, Emotion, EmotionPlatform, Physics. `ForEachCollision` walks the
+physics report deque (enabling accumulation, matching Lua `GetCollisionReports`).
+See `examples/extdemo.cpp`.
+
 ## Robustness
 
 - **Crash isolation** - a faulting mod callback is caught and the mod disabled;

@@ -146,4 +146,60 @@ constexpr uintptr_t Sprite_GetWidth                    = 0x545510;  // (Sprite*)
 constexpr uintptr_t Sprite_GetHeight                   = 0x545520;  // (Sprite*) -> unsigned
 constexpr uintptr_t Sprite_GetDiffuseUV                = 0x5459d0;  // (Sprite*, Vector2& uv0, Vector2& uv1) per-frame texcoords
 
+// ===== object -> extension accessors (each reads a fixed Object+offset, returns Ext* or null) =====
+constexpr uintptr_t Object_GetPositionExtension        = 0x5c9d80;  // (Object*) -> PositionExtension*
+constexpr uintptr_t Object_GetSuckableExtension        = 0x5c9d90;  // (Object*) -> SuckableExtension*
+constexpr uintptr_t Object_GetWalkingExtension         = 0x5c9da0;  // (Object*) -> WalkingExtension*
+constexpr uintptr_t Object_GetThwackerExtension        = 0x5c9db0;  // (Object*) -> ThwackerExtension*
+constexpr uintptr_t Object_GetEmotionPlatformExtension = 0x5c9dc0;  // (Object*) -> EmotionPlatformExtension*
+constexpr uintptr_t Object_GetEdibleExtension          = 0x5c9dd0;  // (Object*) -> EdibleExtension*
+constexpr uintptr_t Object_GetEmotionExtension         = 0x5c9de0;  // (Object*) -> EmotionExtension*
+constexpr uintptr_t Object_GetFlyingExtension          = 0x5c9df0;  // (Object*) -> FlyingExtension*
+constexpr uintptr_t Object_GetLightingExtension        = 0x5c9e00;  // (Object*) -> LightingExtension*
+constexpr uintptr_t Object_GetHoldingExtension         = 0x5c9e10;  // (Object*) -> HoldingExtension*
+constexpr uintptr_t Object_GetRollingExtension         = 0x5c9e20;  // (Object*) -> RollingExtension*
+
+// physics extension lives at Object+0x90 (no templated getter); accumulate enables + returns the report deque
+constexpr uintptr_t PhysicsExtension_GetAccumulate     = 0x5e8290;  // (Physics*) -> deque<WorldCollisionReport>& (sets accumulate flag)
+constexpr uintptr_t PhysicsExtension_GetCollisions     = 0x5e8280;  // (Physics*) const -> deque<WorldCollisionReport>&
+
+// ===== extension methods (thiscall: first arg is the extension pointer) =====
+constexpr uintptr_t WalkingExtension_SetWalkSpeed      = 0x5f18c0;  // (Walking*, float)
+constexpr uintptr_t WalkingExtension_SetActive         = 0x5f1a10;  // (Walking*, bool)
+constexpr uintptr_t WalkingExtension_GetState          = 0x5eef60;  // (Walking*) const -> unsigned long (WES_*)
+constexpr uintptr_t WalkingExtension_StartWalking      = 0x5f1be0;  // (Walking*)
+constexpr uintptr_t WalkingExtension_StopWalking       = 0x5f1b90;  // (Walking*)
+constexpr uintptr_t WalkingExtension_KnockDown         = 0x5ef460;  // (Walking*, Vector2 const&)
+constexpr uintptr_t WalkingExtension_SetNoWalkFrame    = 0x5f1880;  // (Walking*, int)
+constexpr uintptr_t WalkingExtension_ForceReset        = 0x5eedd0;  // (Walking*)
+constexpr uintptr_t WalkingExtension_Reset             = 0x5eeeb0;  // (Walking*)
+constexpr uintptr_t ThwackerExtension_SetThwackSpeed   = 0x5edeb0;  // (Thwacker*, float)
+constexpr uintptr_t ThwackerExtension_IsThwacking      = 0x5ed250;  // (Thwacker*) const -> bool
+constexpr uintptr_t ThwackerExtension_GetCentre        = 0x5ed200;  // (Thwacker*) const -> Vector2
+constexpr uintptr_t EdibleExtension_GetEaten           = 0x5e46e0;  // (Edible*) const -> bool
+constexpr uintptr_t EdibleExtension_GetEater           = 0x5e46d0;  // (Edible*) const -> unsigned int
+constexpr uintptr_t EdibleExtension_IsEatenBy          = 0x5e4d00;  // (Edible*, unsigned int) const -> bool
+constexpr uintptr_t LightingExtension_IsLit            = 0x5e7700;  // (Lighting*) const -> bool
+constexpr uintptr_t SuckableExtension_WasRecentlySucked= 0x5eb710;  // (Suckable*) const -> bool
+constexpr uintptr_t SuckableExtension_SetSucked        = 0x5eb700;  // (Suckable*)
+constexpr uintptr_t PositionExtension_IsForeground     = 0x5ead50;  // (Position*) const -> bool
+constexpr uintptr_t PositionExtension_IsBackground     = 0x5ead40;  // (Position*) const -> bool
+constexpr uintptr_t PositionExtension_SetIsForeground  = 0x5af950;  // (Position*, bool)
+constexpr uintptr_t PositionExtension_SetIsBackground  = 0x5af960;  // (Position*, bool)
+constexpr uintptr_t RollingExtension_IsRolling         = 0x5eafd0;  // (Rolling*) const -> bool
+constexpr uintptr_t HoldingExtension_IsHolding         = 0x5e68e0;  // (Holding*, Object const*) const -> bool
+constexpr uintptr_t HoldingExtension_IsHoldingAny      = 0x5e69c0;  // (Holding*) const -> bool
+constexpr uintptr_t HoldingExtension_HoldObject        = 0x5e6680;  // (Holding*, Object*)
+constexpr uintptr_t HoldingExtension_ReleaseAll        = 0x5e6920;  // (Holding*)
+constexpr uintptr_t HoldingExtension_ReleaseObject     = 0x5e6830;  // (Holding*, Object const*)
+constexpr uintptr_t HoldingExtension_GetHolds          = 0x5af970;  // (Holding*) const -> vector<Object*>&
+constexpr uintptr_t FlyingExtension_SetState           = 0x5e6480;  // (Flying*, unsigned long FS_*)
+constexpr uintptr_t FlyingExtension_GetState           = 0x5e6490;  // (Flying*) const -> unsigned long (FS_*)
+constexpr uintptr_t EmotionExtension_RecentlyChanged   = 0x5e5680;  // (Emotion*) const -> bool
+constexpr uintptr_t EmotionExtension_GetEmotionName    = 0x5e5420;  // (Emotion*) const -> char const*
+constexpr uintptr_t EmotionExtension_SetEmotionName    = 0x5e5430;  // (Emotion*, char const*)
+constexpr uintptr_t EmotionPlatformExtension_GetCurrentEmotion   = 0x5e5e80;  // (EmoPlat*) const -> unsigned int
+constexpr uintptr_t EmotionPlatformExtension_MatchesCurrentEmotion = 0x5e5e90;  // (EmoPlat*) const -> bool
+constexpr uintptr_t EmotionPlatformExtension_SetEmotion          = 0x5e5d10;  // (EmoPlat*, unsigned int)
+
 }} // namespace Eets::addr

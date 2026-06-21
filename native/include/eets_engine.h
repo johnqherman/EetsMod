@@ -21,6 +21,27 @@ struct Object;        // opaque engine type
 struct MotionModel;   // opaque
 struct ObjectMgr;     // opaque
 
+// extension types: object behaviour components, fetched from an Object (see Get*Extension below)
+struct PositionExtension; struct SuckableExtension; struct WalkingExtension;
+struct ThwackerExtension; struct EmotionPlatformExtension; struct EdibleExtension;
+struct EmotionExtension; struct FlyingExtension; struct LightingExtension;
+struct HoldingExtension; struct RollingExtension; struct PhysicsExtension;
+
+// WalkingExtension::GetState values
+enum WalkState { WES_Walking = 0, WES_Rise = 1, WES_Falling = 2, WES_Jumping = 3,
+                 WES_Standing = 4, WES_Rolling = 5, WES_Thwacking = 6, WES_Alert = 7, WES_Inactive = 8 };
+// FlyingExtension state values
+enum FlyState { FS_Up = 0, FS_Down = 1, FS_Left = 2, FS_Right = 3, FS_Disabled = 4, FS_Count = 5 };
+
+// a single contact from PhysicsExtension's report deque (luabind layout)
+struct CollisionReport {
+	Vector2 collision_point;      // +0x00
+	Vector2 relative_velocity;    // +0x08
+	unsigned long collision_count;// +0x10
+	unsigned long id_1;           // +0x18
+	unsigned long id_2;           // +0x20
+};
+
 // FontPrintSizes enum -> pixel height: 1=13 2=14 3=20 4=28 5=35
 enum FontSize { FONT_TINY = 1, FONT_SMALL = 2, FONT_NORMAL = 3, FONT_BIG = 4, FONT_HUGE = 5 };
 // FontPrintStyles -> typeface. STYLE_GEEK (geekabyte) is the in-game gui font.
@@ -321,6 +342,100 @@ inline void World_ShowGoalBoxFX(const char* a, const Vector2& b) { ((void(*)(con
 inline void World_ShowPuzzleAsNew() { ((void(*)())addr::World_ShowPuzzleAsNew)(); }
 inline void World_ShowSolutionTime(float a) { ((void(*)(float))addr::World_ShowSolutionTime)(a); }
 inline void World_ShowTutorialDialog(const char* a) { ((void(*)(const char*))addr::World_ShowTutorialDialog)(a); }
+
+// ===== object extensions =====
+// each accessor returns null if the object lacks that extension; always null-check.
+inline PositionExtension* Object_GetPositionExtension(Object* o) { return ((PositionExtension*(*)(Object*))addr::Object_GetPositionExtension)(o); }
+inline SuckableExtension* Object_GetSuckableExtension(Object* o) { return ((SuckableExtension*(*)(Object*))addr::Object_GetSuckableExtension)(o); }
+inline WalkingExtension* Object_GetWalkingExtension(Object* o) { return ((WalkingExtension*(*)(Object*))addr::Object_GetWalkingExtension)(o); }
+inline ThwackerExtension* Object_GetThwackerExtension(Object* o) { return ((ThwackerExtension*(*)(Object*))addr::Object_GetThwackerExtension)(o); }
+inline EmotionPlatformExtension* Object_GetEmotionPlatformExtension(Object* o) { return ((EmotionPlatformExtension*(*)(Object*))addr::Object_GetEmotionPlatformExtension)(o); }
+inline EdibleExtension* Object_GetEdibleExtension(Object* o) { return ((EdibleExtension*(*)(Object*))addr::Object_GetEdibleExtension)(o); }
+inline EmotionExtension* Object_GetEmotionExtension(Object* o) { return ((EmotionExtension*(*)(Object*))addr::Object_GetEmotionExtension)(o); }
+inline FlyingExtension* Object_GetFlyingExtension(Object* o) { return ((FlyingExtension*(*)(Object*))addr::Object_GetFlyingExtension)(o); }
+inline LightingExtension* Object_GetLightingExtension(Object* o) { return ((LightingExtension*(*)(Object*))addr::Object_GetLightingExtension)(o); }
+inline HoldingExtension* Object_GetHoldingExtension(Object* o) { return ((HoldingExtension*(*)(Object*))addr::Object_GetHoldingExtension)(o); }
+inline RollingExtension* Object_GetRollingExtension(Object* o) { return ((RollingExtension*(*)(Object*))addr::Object_GetRollingExtension)(o); }
+// physics has no templated getter; it sits at a fixed Object slot
+inline PhysicsExtension* Object_GetPhysicsExtension(Object* o) { return o ? *(PhysicsExtension**)((char*)o + 0x90) : nullptr; }
+
+inline void WalkingExtension_SetWalkSpeed(WalkingExtension* w, float s) { ((void(*)(WalkingExtension*, float))addr::WalkingExtension_SetWalkSpeed)(w, s); }
+inline void WalkingExtension_SetActive(WalkingExtension* w, bool a) { ((void(*)(WalkingExtension*, bool))addr::WalkingExtension_SetActive)(w, a); }
+inline unsigned long WalkingExtension_GetState(WalkingExtension* w) { return ((unsigned long(*)(WalkingExtension*))addr::WalkingExtension_GetState)(w); }
+inline void WalkingExtension_StartWalking(WalkingExtension* w) { ((void(*)(WalkingExtension*))addr::WalkingExtension_StartWalking)(w); }
+inline void WalkingExtension_StopWalking(WalkingExtension* w) { ((void(*)(WalkingExtension*))addr::WalkingExtension_StopWalking)(w); }
+inline void WalkingExtension_KnockDown(WalkingExtension* w, const Vector2& dir) { ((void(*)(WalkingExtension*, const Vector2&))addr::WalkingExtension_KnockDown)(w, dir); }
+inline void WalkingExtension_SetNoWalkFrame(WalkingExtension* w, int f) { ((void(*)(WalkingExtension*, int))addr::WalkingExtension_SetNoWalkFrame)(w, f); }
+inline void WalkingExtension_ForceReset(WalkingExtension* w) { ((void(*)(WalkingExtension*))addr::WalkingExtension_ForceReset)(w); }
+inline void WalkingExtension_Reset(WalkingExtension* w) { ((void(*)(WalkingExtension*))addr::WalkingExtension_Reset)(w); }
+
+inline void ThwackerExtension_SetThwackSpeed(ThwackerExtension* t, float s) { ((void(*)(ThwackerExtension*, float))addr::ThwackerExtension_SetThwackSpeed)(t, s); }
+inline bool ThwackerExtension_IsThwacking(ThwackerExtension* t) { return ((bool(*)(ThwackerExtension*))addr::ThwackerExtension_IsThwacking)(t); }
+inline Vector2 ThwackerExtension_GetCentre(ThwackerExtension* t) { return ((Vector2(*)(ThwackerExtension*))addr::ThwackerExtension_GetCentre)(t); }
+
+inline bool EdibleExtension_GetEaten(EdibleExtension* e) { return ((bool(*)(EdibleExtension*))addr::EdibleExtension_GetEaten)(e); }
+inline unsigned EdibleExtension_GetEater(EdibleExtension* e) { return ((unsigned(*)(EdibleExtension*))addr::EdibleExtension_GetEater)(e); }
+inline bool EdibleExtension_IsEatenBy(EdibleExtension* e, unsigned id) { return ((bool(*)(EdibleExtension*, unsigned))addr::EdibleExtension_IsEatenBy)(e, id); }
+
+inline bool LightingExtension_IsLit(LightingExtension* l) { return ((bool(*)(LightingExtension*))addr::LightingExtension_IsLit)(l); }
+
+inline bool SuckableExtension_WasRecentlySucked(SuckableExtension* s) { return ((bool(*)(SuckableExtension*))addr::SuckableExtension_WasRecentlySucked)(s); }
+inline void SuckableExtension_SetSucked(SuckableExtension* s) { ((void(*)(SuckableExtension*))addr::SuckableExtension_SetSucked)(s); }
+
+inline bool PositionExtension_IsForeground(PositionExtension* p) { return ((bool(*)(PositionExtension*))addr::PositionExtension_IsForeground)(p); }
+inline bool PositionExtension_IsBackground(PositionExtension* p) { return ((bool(*)(PositionExtension*))addr::PositionExtension_IsBackground)(p); }
+inline void PositionExtension_SetIsForeground(PositionExtension* p, bool v) { ((void(*)(PositionExtension*, bool))addr::PositionExtension_SetIsForeground)(p, v); }
+inline void PositionExtension_SetIsBackground(PositionExtension* p, bool v) { ((void(*)(PositionExtension*, bool))addr::PositionExtension_SetIsBackground)(p, v); }
+
+inline bool RollingExtension_IsRolling(RollingExtension* r) { return ((bool(*)(RollingExtension*))addr::RollingExtension_IsRolling)(r); }
+
+inline bool HoldingExtension_IsHolding(HoldingExtension* h, Object* o) { return ((bool(*)(HoldingExtension*, Object*))addr::HoldingExtension_IsHolding)(h, o); }
+inline bool HoldingExtension_IsHoldingAny(HoldingExtension* h) { return ((bool(*)(HoldingExtension*))addr::HoldingExtension_IsHoldingAny)(h); }
+inline void HoldingExtension_HoldObject(HoldingExtension* h, Object* o) { ((void(*)(HoldingExtension*, Object*))addr::HoldingExtension_HoldObject)(h, o); }
+inline void HoldingExtension_ReleaseAll(HoldingExtension* h) { ((void(*)(HoldingExtension*))addr::HoldingExtension_ReleaseAll)(h); }
+inline void HoldingExtension_ReleaseObject(HoldingExtension* h, Object* o) { ((void(*)(HoldingExtension*, Object*))addr::HoldingExtension_ReleaseObject)(h, o); }
+// GetHolds returns a std::vector<Object*> const& (pointer to {begin,end,cap}); walk it
+template <class Fn>
+inline void ForEachHeld(HoldingExtension* h, Fn fn) {
+	if (!h) return;
+	char* vec = (char*)((void*(*)(HoldingExtension*))addr::HoldingExtension_GetHolds)(h);
+	if (!vec) return;
+	Object** begin = *(Object***)(vec + 0);
+	Object** end   = *(Object***)(vec + 8);
+	for (Object** p = begin; p && p < end; ++p) fn(*p);
+}
+
+inline void FlyingExtension_SetState(FlyingExtension* f, unsigned long s) { ((void(*)(FlyingExtension*, unsigned long))addr::FlyingExtension_SetState)(f, s); }
+inline unsigned long FlyingExtension_GetState(FlyingExtension* f) { return ((unsigned long(*)(FlyingExtension*))addr::FlyingExtension_GetState)(f); }
+
+inline bool EmotionExtension_RecentlyChanged(EmotionExtension* e) { return ((bool(*)(EmotionExtension*))addr::EmotionExtension_RecentlyChanged)(e); }
+inline const char* EmotionExtension_GetEmotionName(EmotionExtension* e) { return ((const char*(*)(EmotionExtension*))addr::EmotionExtension_GetEmotionName)(e); }
+inline void EmotionExtension_SetEmotionName(EmotionExtension* e, const char* n) { ((void(*)(EmotionExtension*, const char*))addr::EmotionExtension_SetEmotionName)(e, n); }
+
+inline unsigned EmotionPlatformExtension_GetCurrentEmotion(EmotionPlatformExtension* e) { return ((unsigned(*)(EmotionPlatformExtension*))addr::EmotionPlatformExtension_GetCurrentEmotion)(e); }
+inline bool EmotionPlatformExtension_MatchesCurrentEmotion(EmotionPlatformExtension* e) { return ((bool(*)(EmotionPlatformExtension*))addr::EmotionPlatformExtension_MatchesCurrentEmotion)(e); }
+inline void EmotionPlatformExtension_SetEmotion(EmotionPlatformExtension* e, unsigned id) { ((void(*)(EmotionPlatformExtension*, unsigned))addr::EmotionPlatformExtension_SetEmotion)(e, id); }
+
+// iterate an object's accumulated collision contacts. matches the Lua GetCollisionReports path:
+// reading enables accumulation, so the engine keeps refilling the deque each step.
+template <class Fn>
+inline void ForEachCollision(Object* o, Fn fn) {
+	PhysicsExtension* phys = Object_GetPhysicsExtension(o);
+	if (!phys) return;
+	// std::deque<CollisionReport>; element is 0x28 bytes, libstdc++ chunk holds 512/0x28 = 12 per node
+	char* dq = (char*)((void*(*)(PhysicsExtension*))addr::PhysicsExtension_GetAccumulate)(phys);
+	if (!dq) return;
+	const long bufsz = 12;
+	char*  cur     = *(char**)(dq + 0x10);  // start._M_cur
+	char*  last    = *(char**)(dq + 0x20);  // start._M_last
+	char** node    = *(char***)(dq + 0x28); // start._M_node
+	char*  fin_cur = *(char**)(dq + 0x30);  // finish._M_cur
+	while (cur != fin_cur) {
+		fn(*(const CollisionReport*)cur);
+		cur += sizeof(CollisionReport);
+		if (cur == last) { ++node; cur = *node; last = *node + bufsz * sizeof(CollisionReport); }
+	}
+}
 
 // pure math on our Vector2 (no engine call needed)
 inline float VecDot(const Vector2& a, const Vector2& b) { return a.x*b.x + a.y*b.y; }

@@ -21,7 +21,7 @@
 #include "eets_engine.h"
 #include "hook.h"
 
-#define EETSMOD_VERSION "0.15.0"
+#define EETSMOD_VERSION "0.16.0"
 
 namespace {
 
