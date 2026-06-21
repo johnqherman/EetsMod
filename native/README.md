@@ -22,14 +22,14 @@ detour engine (`hook.h`) can hook arbitrary engine functions.
 ```sh
 cd native
 make
-make install GAME=/path/to/Eets        # loader + headers + sample mods
-EETS_DIR=/path/to/Eets ../run-eets.sh   # or Steam launch option (below)
+make install GAME=/path/to/Eets        # loader + headers (or: ../bin/eetsmod setup)
 ```
 
-Steam: Properties -> Launch Options -> `LD_PRELOAD=/full/path/Eets/libeetsmod.so %command%`
-(`tools/steam-launch-option.sh` prints it). Mods are `.cpp` compiled on launch, so
-`g++` must be on PATH; Steam's runtime may lack it - run once from a terminal to
-cache builds, or ship prebuilt `.so`. Logs: `<game>/Log/native_mods.log`.
+`eetsmod setup` prints the Steam launch option to set once:
+`LD_PRELOAD=/full/path/Eets/libeetsmod.so %command%`. Players install a prebuilt
+`.eetsmod` and need no compiler; `g++` is only needed to *build* a mod (loose `.cpp`
+mods are also compiled on launch, so `g++` must be on PATH then). Logs:
+`<game>/Log/native_mods.log`.
 In-game manager: click the **MODS** button (bottom-left of the main menu) or press
 `F1` - enable/disable mods, edit config live (`-`/`+`), open the mods folder.
 
