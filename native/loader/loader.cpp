@@ -32,7 +32,7 @@
 #include "eets_engine.h"
 #include "hook.h"
 
-#define EETSMOD_VERSION "0.7.0"
+#define EETSMOD_VERSION "0.8.0"
 
 namespace {
 
@@ -52,8 +52,9 @@ struct Mod {
 	time_t      srcmtime = 0;
 	bool        disabled = false;
 	// manifest (optional, from <name>.cfg meta keys)
-	std::string version, author;
+	std::string version, author, minFw;
 	int         priority = 0;
+	bool        sim = false;          // affects simulation (replays/leaderboard)
 	std::vector<std::string> requires_;
 	// entry points
 	InitFn      init = nullptr;
@@ -75,6 +76,7 @@ bool g_overlay = false;          // F1 toggles the mod-list overlay
 // fullscreen, where it differs from the window/configured resolution).
 int g_vp_w = 0, g_vp_h = 0;              // committed (last full frame)
 int g_vp_cur_w = 0, g_vp_cur_h = 0;     // max seen during the current frame
+const int OV_X = 8, OV_Y = 8, OV_W = 320, OV_TITLE = 40, OV_ROWH = 26;  // F1 manager layout
 
 FILE* logfile() { static FILE* f = fopen("Log/native_mods.log", "a"); return f; }
 void logline(const char* fmt, ...) {
@@ -250,8 +252,9 @@ std::map<std::string, std::string>& cfg_for(const char* mod) {
 void read_manifest(Mod& m) {
 	auto& c = cfg_for(m.name.c_str());
 	auto get = [&](const char* k)->std::string{ auto i=c.find(k); return i!=c.end()?i->second:std::string(); };
-	m.version = get("version"); m.author = get("author");
+	m.version = get("version"); m.author = get("author"); m.minFw = get("min_framework");
 	std::string pr = get("priority"); if (!pr.empty()) m.priority = atoi(pr.c_str());
+	std::string sm = get("sim"); m.sim = (sm == "1" || sm == "true");
 	std::string req = get("requires");
 	size_t p = 0;
 	while (p < req.size()) {
@@ -264,6 +267,45 @@ void read_manifest(Mod& m) {
 bool have_mod(const std::string& name) {
 	for (auto& m : g_mods) if (m.name == name && !m.disabled) return true;
 	return false;
+}
+// compare dotted versions: returns <0,0,>0
+int vercmp(const std::string& a, const std::string& b) {
+	int ai = 0, bi = 0;
+	while (ai < (int)a.size() || bi < (int)b.size()) {
+		int x = 0, y = 0;
+		while (ai < (int)a.size() && a[ai] != '.') x = x*10 + (a[ai]-'0'), ai++;
+		while (bi < (int)b.size() && b[bi] != '.') y = y*10 + (b[bi]-'0'), bi++;
+		if (x != y) return x - y;
+		if (ai < (int)a.size()) ai++;
+		if (bi < (int)b.size()) bi++;
+	}
+	return 0;
+}
+
+// ---- user enable/disable persistence (mods/.disabled) ---------------------
+std::vector<std::string> g_userDisabled;
+bool is_user_disabled(const std::string& n) {
+	for (auto& d : g_userDisabled) if (d == n) return true; return false;
+}
+void load_disabled() {
+	g_userDisabled.clear();
+	FILE* f = fopen((modsdir() + "/.disabled").c_str(), "r");
+	if (!f) return;
+	char line[256];
+	while (fgets(line, sizeof(line), f)) { std::string s = trim(line); if (!s.empty()) g_userDisabled.push_back(s); }
+	fclose(f);
+}
+void save_disabled() {
+	FILE* f = fopen((modsdir() + "/.disabled").c_str(), "w");
+	if (!f) return;
+	for (auto& d : g_userDisabled) fprintf(f, "%s\n", d.c_str());
+	fclose(f);
+}
+void set_user_disabled(const std::string& n, bool dis) {
+	bool has = is_user_disabled(n);
+	if (dis && !has) g_userDisabled.push_back(n);
+	else if (!dis && has) { std::vector<std::string> v; for (auto& d : g_userDisabled) if (d != n) v.push_back(d); g_userDisabled = v; }
+	save_disabled();
 }
 
 // ---- events ---------------------------------------------------------------
@@ -310,6 +352,7 @@ void load_all() {
 	check_buildid();
 	std::string dir = modsdir();
 	mkdir(cachedir().c_str(), 0755);
+	load_disabled();
 	logline("eetsmod v%s  include=%s compiler=%s", EETSMOD_VERSION, includedir().c_str(), compiler());
 	logline("loader: scanning %s", dir.c_str());
 
@@ -346,6 +389,14 @@ void load_all() {
 		        m.update?1:0, m.onkey?1:0, m.onmouse?1:0, m.onevent?1:0,
 		        m.src.empty() ? " [prebuilt]" : " [compiled]");
 	}
+	// user-disabled (persisted) + version compat + deps
+	for (auto& m : g_mods) {
+		if (is_user_disabled(m.name)) { m.disabled = true; logline("'%s' disabled by user", m.name.c_str()); }
+		if (!m.minFw.empty() && vercmp(EETSMOD_VERSION, m.minFw) < 0) {
+			m.disabled = true;
+			logline("'%s' needs framework >= %s (have %s) - disabled", m.name.c_str(), m.minFw.c_str(), EETSMOD_VERSION);
+		}
+	}
 	for (auto& m : g_mods) {
 		for (auto& dep : m.requires_) if (!have_mod(dep)) {
 			m.disabled = true;
@@ -358,6 +409,9 @@ void load_all() {
 	for (auto& m : g_mods) if (m.init && !m.disabled) guard(&m, [&]{ m.init(); });
 	int active = 0; for (auto& m : g_mods) if (!m.disabled) active++;
 	logline("loader: %d/%zu mod(s) active", active, g_mods.size());
+	// replay/leaderboard integrity warning
+	for (auto& m : g_mods) if (m.sim && !m.disabled)
+		logline("integrity: '%s' affects simulation - replays/leaderboards may be invalid", m.name.c_str());
 }
 
 void poll_reload() {
@@ -426,6 +480,23 @@ struct MotionView { unsigned type, ts, win, which, state; int x, y, xrel, yrel; 
 struct ButtonView { unsigned type, ts, win, which; unsigned char button, state, clicks, pad; int x, y; };
 struct WheelView { unsigned type, ts, win, which; int x, y; unsigned dir; };
 
+// F1 manager: toggle the mod whose row was clicked (render-space mx,my). Returns
+// true if the click landed on the manager (so it shouldn't pass through).
+bool manage_click(int mx, int my) {
+	if (mx < OV_X || mx >= OV_X + OV_W) return false;
+	int rel = my - (OV_Y + OV_TITLE);
+	if (rel < 0) return my >= OV_Y;                 // clicked title bar: consume, no-op
+	int i = rel / OV_ROWH;
+	if (i < 0 || i >= (int)g_mods.size()) return false;
+	Mod& m = g_mods[i];
+	bool dis = !m.disabled;
+	m.disabled = dis;
+	set_user_disabled(m.name, dis);
+	logline("manager: %s %s", m.name.c_str(), dis ? "disabled" : "enabled");
+	if (!dis && m.init) guard(&m, [&]{ m.init(); });   // re-enable -> re-init
+	return true;
+}
+
 } // namespace
 
 namespace Eets {
@@ -491,18 +562,26 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		if (!once) { once = true; logline("menu banner: \"%s\" (screen h=%d)", banner, h); }
 	}
 
-	// F1 mod-list overlay (top-left, any screen)
+	// F1 interactive mod manager (top-left); click a row to enable/disable
 	if (g_loaded && g_overlay) {
+		using namespace Eets;
+		int H = OV_TITLE + (int)g_mods.size() * OV_ROWH + 14;
+		FillRect(OV_X + 5, OV_Y + 6, OV_W, H, Colour(0, 0, 0, 110));
+		FillRect(OV_X, OV_Y, OV_W, H, Colour(205, 40, 35, 255));
+		DrawRect(OV_X, OV_Y, OV_W, H, Colour(0, 0, 0, 255), 4.0f);
+		FillRect(OV_X + 4, OV_Y + 4, OV_W - 8, OV_TITLE - 6, Colour(165, 22, 20, 255));
 		char line[160];
-		snprintf(line, sizeof(line), "eetsmod v%s - %zu mods", EETSMOD_VERSION, g_mods.size());
-		Eets::DrawTextOutlined(10, 10, line, Eets::FONT_BIG, Eets::Colour(255, 255, 0, 255));
-		int y = 44;
+		snprintf(line, sizeof(line), "MODS v%s (F1)", EETSMOD_VERSION);
+		DrawTextOutlined(OV_X + 10, OV_Y + 8, line, FONT_BIG, Colour(255, 232, 40, 255));
+		int y = OV_Y + OV_TITLE;
 		for (auto& m : g_mods) {
-			snprintf(line, sizeof(line), "%s %s%s", m.disabled ? "[x]" : "[*]",
-			         m.name.c_str(), m.version.empty() ? "" : (" v" + m.version).c_str());
-			Eets::Colour c = m.disabled ? Eets::Colour(255, 80, 80, 255) : Eets::Colour(180, 255, 180, 255);
-			Eets::DrawTextOutlined(10, y, line, Eets::FONT_NORMAL, c);
-			y += 24;
+			bool hov = g_mouse_x >= OV_X && g_mouse_x < OV_X + OV_W && g_mouse_y >= y && g_mouse_y < y + OV_ROWH;
+			if (hov) FillRect(OV_X + 4, y, OV_W - 8, OV_ROWH, Colour(255, 120, 55, 160));
+			DrawTextOutlined(OV_X + 10, y + 4, m.disabled ? "OFF" : "ON",
+			                 FONT_NORMAL, m.disabled ? Colour(255, 90, 80, 255) : Colour(255, 210, 40, 255));
+			snprintf(line, sizeof(line), "%s%s", m.name.c_str(), m.version.empty() ? "" : (" v" + m.version).c_str());
+			DrawTextOutlined(OV_X + 64, y + 4, line, FONT_NORMAL, Colour(255, 255, 255, 255));
+			y += OV_ROWH;
 		}
 	}
 	g_vp_cur_w = g_vp_cur_h = 0;     // reset; recomputed next frame
@@ -540,6 +619,8 @@ int SDL_PollEvent(void* event) {
 		} else if (type == SDL_MOUSEBUTTONDOWN || type == SDL_MOUSEBUTTONUP) {
 			ButtonView* b = (ButtonView*)event; map_mouse(b->x, b->y, b->win);
 			int mx = g_mouse_x, my = g_mouse_y, down = (type == SDL_MOUSEBUTTONDOWN) ? 1 : 0, btn = b->button;
+			// manager click (consume on press so it doesn't pass to mods/game)
+			if (g_overlay && down && btn == 1 && manage_click(mx, my)) { return r; }
 			for (auto& m : g_mods) if (m.onmouse && !m.disabled) guard(&m, [&]{ m.onmouse(mx, my, btn, down); });
 		} else if (type == SDL_MOUSEWHEEL) {
 			WheelView* w = (WheelView*)event;
