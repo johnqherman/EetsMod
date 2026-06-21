@@ -1,11 +1,11 @@
 // eets_addr_win.h - Windows address skeleton (NOT yet filled).
 //
-// The Windows build of Eets is a different binary with different addresses, and
+// the Windows build of Eets is a different binary with different addresses, and
 // PE images are ASLR-relocated, so Windows uses base + RVA (unlike the Linux
 // non-PIE absolutes in eets_addr.h).
 //
 // TO FILL: run gen_engine_header.sh against the Windows Eets.exe in Ghidra,
-// convert each absolute to an RVA (addr - image_base), and paste below. Then the
+// convert each absolute to an RVA (addr - image_base), and paste below. then the
 // loader resolves real addresses as plat::module_base() + rva.
 #pragma once
 #include <cstdint>

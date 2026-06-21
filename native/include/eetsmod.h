@@ -1,75 +1,75 @@
 // eetsmod.h - public API for writing native (C++) Eets mods.
 //
-// A mod is a shared object (.so) placed in the game's `mods/` directory. The
-// loader (libeetsmod.so, LD_PRELOAD'd) dlopen's it and calls the optional
-// entry points below. Mods call engine functions via eets_engine.h.
+// a mod is a shared object (.so) in the game's `mods/` directory. the loader
+// (libeetsmod.so, LD_PRELOAD'd) dlopen's it and calls the optional entry points
+// below. mods call engine functions via eets_engine.h.
 #pragma once
 #include "eets_engine.h"
 
 extern "C" {
 
-// Called once, on the first rendered frame (engine fully initialised). Optional.
+// called once, on the first rendered frame (engine fully initialised). optional.
 void EetsMod_Init();
 
-// Called every frame, just before the back buffer is presented. Optional.
+// called every frame, just before the back buffer is presented. optional.
 void EetsMod_Update();
 
-// Called for each keyboard event. `keycode` is an SDL keycode (SDLK_*),
+// called for each keyboard event. `keycode` is an SDL keycode (SDLK_*),
 // `mods` is the SDL key-modifier bitmask (KMOD_*), `down` is 1 on press,
-// 0 on release. Optional.
+// 0 on release. optional.
 void EetsMod_OnKey(int keycode, int mods, int down);
 
-// Mouse motion/button. button: EMBTN_MOTION(-1), EMBTN_LEFT(1), EMBTN_MIDDLE(2),
-// EMBTN_RIGHT(3); down 1/0 (0 for motion). (x, y) are window pixels. Optional.
+// mouse motion/button. button: EMBTN_MOTION(-1), EMBTN_LEFT(1), EMBTN_MIDDLE(2),
+// EMBTN_RIGHT(3); down 1/0 (0 for motion). (x, y) are window pixels. optional.
 void EetsMod_OnMouse(int x, int y, int button, int down);
 
-// Mouse wheel scroll (dx, dy). Optional.
+// mouse wheel scroll (dx, dy). optional.
 void EetsMod_OnWheel(int dx, int dy);
 
-// Engine events to EetsMod_OnEvent: "object_spawn" (a=Object*, b=name),
+// engine events to EetsMod_OnEvent: "object_spawn" (a=Object*, b=name),
 // "object_killed", "level_load", "level_reset", "level_complete",
 // "emotion_change" (a=hash, b=emotion), "goal_check" (a=Object*), "eets_death".
-// Optional.
+// optional.
 void EetsMod_OnEvent(const char* name, void* a, void* b);
 
-// Typed text input (UTF-8). Call Eets::StartTextInput() first to receive these.
-// Optional.
+// typed text input (UTF-8). call Eets::StartTextInput() first to receive these.
+// optional.
 void EetsMod_OnText(const char* utf8);
 
-// Called before the mod is unloaded (hot-reload or shutdown). Optional.
+// called before the mod is unloaded (hot-reload or shutdown). optional.
 void EetsMod_Shutdown();
 
 } // extern "C"
 
 // ---- helpers provided by the loader (resolved at dlopen time) --------------
 namespace Eets {
-	// Log a line to stderr and to <game>/Log/native_mods.log.
+	// log a line to stderr and to <game>/Log/native_mods.log.
 	void Log(const char* fmt, ...);
 
-	// Read a value from <game>/mods/<mod>.cfg (simple key=value lines).
+	// read a value from <game>/mods/<mod>.cfg (simple key=value lines).
 	const char* ConfigGet(const char* mod, const char* key, const char* def);
 	int   ConfigGetInt(const char* mod, const char* key, int def);
 	float ConfigGetFloat(const char* mod, const char* key, float def);
 
-	// Detour an arbitrary engine function. On success *original receives a
-	// trampoline to call the unhooked function. Returns false (no change) if the
+	// detour an arbitrary engine function. on success *original receives a
+	// trampoline to call the unhooked function. returns false (no change) if the
 	// target's prologue can't be safely relocated.
 	//   static void(*orig)() = nullptr;
 	//   Eets::Hook((void*)0xADDR, (void*)my_detour, (void**)&orig);
 	bool Hook(void* target, void* detour, void** original);
 
-	// Last known mouse position, in RENDER space (matches DrawText / world
+	// last known mouse position, in RENDER space (matches DrawText / world
 	// coords; correct in fullscreen, unlike raw window pixels).
 	int MouseX();
 	int MouseY();
 
-	// Actual render backbuffer size (from the live viewport). Use these for HUD
+	// actual render backbuffer size (from the live viewport). use these for HUD
 	// placement instead of eets_engine.h's ScreenWidth/Height, which return the
 	// configured resolution and can differ from the render size in fullscreen.
 	int RenderWidth();
 	int RenderHeight();
 
-	// Persistent per-mod save data (mods/<mod>.save). Survives restarts; unlike
+	// persistent per-mod save data (mods/<mod>.save). survives restarts; unlike
 	// config (user-editable settings) this is for mod-written state.
 	const char* SaveGet(const char* mod, const char* key, const char* def);
 	void  SaveSet(const char* mod, const char* key, const char* val);
@@ -78,16 +78,16 @@ namespace Eets {
 	float SaveGetFloat(const char* mod, const char* key, float def);
 	void  SaveSetFloat(const char* mod, const char* key, float v);
 
-	// Frame timing.
+	// frame timing.
 	double Time();        // seconds since the first frame
 	double DeltaTime();   // seconds since the previous frame
 
-	// Text input: call StartTextInput to begin receiving EetsMod_OnText(utf8).
+	// text input: call StartTextInput to begin receiving EetsMod_OnText(utf8).
 	void StartTextInput();
 	void StopTextInput();
 }
 
-// Minimal SDL keycode / modifier constants (so mods don't need SDL headers).
+// minimal SDL keycode / modifier constants (so mods don't need SDL headers).
 #ifndef EETS_SDL_KEYS
 #define EETS_SDL_KEYS
 enum {

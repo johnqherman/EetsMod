@@ -1,17 +1,15 @@
 // libeetsmod.so - native mod loader for Eets (LD_PRELOAD).
 //
-// Mods are plain .cpp files dropped in <game>/mods/. On launch the loader
-// compiles each to a cached .so (recompiling only when the source changes),
-// dlopen's it, and dispatches Init/Update/OnKey/OnMouse/OnWheel/OnEvent/Shutdown.
-// Mod callbacks run inside a crash guard: a faulting mod is disabled, not fatal.
+// mods are .cpp files in <game>/mods/, compiled to cached .so files on launch
+// (recompiled only when source changes), dlopen'd, then dispatched callbacks.
+// callbacks run inside a crash guard so a faulting mod is disabled, not fatal.
 //
-// Interposition: Eets links FNA3D/SDL2 dynamically, so their PLT calls can be
+// interposition: Eets links FNA3D/SDL2 dynamically, so their PLT calls can be
 // hooked (the engine's internal, statically-linked calls cannot):
-//   FNA3D_SwapBuffers -> per-frame tick (load on first frame; Update each;
-//                        poll sources for hot-recompile; draw menu banner)
+//   FNA3D_SwapBuffers -> per-frame tick (load, Update, hot-recompile, banner)
 //   SDL_PollEvent     -> keyboard + mouse events
-// Mods call engine functions directly at fixed addresses (eets_engine.h) and can
-// detour arbitrary engine functions via Eets::Hook (hook.h).
+// mods also call engine functions directly (eets_engine.h) and detour them via
+// Eets::Hook (hook.h).
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -58,7 +56,6 @@ struct Mod {
 	int         priority = 0;
 	bool        sim = false;          // affects simulation (replays/leaderboard)
 	std::vector<std::string> requires_;
-	// entry points
 	InitFn      init = nullptr;
 	UpdateFn    update = nullptr;
 	KeyFn       onkey = nullptr;
@@ -74,13 +71,13 @@ bool   g_loaded = false;
 unsigned long g_frame = 0;
 const unsigned RELOAD_POLL_FRAMES = 30;
 int g_mouse_x = 0, g_mouse_y = 0;        // in render (viewport) space
-bool g_overlay = false;          // F1 toggles the mod-list overlay
-// actual render backbuffer size, captured from FNA3D_SetViewport (correct in
-// fullscreen, where it differs from the window/configured resolution).
+bool g_overlay = false;          // f1 toggles the mod-list overlay
+// real render backbuffer size from FNA3D_SetViewport (correct in fullscreen,
+// where it differs from the window/configured resolution).
 int g_vp_w = 0, g_vp_h = 0;              // committed (last full frame)
 int g_vp_cur_w = 0, g_vp_cur_h = 0;     // max seen during the current frame
 double g_time = 0.0, g_dt = 0.0;        // seconds since first frame / last frame delta
-const int OV_X = 8, OV_Y = 8, OV_W = 320, OV_TITLE = 40, OV_ROWH = 26;  // F1 manager layout
+const int OV_X = 8, OV_Y = 8, OV_W = 320, OV_TITLE = 40, OV_ROWH = 26;  // f1 manager layout
 std::string g_selected;          // mod whose config is expanded in the manager
 
 FILE* logfile() { static FILE* f = fopen("Log/native_mods.log", "a"); return f; }
@@ -116,7 +113,7 @@ void install_guards() {
 	for (size_t i = 0; i < sizeof(g_sigs)/sizeof(g_sigs[0]); i++)
 		sigaction(g_sigs[i], &sa, &g_old_sa[i]);
 }
-// run fn() guarded; on fault mark the mod disabled. Returns false if it crashed.
+// run fn() guarded; on fault mark the mod disabled. returns false if it crashed.
 template <class Fn>
 bool guard(Mod* m, Fn&& fn) {
 	if (m && m->disabled) return false;
@@ -263,15 +260,16 @@ void cfg_flush(const std::string& mod) {
 	for (auto& kv : it->second) fprintf(f, "%s = %s\n", kv.first.c_str(), kv.second.c_str());
 	fclose(f);
 }
-// adjust a config value in place: toggle 0/1, else numeric +/- step. Returns new text.
+// adjust a config value in place: toggle 0/1, else numeric +/- step. returns new text.
 std::string cfg_adjust(const std::string& v, int dir) {
 	if (v == "0" || v == "1") return v == "0" ? "1" : "0";
 	char* end = nullptr; double d = strtod(v.c_str(), &end);
 	if (end && *end == '\0') {
 		bool isf = v.find('.') != std::string::npos;
 		d += dir * (isf ? 0.5 : 1.0);
-		char b[48]; snprintf(b, sizeof(b), isf ? "%g" : "%d", isf ? d : (double)(long)d);
-		if (!isf) snprintf(b, sizeof(b), "%ld", (long)d);
+		char b[48];
+		if (isf) snprintf(b, sizeof(b), "%g", d);
+		else     snprintf(b, sizeof(b), "%ld", (long)d);
 		return b;
 	}
 	return v;   // non-numeric: leave
@@ -289,7 +287,8 @@ void read_manifest(Mod& m) {
 		size_t c2 = req.find(',', p);
 		std::string one = trim(req.substr(p, c2 == std::string::npos ? std::string::npos : c2 - p));
 		if (!one.empty()) m.requires_.push_back(one);
-		if (c2 == std::string::npos) break; p = c2 + 1;
+		if (c2 == std::string::npos) break;
+		p = c2 + 1;
 	}
 }
 bool have_mod(const std::string& name) {
@@ -313,7 +312,8 @@ int vercmp(const std::string& a, const std::string& b) {
 // ---- user enable/disable persistence (mods/.disabled) ---------------------
 std::vector<std::string> g_userDisabled;
 bool is_user_disabled(const std::string& n) {
-	for (auto& d : g_userDisabled) if (d == n) return true; return false;
+	for (auto& d : g_userDisabled) if (d == n) return true;
+	return false;
 }
 void load_disabled() {
 	g_userDisabled.clear();
@@ -366,7 +366,7 @@ void det_Emotion(unsigned long h, unsigned int e) { orig_Emotion(h, e); fire_eve
 typedef void (*GoalFn)(void*);
 GoalFn orig_Goal = nullptr;
 void det_Goal(void* o) { orig_Goal(o); fire_event("goal_check", o, nullptr); }
-// (eets_death has a short-jcc prologue that the inline hooker can't relocate;
+// (eets_death has a short-jcc prologue the inline hooker can't relocate;
 //  detect death via "object_killed" of World_GetEets() instead.)
 
 void try_hook(const char* name, void* target, void* detour, void** orig) {
@@ -385,10 +385,10 @@ void install_engine_event_hooks() {
 }
 
 // ---- asset bundling: mods/assets/<rel> -> Data/<rel> ----------------------
-// Lets a mod ship custom textures/anims/sounds/levels that the engine then loads
-// by name via its normal content path (World_CreateEffect, blueprints, Sound, GUI).
-// NOTE: overwrites matching files under Data/ (intentional override) - originals
-// are the user's game files; back up Data/ if unsure.
+// lets a mod ship custom textures/anims/sounds/levels the engine loads by name
+// via its normal content path (World_CreateEffect, blueprints, Sound, GUI).
+// note: overwrites matching files under Data/ (intentional override); originals
+// are the user's game files, so back up Data/ if unsure.
 void install_assets() {
 	std::string adir = modsdir() + "/assets";
 	if (!exists(adir)) return;
@@ -501,7 +501,6 @@ void poll_reload() {
 	closedir(d);
 }
 
-// ---- SDL event constants / views ------------------------------------------
 // ---- persistent per-mod save data (mods/<mod>.save, key=value) -------------
 std::map<std::string, std::map<std::string, std::string>> g_save;
 std::map<std::string, std::string>& save_for(const char* mod) {
@@ -536,9 +535,9 @@ struct MotionView { unsigned type, ts, win, which, state; int x, y, xrel, yrel; 
 struct ButtonView { unsigned type, ts, win, which; unsigned char button, state, clicks, pad; int x, y; };
 struct WheelView { unsigned type, ts, win, which; int x, y; unsigned dir; };
 
-// F1 manager click (render-space mx,my). ON/OFF zone toggles enable; the name
+// f1 manager click (render-space mx,my). ON/OFF zone toggles enable; the name
 // expands the mod's config; in the config section, [-]/[+] edit a value.
-// Returns true if the click landed on the manager (so it shouldn't pass through).
+// returns true if the click landed on the manager (so it shouldn't pass through).
 bool manage_click(int mx, int my) {
 	if (mx < OV_X || mx >= OV_X + OV_W) return false;
 	int nMods = (int)g_mods.size();
@@ -595,7 +594,7 @@ namespace Eets {
 	bool  Hook(void* target, void* detour, void** original) { return eets_hook::install(target, detour, original); }
 	int   MouseX() { return g_mouse_x; }
 	int   MouseY() { return g_mouse_y; }
-	// actual render dimensions (viewport); correct in fullscreen. Falls back to
+	// actual render dimensions (viewport); correct in fullscreen. falls back to
 	// the configured backbuffer size before the first frame is drawn.
 	int   RenderWidth()  { return g_vp_w > 0 ? g_vp_w : ScreenWidth(); }
 	int   RenderHeight() { return g_vp_h > 0 ? g_vp_h : ScreenHeight(); }
@@ -656,7 +655,7 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		if (!once) { once = true; logline("menu banner: \"%s\" (screen h=%d)", banner, h); }
 	}
 
-	// F1 interactive mod manager: ON/OFF toggles enable, name expands config
+	// f1 interactive mod manager: ON/OFF toggles enable, name expands config
 	if (g_loaded && g_overlay) {
 		using namespace Eets;
 		int nMods = (int)g_mods.size();
@@ -723,7 +722,7 @@ int SDL_PollEvent(void* event) {
 		unsigned type = *(unsigned*)event;
 		if (type == SDL_KEYDOWN || type == SDL_KEYUP) {
 			KeyView* k = (KeyView*)event; int down = (type == SDL_KEYDOWN) ? 1 : 0;
-			if (down && k->sym == 0x4000003A) g_overlay = !g_overlay;   // F1 toggles overlay
+			if (down && k->sym == 0x4000003A) g_overlay = !g_overlay;   // f1 toggles overlay
 			for (auto& m : g_mods) if (m.onkey && !m.disabled) guard(&m, [&]{ m.onkey(k->sym, k->mod, down); });
 		} else if (type == SDL_MOUSEMOTION) {
 			MotionView* mv = (MotionView*)event; map_mouse(mv->x, mv->y, mv->win);

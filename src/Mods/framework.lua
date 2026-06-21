@@ -1,18 +1,7 @@
--- ============================================================================
--- Eets Mod Framework  (Lua 5.0, runs from localexec.lua at boot)
--- ----------------------------------------------------------------------------
--- Boot order (game.log): Lua Game Lib -> Register Extensions -> World/Simulator
---   -> default key binds -> dofile(DATA:localexec.lua) -> here.
--- Full C API + luabind classes are live. Object blueprints load LAZILY by name
--- from DATA:Objects/<name>.lua on first World_CreateObject (verified via RE of
--- ObjectMgr::CreateObject), so new objects are runtime drop-ins. Extensions are
--- registered before this point, so new extension TYPES need a restart.
---
--- Real globals (from live _G dump): Bind(key,code) Print(s) LoadFile(path)
---   Update()/OnPause()/OnUnpause() engine hooks; class(); World_*/Object_*/...
---   ctors Vector2/Colour/Object/MotionModel/*Extension; stdlib os io string
---   table math debug coroutine (use table.getn / string.gfind / math.mod).
--- ============================================================================
+-- eets mod framework (lua 5.0, run from localexec.lua at boot).
+-- blueprints load lazily on first World_CreateObject, so new objects are runtime
+-- drop-ins; new extension TYPES need a restart (registered before we run).
+-- note lua 5.0 stdlib quirks: table.getn / string.gfind / math.mod.
 
 Mods = {
 	version   = "0.3.0",
@@ -108,12 +97,9 @@ function Mods.config(name, defaults)
 end
 
 -- ---- asset / object drop-in sync (copies a mod's files into game Data) -----
--- A mod dir may contain:
---   objects/*.lua      -> copied to Data/Objects/      (new blueprints, lazy-loaded)
---   extensions/*.lua   -> copied to Data/Extensions/   (needs restart to register)
---   assets/<rel>       -> copied to Data/<rel>          (texture/sound/anim overrides)
--- Copies are skipped if the destination exists and is NOT framework-managed,
--- to avoid clobbering stock files. Managed files are tracked in mods_installed.txt.
+-- a mod dir may contain objects/*.lua, extensions/*.lua, assets/<rel>.
+-- skip if the destination exists and is NOT framework-managed, so we never
+-- clobber stock files. managed files are tracked in mods_installed.txt.
 local function syncTree(moddir, sub, destroot, label)
 	local srcdir = moddir.."/"..sub
 	if not fileexists(srcdir) and table.getn(listentries(srcdir)) == 0 then return end
@@ -184,14 +170,14 @@ local function moddirs()
 end
 
 -- ---- sandboxed content tier ----------------------------------------------
--- Content mods (Data/Mods/content/*.lua) run in a restricted environment with
--- NO io/os/dofile/loadfile/loadstring/require/package/debug - only the gameplay
--- API, safe stdlib, and a limited Mods API. For sharing untrusted content.
--- (Not a hard resource sandbox - infinite loops/huge allocs are still possible.)
+-- content mods (Data/Mods/content/*.lua) run with no io/os/dofile/loadfile/
+-- loadstring/require/package/debug - only gameplay API, safe stdlib, limited
+-- Mods API, for sharing untrusted content. not a hard resource sandbox
+-- (infinite loops / huge allocs are still possible).
 function Mods.makeSandbox()
 	local g = getfenv(1)
 	local sb = {}
-	-- gameplay API: any global Word_Word function (World_*, Object_*, FX_*, ...)
+	-- gameplay api: any global Word_Word function (World_*, Object_*, FX_*, ...)
 	for k, v in pairs(g) do
 		if type(v) == "function" and string.find(k, "^[A-Z][A-Za-z]+_") then sb[k] = v end
 		if type(v) == "userdata" then sb[k] = v end          -- class ctors (Vector2, Object, ...)
@@ -268,8 +254,8 @@ function Mods.loadAll()
 end
 
 -- ---- level (.eet) toolchain ----------------------------------------------
--- .eet = Lua 5.0 precompiled chunk that builds the level's global table.
--- The engine's own VM is used, so output is byte-compatible (verified).
+-- .eet = lua 5.0 precompiled chunk that builds the level's global table.
+-- uses the engine's own VM, so output is byte-compatible (verified).
 Mods.eet = {}
 
 -- compile Lua level source -> .eet bytes
@@ -287,7 +273,7 @@ function Mods.eet.build(src, outpath)
 end
 
 -- load a .eet (or .lua) level chunk in a sandbox and return the globals table
--- it produced (a "decompile to data" -- gives the Level/Objects schema).
+-- it produced ("decompile to data" - gives the Level/Objects schema).
 function Mods.eet.read(path)
 	local chunk = loadfile(path)
 	if not chunk then return nil, "loadfile failed" end

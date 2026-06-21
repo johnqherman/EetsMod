@@ -1,13 +1,13 @@
 # Windows port plan
 
 The framework is Linux-only today. This is the concrete plan to support the
-Windows build of Eets. (Not yet implemented — the dev/test machine is Linux.)
+Windows build of Eets. (Not yet implemented - the dev/test machine is Linux.)
 
 ## What stays the same
 - The architecture: a preloaded native module that interposes the renderer's
   per-frame present + the input pump, `dlopen`/`LoadLibrary`s mod binaries, and
   calls engine functions at fixed addresses.
-- The mod API (`eetsmod.h`), UI (`eets_ui.h`), events, config, save data — all
+- The mod API (`eetsmod.h`), UI (`eets_ui.h`), events, config, save data - all
   platform-independent C++. Mods recompile per platform; source is portable.
 
 ## What changes
@@ -18,14 +18,14 @@ Windows has no `LD_PRELOAD`. Options, easiest first:
   DLL the game auto-loads that forwards exports to the real system DLL and runs
   our loader from `DllMain`. This is the standard, launcher-free approach (works
   with the Steam launch with no options).
-- **Steam launch wrapper** that injects (CreateRemoteThread) — more fragile.
+- **Steam launch wrapper** that injects (CreateRemoteThread) - more fragile.
 
 ### 2. Interposition -> inline hooks
 PLT interposition is Linux-only. On Windows, install **IAT hooks** (patch the
 import table for `FNA3D_SwapBuffers` / `SDL_PollEvent`) or reuse the inline
 detour engine (`hook.h`) to hook them directly. The detour engine is already
 cross-platform x86-64; only page-protection calls differ (`VirtualProtect`
-instead of `mprotect`) — abstract those behind 2-3 `#ifdef _WIN32` helpers.
+instead of `mprotect`) - abstract those behind 2-3 `#ifdef _WIN32` helpers.
 
 ### 3. Addresses
 The Windows build is a different binary -> different addresses, and PE images are
@@ -56,12 +56,12 @@ would follow the same shape (`DYLD_INSERT_LIBRARIES`, Mach-O addresses).
 
 ## Status (what's scaffolded)
 Done / portable:
-- `loader/hook.h` is now **cross-platform** — page protection + executable alloc
+- `loader/hook.h` is now **cross-platform** - page protection + executable alloc
   abstracted (`mprotect`/`mmap` vs `VirtualProtect`/`VirtualAlloc`); the x86-64
   length decoder + detour logic are shared. (Validated on Linux.)
-- `loader/platform.h` — the OS seam: `load_library`/`get_symbol`/`real_symbol`/
+- `loader/platform.h` - the OS seam: `load_library`/`get_symbol`/`real_symbol`/
   `module_base` + `EETS_EXPORT`, with Windows and POSIX implementations.
-- `include/eets_addr_win.h` — RVA-based address skeleton + `resolve(rva)` =
+- `include/eets_addr_win.h` - RVA-based address skeleton + `resolve(rva)` =
   `module_base() + rva`.
 
 TODO (needs a Windows box + the Windows `Eets.exe`):

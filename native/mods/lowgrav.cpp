@@ -1,4 +1,4 @@
-// lowgrav - sample native Eets mod. Toggle low gravity with CTRL+G.
+// lowgrav - sample native mod. toggle low gravity with CTRL+G.
 #include "eetsmod.h"
 using namespace Eets;
 

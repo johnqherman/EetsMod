@@ -8,11 +8,11 @@ and isolates crashes. Mods call engine functions directly.
 
 Eets is a native, **non-PIE** C++ ELF that links SDL2/FNA3D dynamically. The
 preloaded `libeetsmod.so` interposes their PLT calls:
-- `FNA3D_SwapBuffers` → per-frame tick (compile+load mods on first frame; run
+- `FNA3D_SwapBuffers` -> per-frame tick (compile+load mods on first frame; run
   `EetsMod_Update`; poll for hot-reload; capture the render viewport; draw the
   banner / F1 manager),
-- `SDL_PollEvent` → keyboard + mouse → mod callbacks,
-- `FNA3D_SetViewport` → the true render size (correct in fullscreen).
+- `SDL_PollEvent` -> keyboard + mouse -> mod callbacks,
+- `FNA3D_SetViewport` -> the true render size (correct in fullscreen).
 
 Engine functions sit at fixed addresses (`eets_engine.h` / `eets_addr.h`); the
 detour engine (`hook.h`) can hook arbitrary engine functions.
@@ -26,9 +26,9 @@ make install GAME=/path/to/Eets        # loader + headers + sample mods
 EETS_DIR=/path/to/Eets ../run-eets.sh   # or Steam launch option (below)
 ```
 
-Steam: Properties → Launch Options → `LD_PRELOAD=/full/path/Eets/libeetsmod.so %command%`
+Steam: Properties -> Launch Options -> `LD_PRELOAD=/full/path/Eets/libeetsmod.so %command%`
 (`tools/steam-launch-option.sh` prints it). Mods are `.cpp` compiled on launch, so
-`g++` must be on PATH; Steam's runtime may lack it — run once from a terminal to
+`g++` must be on PATH; Steam's runtime may lack it - run once from a terminal to
 cache builds, or ship prebuilt `.so`. Logs: `<game>/Log/native_mods.log`.
 `F1` = interactive mod manager (click rows to enable/disable; persists).
 
@@ -133,15 +133,15 @@ comment). Regenerate addresses after a game update: `gen_engine_header.sh`.
 
 ## Robustness
 
-- **Crash isolation** — a faulting mod callback is caught and the mod disabled;
+- **Crash isolation** - a faulting mod callback is caught and the mod disabled;
   the game keeps running.
-- **Hot-reload** — edit + save a `.cpp` while running; recompiles & reloads.
-- **BuildID guard** — warns if the running binary differs from the bound build.
-- **Fullscreen-correct** — HUD + mouse use the real render viewport.
+- **Hot-reload** - edit + save a `.cpp` while running; recompiles & reloads.
+- **BuildID guard** - warns if the running binary differs from the bound build.
+- **Fullscreen-correct** - HUD + mouse use the real render viewport.
 
 ## Build / release / CI
 
-`make release` → `dist/eetsmod-<ver>.tar.gz` (loader + headers + sample mods +
+`make release` -> `dist/eetsmod-<ver>.tar.gz` (loader + headers + sample mods +
 `install.sh`). CI (`.github/workflows/ci.yml`) builds the loader + syntax-checks
 the sample mods. Windows port plan: `docs/WINDOWS.md`.
 

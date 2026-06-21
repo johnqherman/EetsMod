@@ -1,10 +1,10 @@
 // eets_addr.h - complete address table for the Eets engine's Lua-binding
 // functions (all 76) plus curated class methods / singletons / UI helpers.
-// Generated for BuildID e81cc5504d3ef03324805df3e9fc508c1bf8c628 by
-// gen_engine_header.sh. The binary is non-PIE so these are runtime-stable.
+// generated for BuildID e81cc5504d3ef03324805df3e9fc508c1bf8c628 by
+// gen_engine_header.sh. the binary is non-PIE so these are runtime-stable.
 //
-// Itanium mangling does not encode return types, so the arg signature is shown
-// in a comment; cast addr::X to the correct full signature to call it. Common
+// itanium mangling does not encode return types, so the arg signature is shown
+// in a comment; cast addr::X to the correct full signature to call it. common
 // ones have typed wrappers in eets_engine.h.
 #pragma once
 #include <cstdint>

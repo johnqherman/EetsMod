@@ -1,9 +1,6 @@
-// spawner - showcase mod: spawn objects at the cursor.
-//   left click   -> spawn the selected blueprint at the mouse
-//   right click  -> explosion at the mouse
-//   mouse wheel  -> cycle the selected blueprint
-//   F2           -> toggle the on-screen label
-// Demonstrates mouse input, engine calls, events, and config.
+// spawner - spawn objects at the cursor; demos mouse input, events, config.
+//   left click -> spawn selected blueprint; right click -> explosion;
+//   mouse wheel -> cycle blueprint; F2 -> toggle the on-screen label.
 #include "eetsmod.h"
 #include <vector>
 #include <string>

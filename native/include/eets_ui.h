@@ -1,5 +1,5 @@
 // eets_ui.h - tiny immediate-mode UI for custom menus in Eets mods.
-// Styled to match the in-game GUI: geekabyte font, dropshadow text, warm panel
+// styled to match the in-game gui: geekabyte font, dropshadow text, warm panel
 // with a cream border and a maroon title bar, yellow/green highlights.
 //
 //   #include "eets_ui.h"

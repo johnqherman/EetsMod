@@ -4,22 +4,22 @@
 
 | | Native (C++) | Lua |
 |---|---|---|
-| Power | full — any engine call, hooks, UI, input | scripting only |
+| Power | full - any engine call, hooks, UI, input | scripting only |
 | Loading | preloaded loader (`LD_PRELOAD`) | zero-patch (`Data/localexec.lua`) |
 | Trust | **arbitrary native code** | runs in the embedded Lua VM |
 | Use for | tools, gameplay overhauls, UI, dev | content, tweaks, level logic |
 
-Native mods are unrestricted machine code — treat them like any executable.
+Native mods are unrestricted machine code - treat them like any executable.
 **Only run native mods you trust.**
 
 ### Sandboxed Lua content tier (implemented)
 Drop a `.lua` in `Data/Mods/content/`. It runs in a restricted environment with
-**no `io`/`os`/`dofile`/`loadfile`/`loadstring`/`require`/`package`/`debug`** —
+**no `io`/`os`/`dofile`/`loadfile`/`loadstring`/`require`/`package`/`debug`** -
 only the gameplay API (`World_*`, `Object_*`, class ctors), safe stdlib
 (`math`/`string`/`table` + base), and a limited `Mods` API (`register`/`log`/
 `spawn`/`config`). This is the safer surface for sharing untrusted content
 (verified: `io`/`os`/`dofile` resolve to `nil` inside a content mod). It is not a
-hard *resource* sandbox — infinite loops / huge allocations are still possible.
+hard *resource* sandbox - infinite loops / huge allocations are still possible.
 Trusted full-access Lua mods still go in `Data/Mods/<name>/mod.lua`.
 
 ## Content modding status
@@ -45,8 +45,8 @@ active. An official build should additionally disable score submission while a
 `sim` mod is enabled.
 
 ## Recommended for an official launch
-1. ~~Sandboxed Lua content tier~~ — **done** (`Data/Mods/content/`).
-2. ~~Asset bundling + custom image draw~~ — **done** (`mods/assets/` → `Data/`;
+1. ~~Sandboxed Lua content tier~~ - **done** (`Data/Mods/content/`).
+2. ~~Asset bundling + custom image draw~~ - **done** (`mods/assets/` -> `Data/`;
    `Eets::DrawImage` via the engine's Sprite renderer, verified rendering).
 3. Score/replay gating driven by the `sim` flag (warning emitted today; actual
    gating needs the score-submit hook).

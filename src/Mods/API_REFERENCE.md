@@ -4,7 +4,7 @@ Verified from the live `_G` dump + binary symbols + shipped-script usage.
 Lua 5.0. Globals are callable from any mod; classes are luabind userdata with
 constructors exposed as globals.
 
-> Note: `#t` length operator does **not** exist in 5.0 — use `table.getn(t)`.
+> Note: `#t` length operator does **not** exist in 5.0 - use `table.getn(t)`.
 > String patterns use `string.gfind` (not `gmatch`). `math.mod` (not `%`).
 
 ---
@@ -51,7 +51,7 @@ Bind(key, luaCodeString)        -- e.g. Bind("CTRL+G", "myfn()")
 Debug_DrawLine(...)  Debug_DrawText(...)            -- debug builds
 ```
 
-### Engine global hooks (override/chain these — framework already does)
+### Engine global hooks (override/chain these - framework already does)
 ```
 Update()        -- called every frame
 OnPause()  OnUnpause()
@@ -66,7 +66,7 @@ stepOrToggleSimulation()  toggleStepping()  g_stepping (bool)
 Fields `.x .y` (read/write). Methods:
 `Length() -> f`, `LengthSqr() -> f`, `Normalize()`, `PerpDot(Vector2) -> f`.
 
-### Colour(...)  — for lights / ambient / modulate / particle tint.
+### Colour(...)  - for lights / ambient / modulate / particle tint.
 
 ### Object  (the core entity)
 ```

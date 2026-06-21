@@ -3,10 +3,10 @@
 A modding framework for **Eets** (the Klei puzzle game), a native C++ engine.
 Two ways to write mods:
 
-- **Native C++ mods** — `.so` plugins injected via a small `LD_PRELOAD` loader;
+- **Native C++ mods** - `.so` plugins injected via a small `LD_PRELOAD` loader;
   call engine functions directly, get a per-frame tick and input. Full power.
   **See [`native/README.md`](native/README.md).**
-- **Lua mods** — zero-patch, no preload: the game `dofile`s an optional
+- **Lua mods** - zero-patch, no preload: the game `dofile`s an optional
   `Data/localexec.lua` at boot. Lighter, scripting-only. Documented below.
 
 Both come from reverse-engineering the engine; see [`docs/INTERNALS.md`](docs/INTERNALS.md).
@@ -139,10 +139,10 @@ key binds, config, load-order, the gameplay API (`World_*`, `Object_*`, `Sound_*
 `FX_*`, `Profile_*`), luabind class ctors (`Vector2`, `Colour`, `Object`,
 `MotionModel`, `*Extension`), and the full Lua 5.0 stdlib.
 
-**New object blueprints — runtime drop-in.** Verified by reverse-engineering
+**New object blueprints - runtime drop-in.** Verified by reverse-engineering
 `ObjectMgr::CreateObject`: blueprints load lazily by name from
 `DATA:Objects/<name>.lua` on first `World_CreateObject` and are then cached. So a
-mod just ships `objects/<name>.lua` and calls `World_CreateObject("<name>", pos)` —
+mod just ships `objects/<name>.lua` and calls `World_CreateObject("<name>", pos)` -
 no `AllObjects.lua` entry, no restart. (`AllObjects.lua` only populates the level
 editor's toolbar palette.) New objects may use any of the ~27 existing extensions.
 
@@ -151,7 +151,7 @@ file in `Data/Extensions/` and a restart.
 
 **Levels** are Lua 5.0 precompiled chunks (`.eet`). The toolchain above compiles
 Lua source to byte-compatible `.eet` using the engine's own `string.dump`, and
-reads existing `.eet` back to a data table — so procedural level generation and
+reads existing `.eet` back to a data table - so procedural level generation and
 `.eet`-to-readable-Lua both work. The in-game editor (CTRL+S) remains the
 interactive authoring path.
 

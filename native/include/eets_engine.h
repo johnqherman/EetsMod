@@ -1,10 +1,9 @@
 // eets_engine.h - typed bindings to Eets engine functions by absolute address.
 //
-// Eets is a non-PIE (fixed-base) x86-64 ELF, so these addresses are stable at
-// runtime for a given build. Regenerate with native/gen_engine_header.sh if the
-// game updates. Generated for BuildID e81cc5504d3ef03324805df3e9fc508c1bf8c628.
+// eets is non-PIE (fixed-base) x86-64 ELF, so addresses are runtime-stable per
+// build. regenerate with native/gen_engine_header.sh on game update.
 //
-// ABI note: Vector2 is { float x, y } -> one SSE eightbyte, passed/returned in
+// abi note: Vector2 is { float x, y } -> one SSE eightbyte, passed/returned in
 // xmm0 exactly as the engine's own C++ does, so matching the type matches the ABI.
 #pragma once
 #include <cstdint>
@@ -16,12 +15,12 @@
 
 namespace Eets {
 
-// Addresses are valid for this exact game build. The loader warns if the running
+// addresses are valid for this exact game build. the loader warns if the running
 // binary's BuildID differs (regenerate with gen_engine_header.sh).
 constexpr const char* EXPECTED_BUILDID = "e81cc5504d3ef03324805df3e9fc508c1bf8c628";
 
 struct Vector2 { float x, y; };
-struct Colour { unsigned char r, g, b, a;          // 4-byte packed (engine ABI)
+struct Colour { unsigned char r, g, b, a;          // 4-byte packed (engine abi)
 	Colour(unsigned char R=255, unsigned char G=255, unsigned char B=255, unsigned char A=255)
 		: r(R), g(G), b(B), a(A) {}
 };
@@ -31,7 +30,7 @@ struct ObjectMgr;     // opaque
 
 // FontPrintSizes enum -> pixel height: 1=13 2=14 3=20 4=28 5=35
 enum FontSize { FONT_TINY = 1, FONT_SMALL = 2, FONT_NORMAL = 3, FONT_BIG = 4, FONT_HUGE = 5 };
-// FontPrintStyles -> typeface. STYLE_GEEK (geekabyte) is the in-game GUI font.
+// FontPrintStyles -> typeface. STYLE_GEEK (geekabyte) is the in-game gui font.
 enum FontStyle { STYLE_KOMIKA = 1, STYLE_GEEK = 2, STYLE_BRADY = 4 };
 
 // typed function-pointer wrappers
@@ -120,7 +119,7 @@ inline const char* MotionModel_GetCurrentMotionName(MotionModel* m) {
 inline ObjectMgr* ObjectMgr_i() {
 	return ((ObjectMgr*(*)())addr::ObjectMgr_i)();
 }
-// Call `fn(Object*)` for every live object. Safe no-op if no world is loaded.
+// call `fn(Object*)` for every live object. safe no-op if no world is loaded.
 template <class Fn>
 inline void ForEachObject(Fn fn) {
 	char* mgr = (char*)ObjectMgr_i();
@@ -142,15 +141,15 @@ inline int ScreenHeight() {
 	char* g = (char*)((void*(*)())addr::GraphicsEngine_i)();
 	return g ? *(int*)(g + 0x44) : 0;
 }
-// Draw text at screen pixel (x, y), origin top-left, using the engine font
+// draw text at screen pixel (x, y), origin top-left, using the engine font
 // (normal 20px size).
 inline void DrawText(int x, int y, const char* text, Colour c = Colour()) {
 	((void(*)(int, int, const char*, const Colour&))addr::printText)(x, y, text, c);
 }
-// Draw text at a chosen font size (FONT_TINY..FONT_HUGE).
+// draw text at a chosen font size (FONT_TINY..FONT_HUGE).
 // NB: DrawString's last Vector2 is the text BASELINE DIRECTION, not a uniform
-// scale - it must stay horizontal {1,0} or the text renders rotated. Size comes
-// from the FontSize enum (13/14/20/28/35 px). The `dirx` arg defaults to 1.0
+// scale - it must stay horizontal {1,0} or the text renders rotated. size comes
+// from the FontSize enum (13/14/20/28/35 px). the `dirx` arg defaults to 1.0
 // (normal); values <1 shrink horizontally but keep the baseline horizontal.
 inline void DrawTextSized(int x, int y, const char* text, int size,
                           Colour c = Colour(), int style = STYLE_GEEK, float dirx = 1.0f) {
@@ -159,7 +158,7 @@ inline void DrawTextSized(int x, int y, const char* text, int size,
 	((void(*)(const std::string&, int, int, Colour, Vector2, bool, const Vector2&))
 	 addr::TextPrinter_DrawString)(s, size, style, c, pos, false, dir);
 }
-// Same, with a dropshadow (offset dark copy) like the game's GUI text.
+// same, with a dropshadow (offset dark copy) like the game's gui text.
 inline void DrawTextOutlined(int x, int y, const char* text, int size,
                              Colour c = Colour(), Colour shadow = Colour(0, 0, 0, 200),
                              int style = STYLE_GEEK) {
@@ -217,9 +216,9 @@ inline void Object_CreateEffect(Object* o, const char* fx) { ((void(*)(Object*, 
 inline unsigned long Object_GetBlueprintHash(Object* o) { return ((unsigned long(*)(Object*))addr::Object_GetBlueprintHash)(o); }
 
 // ---- custom images ---------------------------------------------------------
-// Load (and cache) a sprite from an image file. `path` is a DATA:/relative path
-// (e.g. "Eets.png", "DATA:Images/foo.jpg"; jpg/tga/dds/png). Returns a Sprite*
-// (opaque) or null. Cached per path, so call freely each frame.
+// load (and cache) a sprite from an image file. `path` is a DATA:/relative path
+// (e.g. "Eets.png", "DATA:Images/foo.jpg"; jpg/tga/dds/png). returns a Sprite*
+// (opaque) or null. cached per path, so call freely each frame.
 inline void* LoadSprite(const char* path, int format = 0) {
 	static std::unordered_map<std::string, void*> cache;
 	auto it = cache.find(path);
@@ -250,20 +249,20 @@ inline void DrawSpriteAt(void* sprite, int x, int y, Colour tint = Colour()) {
 	 addr::GraphicsEngine_DrawSprite)(ge, sprite, pos, uv0, uv1, tint);
 }
 
-// Draw an image with its top-left at (x, y), at the sprite's native pixel size,
-// optionally tinted. Uses the engine's Sprite path (SpriteManager::Load +
+// draw an image with its top-left at (x, y), at the sprite's native pixel size,
+// optionally tinted. uses the engine's Sprite path (SpriteManager::Load +
 // GraphicsEngine::DrawSprite - the same renderer the game's load screen uses).
-// Coordinates are the sprite render space: screen-aligned in menus, world/camera
-// space inside a level. Returns false if the image couldn't load.
+// coordinates are the sprite render space: screen-aligned in menus, world/camera
+// space inside a level. returns false if the image couldn't load.
 inline bool DrawImage(const char* path, int x, int y, Colour tint = Colour()) {
 	void* sprite = LoadSprite(path);
 	if (!sprite) return false;
 	DrawSpriteAt(sprite, x, y, tint);
 	return true;
 }
-// Screen-locked image (HUD): resets the sprite view to screen space first so it
-// ignores the in-level camera. Safe because mod drawing happens after the world
-// is rendered. (In menus DrawImage is already screen-aligned.)
+// screen-locked image (HUD): resets the sprite view to screen space first so it
+// ignores the in-level camera. safe because mod drawing happens after the world
+// is rendered. (in menus DrawImage is already screen-aligned.)
 inline bool DrawImageHUD(const char* path, int x, int y, Colour tint = Colour()) {
 	if (((bool(*)())addr::World_IsSimulating)()) {
 		Vector2 z{0.0f, 0.0f};
@@ -273,8 +272,8 @@ inline bool DrawImageHUD(const char* path, int x, int y, Colour tint = Colour())
 }
 
 // ---- animated sprites (.anim) ----------------------------------------------
-// Load (and cache) an Animation from a .anim path (e.g.
-// "DATA:Animations/Eets/eets_blink.anim"). Returns an opaque Animation* or null.
+// load (and cache) an Animation from a .anim path (e.g.
+// "DATA:Animations/Eets/eets_blink.anim"). returns an opaque Animation* or null.
 inline void* LoadAnim(const char* path) {
 	static std::unordered_map<std::string, void*> cache;
 	auto it = cache.find(path);
@@ -291,7 +290,7 @@ inline void* LoadAnim(const char* path) {
 inline float AnimFrameDuration(void* a) { return a ? *(float*)((char*)a + 0x30) : 0.0f; }
 inline int AnimFrameCount(void* a) { return a ? (int)((unsigned(*)(void*))addr::Animation_FrameCount)(a) : 0; }
 
-// Advance an animation by `dt` seconds and draw its current frame at (x, y),
+// advance an animation by `dt` seconds and draw its current frame at (x, y),
 // looping. `fps`: 0 (default) = the anim's native rate (1 / frame-duration); >0 =
 // a fixed override rate.
 inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Colour tint = Colour()) {
@@ -317,8 +316,8 @@ inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f,
 }
 
 // ---- localization ----------------------------------------------------------
-// Resolve a localized string id ("$01701") to its text. Returns the id itself
-// if unresolved. Add your own strings at boot with StringPool::LoadFile.
+// resolve a localized string id ("$01701") to its text. returns the id itself
+// if unresolved. add your own strings at boot with StringPool::LoadFile.
 inline const char* Localize(const char* id) {
 	void* sp = *(void**)addr::StringPool_instance;
 	if (!sp) return id;
