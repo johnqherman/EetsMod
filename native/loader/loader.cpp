@@ -412,7 +412,7 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		char banner[128];
 		snprintf(banner, sizeof(banner), "v%s, %zu mods loaded", EETSMOD_VERSION, active);
 		int h = Eets::ScreenHeight(); if (h <= 0) h = 720;
-		Eets::DrawTextSized(10, h - 16, banner, Eets::FONT_NORMAL, Eets::Colour(255, 255, 255, 255), 0.5f);
+		Eets::DrawTextSized(10, h - 18, banner, Eets::FONT_TINY, Eets::Colour(255, 255, 255, 255));
 		static bool once = false;
 		if (!once) { once = true; logline("menu banner: \"%s\" (screen h=%d)", banner, h); }
 	}
@@ -421,14 +421,14 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 	if (g_loaded && g_overlay) {
 		char line[160];
 		snprintf(line, sizeof(line), "eetsmod v%s - %zu mods", EETSMOD_VERSION, g_mods.size());
-		Eets::DrawTextSized(10, 10, line, Eets::FONT_NORMAL, Eets::Colour(255, 255, 0, 255), 0.6f);
-		int y = 30;
+		Eets::DrawTextSized(10, 10, line, Eets::FONT_SMALL, Eets::Colour(255, 255, 0, 255));
+		int y = 28;
 		for (auto& m : g_mods) {
 			snprintf(line, sizeof(line), "%s %s%s", m.disabled ? "[x]" : "[*]",
 			         m.name.c_str(), m.version.empty() ? "" : (" v" + m.version).c_str());
 			Eets::Colour c = m.disabled ? Eets::Colour(255, 80, 80, 255) : Eets::Colour(180, 255, 180, 255);
-			Eets::DrawTextSized(10, y, line, Eets::FONT_NORMAL, c, 0.5f);
-			y += 14;
+			Eets::DrawTextSized(10, y, line, Eets::FONT_TINY, c);
+			y += 16;
 		}
 	}
 	if (real) real(device, src, dst, window);

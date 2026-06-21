@@ -39,7 +39,13 @@ namespace addr {
 	constexpr uintptr_t World_Scare                 = 0x5bc9e0;
 	constexpr uintptr_t World_SetGameSpeed          = 0x5bc070;
 	constexpr uintptr_t World_ChangeEmotion         = 0x5bcb90;
+	constexpr uintptr_t World_Pause                 = 0x5bc920;
+	constexpr uintptr_t World_IsPaused              = 0x5bc950;
+	constexpr uintptr_t World_IsSimulating          = 0x5bc860;
+	constexpr uintptr_t World_SetMaximumSpeed       = 0x5bbc20;
 	constexpr uintptr_t Sound_CreateSound           = 0x5bcdd0;
+	constexpr uintptr_t Sound_PlayMusic             = 0x5bcd80;
+	constexpr uintptr_t Sound_SetMusicVolume        = 0x5bcdb0;
 	// Object_* (take an Object*)
 	constexpr uintptr_t Object_ApplyImpulse         = 0x5c9d40;
 	constexpr uintptr_t Object_EnablePhysics        = 0x5c9d10;
@@ -165,14 +171,17 @@ inline int ScreenHeight() {
 inline void DrawText(int x, int y, const char* text, Colour c = Colour()) {
 	((void(*)(int, int, const char*, const Colour&))addr::printText)(x, y, text, c);
 }
-// Draw text at a chosen font size (FONT_TINY..FONT_HUGE) and scale multiplier.
-// e.g. size=FONT_NORMAL (20px) with scale=0.5 renders ~10px.
+// Draw text at a chosen font size (FONT_TINY..FONT_HUGE).
+// NB: DrawString's last Vector2 is the text BASELINE DIRECTION, not a uniform
+// scale - it must stay horizontal {1,0} or the text renders rotated. Size comes
+// from the FontSize enum (13/14/20/28/35 px). The `dirx` arg defaults to 1.0
+// (normal); values <1 shrink horizontally but keep the baseline horizontal.
 inline void DrawTextSized(int x, int y, const char* text, int size,
-                          Colour c = Colour(), float scaleMul = 1.0f) {
+                          Colour c = Colour(), float dirx = 1.0f) {
 	std::string s = text ? text : "";
-	Vector2 pos{(float)x, (float)y}, scale{scaleMul, scaleMul};
+	Vector2 pos{(float)x, (float)y}, dir{dirx, 0.0f};   // horizontal baseline
 	((void(*)(const std::string&, int, int, Colour, Vector2, bool, const Vector2&))
-	 addr::TextPrinter_DrawString)(s, size, 3, c, pos, false, scale);
+	 addr::TextPrinter_DrawString)(s, size, 3, c, pos, false, dir);
 }
 
 } // namespace Eets
