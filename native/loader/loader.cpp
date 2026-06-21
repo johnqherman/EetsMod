@@ -69,8 +69,12 @@ std::vector<Mod> g_mods;
 bool   g_loaded = false;
 unsigned long g_frame = 0;
 const unsigned RELOAD_POLL_FRAMES = 30;
-int g_mouse_x = 0, g_mouse_y = 0;
+int g_mouse_x = 0, g_mouse_y = 0;        // in render (viewport) space
 bool g_overlay = false;          // F1 toggles the mod-list overlay
+// actual render backbuffer size, captured from FNA3D_SetViewport (correct in
+// fullscreen, where it differs from the window/configured resolution).
+int g_vp_w = 0, g_vp_h = 0;              // committed (last full frame)
+int g_vp_cur_w = 0, g_vp_cur_h = 0;     // max seen during the current frame
 
 FILE* logfile() { static FILE* f = fopen("Log/native_mods.log", "a"); return f; }
 void logline(const char* fmt, ...) {
@@ -396,14 +400,29 @@ namespace Eets {
 	bool  Hook(void* target, void* detour, void** original) { return eets_hook::install(target, detour, original); }
 	int   MouseX() { return g_mouse_x; }
 	int   MouseY() { return g_mouse_y; }
+	// actual render dimensions (viewport); correct in fullscreen. Falls back to
+	// the configured backbuffer size before the first frame is drawn.
+	int   RenderWidth()  { return g_vp_w > 0 ? g_vp_w : ScreenWidth(); }
+	int   RenderHeight() { return g_vp_h > 0 ? g_vp_h : ScreenHeight(); }
 }
 
 extern "C" {
+
+// capture the real backbuffer size (viewport) - correct in fullscreen
+void FNA3D_SetViewport(void* device, void* viewport) {
+	static void (*real)(void*, void*) = nullptr;
+	if (!real) real = (decltype(real))dlsym(RTLD_NEXT, "FNA3D_SetViewport");
+	int w = ((int*)viewport)[2], h = ((int*)viewport)[3];   // {x,y,w,h,...}
+	if ((long)w * h > (long)g_vp_cur_w * g_vp_cur_h) { g_vp_cur_w = w; g_vp_cur_h = h; }
+	if (real) real(device, viewport);
+}
 
 void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 	static void (*real)(void*, void*, void*, void*) = nullptr;
 	if (!real) real = (decltype(real))dlsym(RTLD_NEXT, "FNA3D_SwapBuffers");
 	if (!g_loaded) { g_loaded = true; load_all(); }
+	if (g_vp_cur_w > 0) { g_vp_w = g_vp_cur_w; g_vp_h = g_vp_cur_h; }   // commit frame viewport
+	{ static bool vlog = false; if (!vlog && g_vp_w > 0) { vlog = true; logline("render dims: %dx%d (configured %dx%d)", g_vp_w, g_vp_h, Eets::ScreenWidth(), Eets::ScreenHeight()); } }
 	for (auto& m : g_mods) if (m.update && !m.disabled) guard(&m, [&]{ m.update(); });
 	if (++g_frame % RELOAD_POLL_FRAMES == 0) poll_reload();
 
@@ -411,7 +430,7 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		size_t active = 0; for (auto& m : g_mods) if (!m.disabled) active++;
 		char banner[128];
 		snprintf(banner, sizeof(banner), "v%s, %zu mods loaded", EETSMOD_VERSION, active);
-		int h = Eets::ScreenHeight(); if (h <= 0) h = 720;
+		int h = Eets::RenderHeight(); if (h <= 0) h = 720;
 		Eets::DrawTextOutlined(10, h - 26, banner, Eets::FONT_NORMAL, Eets::Colour(255, 255, 255, 255));
 		static bool once = false;
 		if (!once) { once = true; logline("menu banner: \"%s\" (screen h=%d)", banner, h); }
@@ -431,7 +450,22 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 			y += 24;
 		}
 	}
+	g_vp_cur_w = g_vp_cur_h = 0;     // reset; recomputed next frame
 	if (real) real(device, src, dst, window);
+}
+
+// map window-pixel mouse coords to render (backbuffer/viewport) space
+void map_mouse(int rx, int ry, unsigned winId) {
+	static void* (*getWin)(unsigned) = nullptr;
+	static void  (*getSize)(void*, int*, int*) = nullptr;
+	if (!getWin)  getWin  = (decltype(getWin)) dlsym(RTLD_NEXT, "SDL_GetWindowFromID");
+	if (!getSize) getSize = (decltype(getSize))dlsym(RTLD_NEXT, "SDL_GetWindowSize");
+	int ww = 0, wh = 0;
+	if (getWin && getSize) { void* w = getWin(winId); if (w) getSize(w, &ww, &wh); }
+	if (ww > 0 && wh > 0 && g_vp_w > 0 && g_vp_h > 0) {
+		g_mouse_x = (int)((long)rx * g_vp_w / ww);
+		g_mouse_y = (int)((long)ry * g_vp_h / wh);
+	} else { g_mouse_x = rx; g_mouse_y = ry; }
 }
 
 int SDL_PollEvent(void* event) {
@@ -445,12 +479,13 @@ int SDL_PollEvent(void* event) {
 			if (down && k->sym == 0x4000003A) g_overlay = !g_overlay;   // F1 toggles overlay
 			for (auto& m : g_mods) if (m.onkey && !m.disabled) guard(&m, [&]{ m.onkey(k->sym, k->mod, down); });
 		} else if (type == SDL_MOUSEMOTION) {
-			MotionView* mv = (MotionView*)event; g_mouse_x = mv->x; g_mouse_y = mv->y;
-			for (auto& m : g_mods) if (m.onmouse && !m.disabled) guard(&m, [&]{ m.onmouse(mv->x, mv->y, -1, 0); });
+			MotionView* mv = (MotionView*)event; map_mouse(mv->x, mv->y, mv->win);
+			int mx = g_mouse_x, my = g_mouse_y;
+			for (auto& m : g_mods) if (m.onmouse && !m.disabled) guard(&m, [&]{ m.onmouse(mx, my, -1, 0); });
 		} else if (type == SDL_MOUSEBUTTONDOWN || type == SDL_MOUSEBUTTONUP) {
-			ButtonView* b = (ButtonView*)event; g_mouse_x = b->x; g_mouse_y = b->y;
-			int down = (type == SDL_MOUSEBUTTONDOWN) ? 1 : 0;
-			for (auto& m : g_mods) if (m.onmouse && !m.disabled) guard(&m, [&]{ m.onmouse(b->x, b->y, b->button, down); });
+			ButtonView* b = (ButtonView*)event; map_mouse(b->x, b->y, b->win);
+			int mx = g_mouse_x, my = g_mouse_y, down = (type == SDL_MOUSEBUTTONDOWN) ? 1 : 0, btn = b->button;
+			for (auto& m : g_mods) if (m.onmouse && !m.disabled) guard(&m, [&]{ m.onmouse(mx, my, btn, down); });
 		} else if (type == SDL_MOUSEWHEEL) {
 			WheelView* w = (WheelView*)event;
 			for (auto& m : g_mods) if (m.onwheel && !m.disabled) guard(&m, [&]{ m.onwheel(w->x, w->y); });

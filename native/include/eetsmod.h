@@ -52,9 +52,16 @@ namespace Eets {
 	//   Eets::Hook((void*)0xADDR, (void*)my_detour, (void**)&orig);
 	bool Hook(void* target, void* detour, void** original);
 
-	// Last known mouse position (window pixels).
+	// Last known mouse position, in RENDER space (matches DrawText / world
+	// coords; correct in fullscreen, unlike raw window pixels).
 	int MouseX();
 	int MouseY();
+
+	// Actual render backbuffer size (from the live viewport). Use these for HUD
+	// placement instead of eets_engine.h's ScreenWidth/Height, which return the
+	// configured resolution and can differ from the render size in fullscreen.
+	int RenderWidth();
+	int RenderHeight();
 }
 
 // Minimal SDL keycode / modifier constants (so mods don't need SDL headers).
