@@ -122,4 +122,18 @@ constexpr uintptr_t GraphicsEngine_DrawLine            = 0x54a2f0;  // (GE*,Vect
 constexpr uintptr_t GraphicsEngine_DrawSquare          = 0x54a050;  // (GE*,Vector2 const& topLeft,Vector2 const& botRight,Colour const&) FILLED rect
 constexpr uintptr_t GraphicsEngine_DrawCircleFilled    = 0x54a030;  // (GE*,Vector2 const&,float r,Colour const&,int segs)
 
+// ===== localization (StringPool) =====
+constexpr uintptr_t StringPool_instance                = 0x1210838; // StringPool* (read the pointer)
+constexpr uintptr_t StringPool_Resolve                 = 0x58b0d0;  // (StringPool*, char const* id) -> char const*
+constexpr uintptr_t StringPool_LoadFile                = 0x58ac50;  // (char const* path) load extra strings
+
+// ===== assets (ADVANCED/experimental: ABI not wrapper-validated) =====
+// Texture::Load is __thiscall into a caller-allocated Texture; you must allocate
+// the object, Load(path), UploadTexture(), then IGraphicsEngine::DrawTexture.
+constexpr uintptr_t Texture_Load                       = 0x542b60;  // (Texture* this, char const* path)
+constexpr uintptr_t Texture_UploadTexture              = 0x552b00;  // (Texture* this, int)
+constexpr uintptr_t IGraphicsEngine_i                  = 0x53e440;  // () -> IGraphicsEngine*
+constexpr uintptr_t IGraphicsEngine_DrawTexture        = 0x53e450;  // (IGE*, Texture const*, Vector2 const&)
+constexpr uintptr_t AnimExt_LoadAnimation              = 0x553940;  // (char const* path) -> anim
+
 }} // namespace Eets::addr

@@ -208,4 +208,13 @@ inline void Object_CallFunction(Object* o, const char* fn) { ((void(*)(Object*, 
 inline void Object_CreateEffect(Object* o, const char* fx) { ((void(*)(Object*, const char*))addr::Object_CreateEffect)(o, fx); }
 inline unsigned long Object_GetBlueprintHash(Object* o) { return ((unsigned long(*)(Object*))addr::Object_GetBlueprintHash)(o); }
 
+// ---- localization ----------------------------------------------------------
+// Resolve a localized string id ("$01701") to its text. Returns the id itself
+// if unresolved. Add your own strings at boot with StringPool::LoadFile.
+inline const char* Localize(const char* id) {
+	void* sp = *(void**)addr::StringPool_instance;
+	if (!sp) return id;
+	return ((const char*(*)(void*, const char*))addr::StringPool_Resolve)(sp, id);
+}
+
 } // namespace Eets

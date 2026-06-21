@@ -32,7 +32,7 @@
 #include "eets_engine.h"
 #include "hook.h"
 
-#define EETSMOD_VERSION "0.8.0"
+#define EETSMOD_VERSION "0.9.0"
 
 namespace {
 
