@@ -2,7 +2,7 @@
 #   make                       -> build/libeetsmod.so
 #   make install GAME=..        -> loader + headers (no mods)
 #   make install-examples GAME=.. -> also copy native/examples/* into <game>/mods/
-.PHONY: all loader install install-examples release clean
+.PHONY: all loader install install-examples check apidoc release clean
 
 VERSION := $(shell sed -n 's/.*EETSMOD_VERSION "\(.*\)".*/\1/p' loader/loader.cpp)
 
@@ -17,7 +17,16 @@ install: all
 	install -m644 build/libeetsmod.so "$(GAME)/libeetsmod.so"
 	mkdir -p "$(GAME)/eetsmod-include" "$(GAME)/mods"
 	install -m644 include/*.h "$(GAME)/eetsmod-include/"
+	printf -- '-std=c++17\n-I%s/eetsmod-include\n' "$(GAME)" > "$(GAME)/mods/compile_flags.txt"
 	@echo "installed loader + headers to $(GAME). drop .cpp mods in $(GAME)/mods/"
+
+# compile every example the way the loader does, without launching the game
+check:
+	../tools/check-mod.sh examples/*.cpp
+
+# regenerate docs/NATIVE_API.md from the headers
+apidoc:
+	../tools/gen-api-ref.sh
 
 install-examples: install
 	@for f in examples/*.cpp examples/*.cfg; do [ -f "$$f" ] && install -m644 "$$f" "$(GAME)/mods/$$(basename $$f)"; done; true
@@ -31,7 +40,9 @@ release: all
 	cp include/*.h          dist/eetsmod-$(VERSION)/eetsmod-include/
 	@for f in examples/*.cpp examples/*.cfg; do [ -f "$$f" ] && cp "$$f" dist/eetsmod-$(VERSION)/examples/; done; true
 	cp ../run-eets.sh README.md dist/eetsmod-$(VERSION)/ 2>/dev/null || true
-	printf '#!/usr/bin/env bash\nset -e\nG="$${1:-$$HOME/.local/share/Steam/steamapps/common/Eets}"\n[ -x "$$G/Eets" ] || { echo "no Eets at $$G"; exit 1; }\ninstall -m644 libeetsmod.so "$$G/"\nmkdir -p "$$G/eetsmod-include" "$$G/mods"\ninstall -m644 eetsmod-include/*.h "$$G/eetsmod-include/"\necho "installed. Steam launch option: LD_PRELOAD=$$G/libeetsmod.so %%command%%"\n' > dist/eetsmod-$(VERSION)/install.sh
+	cp ../tools/check-mod.sh ../tools/new-mod.sh dist/eetsmod-$(VERSION)/ 2>/dev/null || true
+	cp ../docs/NATIVE_API.md dist/eetsmod-$(VERSION)/ 2>/dev/null || true
+	printf '#!/usr/bin/env bash\nset -e\nG="$${1:-$$HOME/.local/share/Steam/steamapps/common/Eets}"\n[ -x "$$G/Eets" ] || { echo "no Eets at $$G"; exit 1; }\ninstall -m644 libeetsmod.so "$$G/"\nmkdir -p "$$G/eetsmod-include" "$$G/mods"\ninstall -m644 eetsmod-include/*.h "$$G/eetsmod-include/"\nprintf -- "-std=c++17\\n-I%%s/eetsmod-include\\n" "$$G" > "$$G/mods/compile_flags.txt"\necho "installed. Steam launch option: LD_PRELOAD=$$G/libeetsmod.so %%command%%"\n' > dist/eetsmod-$(VERSION)/install.sh
 	chmod +x dist/eetsmod-$(VERSION)/install.sh
 	cd dist && tar czf eetsmod-$(VERSION).tar.gz eetsmod-$(VERSION)
 	@echo "-> native/dist/eetsmod-$(VERSION).tar.gz"

@@ -20,7 +20,7 @@ extern "C" void EetsMod_Init() {
 }
 
 extern "C" void EetsMod_OnKey(int key, int, int down) {
-	if (down && key == 0x4000003C) g_show = !g_show;   // F3
+	if (down && key == EKEY_F3) g_show = !g_show;
 }
 
 extern "C" void EetsMod_Update() {

@@ -45,7 +45,19 @@ author = you
 # min_framework = 0.7.0
 EOF
 
+# clangd/IDE config so editors resolve eetsmod.h and the engine API.
+FLAGS="$DIR/compile_flags.txt"
+if [[ ! -e "$FLAGS" ]]; then
+	INC="${EETS_INCLUDE:-}"
+	[[ -n "$INC" ]] || { for c in "$(dirname "$DIR")/eetsmod-include" "$DIR/.include"; do [[ -f "$c/eetsmod.h" ]] && INC="$c" && break; done; }
+	[[ -n "$INC" ]] || INC="../eetsmod-include"
+	printf -- '-std=c++17\n-I%s\n' "$INC" > "$FLAGS"
+fi
+
 echo "created:"
 echo "  $CPP"
 echo "  $CFG"
-echo "Launch the game (loader compiles it). Logs: <game>/Log/native_mods.log"
+[[ -e "$FLAGS" ]] && echo "  $(basename "$FLAGS")  (IDE/clangd include path)"
+echo
+echo "check it compiles without launching:  tools/check-mod.sh \"$CPP\""
+echo "or just launch the game (loader compiles it). Logs: <game>/Log/native_mods.log"

@@ -12,12 +12,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build native loader
         run: make -C native
-      - name: Syntax-check sample mods against headers
+      - name: Compile sample mods the way the loader does
+        run: ./tools/check-mod.sh native/examples/*.cpp
+      - name: API reference is up to date
         run: |
-          for f in native/examples/*.cpp; do
-            echo "checking $f"
-            g++ -fsyntax-only -fPIC -std=c++17 -Inative/include "$f"
-          done
+          ./tools/gen-api-ref.sh
+          git diff --exit-code docs/NATIVE_API.md || {
+            echo "docs/NATIVE_API.md is stale; run tools/gen-api-ref.sh and commit"; exit 1; }
       - name: Upload loader artifact
         uses: actions/upload-artifact@v4
         with:

@@ -45,7 +45,7 @@ extern "C" void EetsMod_OnMouse(int x, int y, int button, int down) {
 }
 
 extern "C" void EetsMod_OnKey(int key, int, int down) {
-	if (down && key == 0x4000003B) g_label = !g_label;   // F2
+	if (down && key == EKEY_F2) g_label = !g_label;
 }
 
 extern "C" void EetsMod_OnEvent(const char* name, void* /*a*/, void* /*b*/) {

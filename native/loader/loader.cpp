@@ -21,7 +21,7 @@
 #include "eets_engine.h"
 #include "hook.h"
 
-#define EETSMOD_VERSION "0.16.0"
+#define EETSMOD_VERSION "0.17.0"
 
 namespace {
 
@@ -183,14 +183,38 @@ std::string includedir() {
 	return modsdir() + "/.include";
 }
 const char* compiler() { const char* e = getenv("CXX"); return (e && *e) ? e : "g++"; }
+std::string trim(const std::string& s);
+
+// last compiler diagnostic (first error line), surfaced in-game on a failed reload
+std::string g_last_compile_err;
 
 bool compile(const std::string& src, const std::string& so) {
-	std::string cmd = std::string(compiler()) +
-		" -O2 -fPIC -std=c++17 -shared -w -I\"" + includedir() + "\" -o \"" + so + "\" \"" + src + "\""
-		" >> Log/native_mods.log 2>&1";
-	logline("compile: %s", src.c_str());
-	int rc = system(cmd.c_str());
-	if (rc != 0) { logline("compile FAILED (%d): %s", rc, src.c_str()); return false; }
+	const char* dbg = getenv("EETSMOD_DEBUG");
+	const char* extra = getenv("EETSMOD_CXXFLAGS");
+	std::string opt = (dbg && *dbg && strcmp(dbg, "0") != 0) ? "-g -O0" : "-O2";
+	std::string cmd = std::string(compiler()) + " " + opt +
+		" -fPIC -std=c++17 -Wall -shared -I\"" + includedir() + "\" " +
+		(extra ? extra : "") + " -o \"" + so + "\" \"" + src + "\" 2>&1";
+	logline("compile: %s%s", src.c_str(), (dbg && *dbg) ? " [debug]" : "");
+	g_last_compile_err.clear();
+	FILE* p = popen(cmd.c_str(), "r");
+	if (!p) { logline("compile FAILED: cannot run %s", compiler()); g_last_compile_err = "compiler not found"; return false; }
+	char line[2048];
+	FILE* lf = logfile();
+	while (fgets(line, sizeof(line), p)) {
+		if (lf) fputs(line, lf);
+		if (g_last_compile_err.empty() && strstr(line, "error:")) {
+			g_last_compile_err = trim(line);
+			if (g_last_compile_err.size() > 90) g_last_compile_err.resize(90);
+		}
+	}
+	if (lf) fflush(lf);
+	int rc = pclose(p);
+	if (rc != 0) {
+		if (g_last_compile_err.empty()) g_last_compile_err = "compile failed (see Log/native_mods.log)";
+		logline("compile FAILED (%d): %s", rc, src.c_str());
+		return false;
+	}
 	return true;
 }
 
@@ -450,6 +474,10 @@ void load_all() {
 		logline("integrity: '%s' affects simulation - replays/leaderboards may be invalid", m.name.c_str());
 }
 
+// transient on-screen message (reload result, compile errors). g_time set in the swap hook.
+std::string g_toast; double g_toast_until = 0; bool g_toast_fail = false;
+void toast(const std::string& s, bool fail = false) { g_toast = s; g_toast_fail = fail; g_toast_until = g_time + 6.0; }
+
 void poll_reload() {
 	std::string dir = modsdir();
 	for (auto& m : g_mods) {
@@ -459,7 +487,8 @@ void poll_reload() {
 			logline("reload: %s changed", m.name.c_str());
 			close_mod(m);
 			m.disabled = false;
-			if (open_mod(m) && m.init) guard(&m, [&]{ m.init(); });
+			if (open_mod(m)) { toast("reloaded " + m.name); if (m.init) guard(&m, [&]{ m.init(); }); }
+			else { m.disabled = true; toast(m.name + ": " + g_last_compile_err, true); }
 		}
 	}
 	DIR* d = opendir(dir.c_str());
@@ -622,6 +651,12 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		Eets::DrawTextOutlined(10, h - 26, banner, Eets::FONT_NORMAL, Eets::Colour(255, 255, 255, 255));
 		static bool once = false;
 		if (!once) { once = true; logline("menu banner: \"%s\" (screen h=%d)", banner, h); }
+	}
+
+	if (g_loaded && !g_toast.empty() && g_time < g_toast_until) {
+		using namespace Eets;
+		DrawTextOutlined(10, 10, g_toast.c_str(), FONT_NORMAL,
+		                 g_toast_fail ? Colour(255, 90, 80, 255) : Colour(120, 255, 120, 255));
 	}
 
 	if (g_loaded && g_overlay) {
