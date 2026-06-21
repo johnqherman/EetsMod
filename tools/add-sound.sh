@@ -29,7 +29,6 @@ else
 	mkdir -p "$GAME/Data/Sound/Wav" "$GAME/Data/Sound/Patch"
 	SND="$GAME/Data/Sound/Wav/$NAME.snd"
 	to_ogg "$SRC" "$SND"
-	# frequency must match the .snd sample rate or it plays at the wrong pitch/speed
 	SR=$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of csv=p=0 "$SND" 2>/dev/null || true)
 	[[ "$SR" =~ ^[0-9]+$ ]] || SR=$(file "$SND" | grep -oE '[0-9]+ Hz' | grep -oE '[0-9]+' || echo 44100)
 	printf 'Patch = \r\n{\r\n\tname = "%s",\r\n\tfilepath = "DATA:Sound\\\\Wav\\\\%s.snd",\r\n\tmax_polyphony = 5,\r\n\tfrequency = %s,\r\n}' \
