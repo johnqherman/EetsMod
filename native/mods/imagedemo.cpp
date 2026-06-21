@@ -1,19 +1,20 @@
-// imagedemo - EXPERIMENTAL custom-image draw test. Press I to toggle.
-// Draws a stock texture at a fixed spot to validate the DrawImage path.
+// imagedemo - draw a custom image (Eets.png) at the cursor. Press I to toggle.
 #include "eetsmod.h"
 using namespace Eets;
 
 static bool g_on = true;
 
 extern "C" void EetsMod_Init() {
-	Eets::Log("imagedemo: press I to toggle a test image draw");
+	void* s = LoadSprite("Eets.png");
+	Eets::Log("imagedemo: Eets.png %dx%d loaded; press I to toggle, follows the mouse",
+	          SpriteWidth(s), SpriteHeight(s));
 }
 extern "C" void EetsMod_OnKey(int key, int, int down) {
 	if (down && key == 'i') g_on = !g_on;
 }
+extern "C" void EetsMod_OnMouse(int x, int y, int, int) { (void)x; (void)y; }
 extern "C" void EetsMod_Update() {
 	if (!g_on) return;
-	bool ok = DrawImage("Eets.png", 200, 150);
-	static bool logged = false;
-	if (!logged) { logged = true; Eets::Log("imagedemo: DrawImage('Eets.png') returned %d", ok ? 1 : 0); }
+	// draw Eets centered on the cursor (sprite is 512x512)
+	DrawImage("Eets.png", MouseX() - 256, MouseY() - 256);
 }

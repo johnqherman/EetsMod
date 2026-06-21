@@ -30,7 +30,7 @@ Trusted full-access Lua mods still go in `Data/Mods/<name>/mod.lua`.
 | **New objects/blueprints** | works (runtime drop-in) | `Data/Objects/<name>.lua` + `World_CreateObject` (lazy-loaded; verified) |
 | **Levels (.eet)** | works | Lua toolchain `Mods.eet.compile/build/read` (in-engine `string.dump`) or the in-game editor |
 | **Localization** | binding available | `Eets::Localize("$id")` resolves; `StringPool::LoadFile` (addr) adds strings |
-| **Custom textures/sprites** | advanced/experimental | `Texture::Load` + `IGraphicsEngine::DrawTexture` addresses exposed; no validated wrapper (caller-allocated Texture + GPU upload). File-replace under `Data/` is the reliable route today |
+| **Custom images** | works | `Eets::DrawImage(path, x, y, tint)` + `Eets::LoadSprite(path)` via `SpriteManager::Load` + `GraphicsEngine::DrawSprite` (the game's own sprite renderer; verified rendering a 512x512 PNG). jpg/tga/dds/png; draws at native size in the sprite render space |
 | **Custom animations** | advanced | `AnimExt::LoadAnimation` address exposed |
 | **Sound** | partial | `Sound_CreateSound`/`Sound_PlayMusic` bindings; add files by replacing under `Data/Sound` |
 | **Asset bundling** | works | native loader copies `mods/assets/<rel>` -> `Data/<rel>` at boot; reference by name via the engine's content path |
@@ -46,8 +46,7 @@ active. An official build should additionally disable score submission while a
 
 ## Recommended for an official launch
 1. ~~Sandboxed Lua content tier~~ — **done** (`Data/Mods/content/`).
-2. ~~Asset bundling~~ — **done** (`mods/assets/` → `Data/`). Still open: a
-   validated *immediate* texture-draw wrapper (the engine renders via Sprites/
-   anims, not raw `DrawTexture`; needs visual iteration to land safely).
+2. ~~Asset bundling + custom image draw~~ — **done** (`mods/assets/` → `Data/`;
+   `Eets::DrawImage` via the engine's Sprite renderer, verified rendering).
 3. Score/replay gating driven by the `sim` flag (warning emitted today; actual
    gating needs the score-submit hook).

@@ -210,11 +210,9 @@ inline void Object_CreateEffect(Object* o, const char* fx) { ((void(*)(Object*, 
 inline unsigned long Object_GetBlueprintHash(Object* o) { return ((unsigned long(*)(Object*))addr::Object_GetBlueprintHash)(o); }
 
 // ---- custom images ---------------------------------------------------------
-// Draws an image at render-space (x, y) via the engine's Sprite path (the same
-// SpriteManager::Load + GraphicsEngine::DrawSprite the game uses for its load/
-// trophy screens). The sprite is loaded once and cached per path. `scale` and
-// `tint` are optional; `path` is a DATA:/relative path (e.g. "Eets.png").
-// Returns false if the sprite couldn't be loaded.
+// Load (and cache) a sprite from an image file. `path` is a DATA:/relative path
+// (e.g. "Eets.png", "DATA:Images/foo.jpg"; jpg/tga/dds/png). Returns a Sprite*
+// (opaque) or null. Cached per path, so call freely each frame.
 inline void* LoadSprite(const char* path, int format = 0) {
 	static std::unordered_map<std::string, void*> cache;
 	auto it = cache.find(path);
@@ -230,14 +228,22 @@ inline void* LoadSprite(const char* path, int format = 0) {
 	cache[path] = sprite;
 	return sprite;
 }
-inline bool DrawImage(const char* path, int x, int y, float scale = 1.0f, Colour tint = Colour()) {
+inline int  SpriteWidth(void* s)  { return s ? (int)((unsigned(*)(void*))addr::Sprite_GetWidth)(s)  : 0; }
+inline int  SpriteHeight(void* s) { return s ? (int)((unsigned(*)(void*))addr::Sprite_GetHeight)(s) : 0; }
+
+// Draw an image with its top-left at (x, y), at the sprite's native pixel size,
+// optionally tinted. Uses the engine's Sprite path (SpriteManager::Load +
+// GraphicsEngine::DrawSprite - the same renderer the game's load screen uses).
+// Coordinates are the sprite render space: screen-aligned in menus, world/camera
+// space inside a level. Returns false if the image couldn't load.
+inline bool DrawImage(const char* path, int x, int y, Colour tint = Colour()) {
 	void* sprite = LoadSprite(path);
 	if (!sprite) return false;
 	void* ge = GraphicsEngine_i();
 	if (!ge) return false;
-	Vector2 pos{(float)x, (float)y}, b{0.0f, 0.0f}, sc{scale, scale};
+	Vector2 pos{(float)x, (float)y}, uv0{0.0f, 0.0f}, uv1{1.0f, 1.0f};
 	((void(*)(void*, void*, const Vector2&, const Vector2&, const Vector2&, const Colour&))
-	 addr::GraphicsEngine_DrawSprite)(ge, sprite, pos, b, sc, tint);
+	 addr::GraphicsEngine_DrawSprite)(ge, sprite, pos, uv0, uv1, tint);
 	return true;
 }
 
