@@ -178,12 +178,13 @@ inline void FillCircle(int x, int y, float r, Colour c, int segs = 24) {
 	((void(*)(void*, const Vector2&, float, const Colour&, int))
 	 addr::GraphicsEngine_DrawCircleFilled)(g, p, r, s, segs);
 }
-// rectangle outline
+// rectangle outline of thickness t (built from filled bars - DrawLine ignores width)
 inline void DrawRect(int x, int y, int w, int h, Colour c, float t = 2.0f) {
-	DrawLine({(float)x, (float)y},       {(float)(x + w), (float)y},       c, t);
-	DrawLine({(float)(x + w), (float)y}, {(float)(x + w), (float)(y + h)}, c, t);
-	DrawLine({(float)(x + w),(float)(y+h)},{(float)x, (float)(y + h)},     c, t);
-	DrawLine({(float)x, (float)(y + h)}, {(float)x, (float)y},             c, t);
+	int ti = (int)t; if (ti < 1) ti = 1;
+	FillRect(x, y, w, ti, c);                 // top
+	FillRect(x, y + h - ti, w, ti, c);        // bottom
+	FillRect(x, y, ti, h, c);                 // left
+	FillRect(x + w - ti, y, ti, h, c);        // right
 }
 
 // ---- more engine wrappers --------------------------------------------------
