@@ -2,6 +2,11 @@
 *.log
 Log/
 
+# native build artifacts
+native/build/
+*.so
+*.o
+
 # editor / OS
 *.swp
 .DS_Store

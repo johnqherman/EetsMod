@@ -1,13 +1,48 @@
 # Eets Mod Framework
 
-Zero-patch Lua modding for **Eets** (the Klei puzzle game). No binary edits, no
-`LD_PRELOAD` — the game `dofile`s an optional `Data/localexec.lua` at boot, which
-bootstraps a loader that discovers and runs mods from `Data/Mods/<name>/mod.lua`.
+A modding framework for **Eets** (the Klei puzzle game), a native C++ engine.
+Two ways to write mods:
 
-## Why it works
+- **Native C++ mods** — `.so` plugins injected via a small `LD_PRELOAD` loader;
+  call engine functions directly, get a per-frame tick and input. Full power.
+  **See [`native/README.md`](native/README.md).**
+- **Lua mods** — zero-patch, no preload: the game `dofile`s an optional
+  `Data/localexec.lua` at boot. Lighter, scripting-only. Documented below.
 
-Eets is a native C++ engine that embeds **Lua 5.0** (via luabind) and renders
-through FNA3D/FAudio/SDL2. At boot the engine runs, in order:
+Both come from reverse-engineering the engine; see [`docs/INTERNALS.md`](docs/INTERNALS.md).
+
+---
+
+## Native C++ mods (recommended)
+
+Eets is a non-PIE C++ ELF that links SDL2/FNA3D dynamically, so a preloaded
+loader can interpose `FNA3D_SwapBuffers` (per-frame) and `SDL_PollEvent` (input),
+`dlopen` mod `.so`s, and let them call engine functions at their fixed addresses.
+
+```sh
+cd native
+make
+make install GAME=/path/to/Eets
+EETS_DIR=/path/to/Eets ../run-eets.sh      # or set the Steam LD_PRELOAD launch option
+```
+
+```cpp
+#include "eetsmod.h"
+using namespace Eets;
+extern "C" void EetsMod_OnKey(int key, int mods, int down) {
+    if (down && key == 'g' && (mods & EKMOD_CTRL))
+        World_SetGravity({0, World_GetGravity().y * 0.25f}, 0);
+}
+```
+
+Full guide, API, and build details: **[`native/README.md`](native/README.md)**.
+
+---
+
+## Lua mods (zero-patch alternative)
+
+No preload required. Eets embeds **Lua 5.0** (via luabind) and renders through
+FNA3D/FAudio/SDL2. At boot the engine runs, in order:
 
 ```
 Lua Game Lib -> Register Extensions -> Physics/Sound/FX/World/Simulator
