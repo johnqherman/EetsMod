@@ -9,7 +9,7 @@ jobs:
   build-loader:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build native loader
         run: make -C native
       - name: Compile sample mods the way the loader does
@@ -20,7 +20,7 @@ jobs:
           git diff --exit-code docs/NATIVE_API.md || {
             echo "docs/NATIVE_API.md is stale; run tools/gen-api-ref.sh and commit"; exit 1; }
       - name: Upload loader artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: libeetsmod.so
           path: native/build/libeetsmod.so
