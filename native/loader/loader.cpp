@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <algorithm>
 #include <csetjmp>
 #include <csignal>
 #include <ctime>
@@ -463,6 +464,17 @@ void install_assets() {
 	else logline("assets: install failed");
 }
 
+// runs at LD_PRELOAD load, before the engine scans Data/ at boot - so a bundle's
+// custom assets (sounds/textures) are in place for that first scan, not one launch late.
+__attribute__((constructor))
+void eetsmod_preboot() {
+	mkdir("Log", 0755);
+	mkdir(modsdir().c_str(), 0755);
+	mkdir(cachedir().c_str(), 0755);
+	extract_bundles();
+	install_assets();
+}
+
 void load_all() {
 	install_guards();
 	check_buildid();
@@ -474,21 +486,34 @@ void load_all() {
 	logline("eetsmod v%s  include=%s compiler=%s", EETSMOD_VERSION, includedir().c_str(), compiler());
 	logline("loader: scanning %s", dir.c_str());
 
+	// gather candidate filenames, then process .eetsmod first so a bundle wins over any
+	// stray loose file of the same name (one mod per name, never duplicated).
 	std::vector<Mod> found;
+	std::vector<std::string> names;
 	DIR* d = opendir(dir.c_str());
 	if (d) {
 		struct dirent* ent;
+		std::vector<std::string> files;
 		while ((ent = readdir(d)) != nullptr) {
 			std::string n = ent->d_name;
-			Mod m; m.name = stem(n);
-			if (ends_with(n, ".eetsmod")) { if (!make_bundle_mod(m.name, m)) continue; }  // one-file mod
-			else if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + m.name + ".so"; }
-			else if (ends_with(n, ".so")) { m.so = dir + "/" + n; }
-			else continue;
-			read_manifest(m);
-			found.push_back(m);
+			if (ends_with(n, ".eetsmod") || ends_with(n, ".cpp") || ends_with(n, ".so")) files.push_back(n);
 		}
 		closedir(d);
+		std::sort(files.begin(), files.end(), [](const std::string& a, const std::string& b) {
+			return ends_with(a, ".eetsmod") && !ends_with(b, ".eetsmod");   // .eetsmod first
+		});
+		for (auto& n : files) {
+			std::string name = stem(n);
+			bool dup = false; for (auto& s : names) if (s == name) { dup = true; break; }
+			if (dup) { logline("loader: ignoring %s (mod '%s' already provided)", n.c_str(), name.c_str()); continue; }
+			Mod m; m.name = name;
+			if (ends_with(n, ".eetsmod")) { if (!make_bundle_mod(name, m)) continue; }
+			else if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + name + ".so"; }
+			else { m.so = dir + "/" + n; }
+			read_manifest(m);
+			names.push_back(name);
+			found.push_back(m);
+		}
 	} else logline("loader: no mods dir (%s)", dir.c_str());
 
 	for (size_t i = 0; i < found.size(); i++)

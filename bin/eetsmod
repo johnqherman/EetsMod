@@ -146,15 +146,8 @@ cmd_add() {
 	esac
 	[[ -f "$src" ]] || die "no such file: $src"
 	case "$src" in
-		*.eetsmod)
-			command -v tar >/dev/null || die "need tar to unpack"
-			local tmp; tmp="$(mktemp -d)"; tar -C "$tmp" -xzf "$src"
-			local cfg; cfg="$(ls "$tmp"/*.cfg | head -1)"; local name; name="$(basename "${cfg%.cfg}")"
-			cp "$cfg" "$game/mods/"
-			[[ -f "$tmp/$name.so" ]]  && install -m644 "$tmp/$name.so"  "$game/mods/"
-			[[ -f "$tmp/$name.cpp" ]] && cp "$tmp/$name.cpp" "$game/mods/"
-			[[ -d "$tmp/assets" ]] && { mkdir -p "$game/mods/assets"; cp -r "$tmp/assets/." "$game/mods/assets/"; }
-			rm -rf "$tmp"; info "added '$name' to $game/mods";;
+		# a .eetsmod is self-contained: just drop the one file in, the loader stages it
+		*.eetsmod) install -m644 "$src" "$game/mods/"; info "added $(basename "$src")";;
 		*.so)  install -m644 "$src" "$game/mods/"; info "added $(basename "$src") (prebuilt)";;
 		*.cpp) cp "$src" "$game/mods/"; info "added $(basename "$src") (compiles at next launch)";;
 		*) die "unsupported mod file: $src (.eetsmod, .so, .cpp, or URL)";;
