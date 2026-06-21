@@ -19,6 +19,17 @@ void EetsMod_Update();
 // 0 on release. Optional.
 void EetsMod_OnKey(int keycode, int mods, int down);
 
+// Mouse motion/button. button: EMBTN_MOTION(-1), EMBTN_LEFT(1), EMBTN_MIDDLE(2),
+// EMBTN_RIGHT(3); down 1/0 (0 for motion). (x, y) are window pixels. Optional.
+void EetsMod_OnMouse(int x, int y, int button, int down);
+
+// Mouse wheel scroll (dx, dy). Optional.
+void EetsMod_OnWheel(int dx, int dy);
+
+// Engine event. Currently fired: "object_spawn" (a = Object*, b = name string).
+// More events as engine hooks are added. Optional.
+void EetsMod_OnEvent(const char* name, void* a, void* b);
+
 // Called before the mod is unloaded (hot-reload or shutdown). Optional.
 void EetsMod_Shutdown();
 
@@ -30,11 +41,20 @@ namespace Eets {
 	void Log(const char* fmt, ...);
 
 	// Read a value from <game>/mods/<mod>.cfg (simple key=value lines).
-	// Returns `def` if the file or key is absent. Pointer is valid until the
-	// next ConfigGet call for the same mod.
 	const char* ConfigGet(const char* mod, const char* key, const char* def);
 	int   ConfigGetInt(const char* mod, const char* key, int def);
 	float ConfigGetFloat(const char* mod, const char* key, float def);
+
+	// Detour an arbitrary engine function. On success *original receives a
+	// trampoline to call the unhooked function. Returns false (no change) if the
+	// target's prologue can't be safely relocated.
+	//   static void(*orig)() = nullptr;
+	//   Eets::Hook((void*)0xADDR, (void*)my_detour, (void**)&orig);
+	bool Hook(void* target, void* detour, void** original);
+
+	// Last known mouse position (window pixels).
+	int MouseX();
+	int MouseY();
 }
 
 // Minimal SDL keycode / modifier constants (so mods don't need SDL headers).
@@ -50,4 +70,5 @@ enum {
 #define EKMOD_CTRL  (EKMOD_LCTRL | EKMOD_RCTRL)
 #define EKMOD_SHIFT (EKMOD_LSHIFT | EKMOD_RSHIFT)
 #define EKMOD_ALT   (EKMOD_LALT | EKMOD_RALT)
+enum { EMBTN_MOTION = -1, EMBTN_LEFT = 1, EMBTN_MIDDLE = 2, EMBTN_RIGHT = 3 };
 #endif
