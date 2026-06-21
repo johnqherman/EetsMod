@@ -2,6 +2,7 @@
 # Generate docs/NATIVE_API.md from the public header signatures, so the native
 # API is discoverable without grepping headers. Run after changing the headers.
 set -euo pipefail
+export LC_ALL=C   # deterministic sort order across machines (CI runs C locale)
 SELF="$(cd "$(dirname "$0")/.." && pwd)"
 INC="$SELF/native/include"
 OUT="$SELF/docs/NATIVE_API.md"
