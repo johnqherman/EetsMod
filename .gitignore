@@ -1,0 +1,7 @@
+# logs / runtime
+*.log
+Log/
+
+# editor / OS
+*.swp
+.DS_Store
