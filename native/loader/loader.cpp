@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <link.h>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -69,6 +70,7 @@ bool   g_loaded = false;
 unsigned long g_frame = 0;
 const unsigned RELOAD_POLL_FRAMES = 30;
 int g_mouse_x = 0, g_mouse_y = 0;
+bool g_overlay = false;          // F1 toggles the mod-list overlay
 
 FILE* logfile() { static FILE* f = fopen("Log/native_mods.log", "a"); return f; }
 void logline(const char* fmt, ...) {
@@ -113,6 +115,42 @@ bool guard(Mod* m, Fn&& fn) {
 	g_guarding = 0;
 	if (m) { m->disabled = true; logline("CRASH in mod '%s' - disabled", m->name.c_str()); }
 	return false;
+}
+
+// ---- BuildID check: warn if the addresses in eets_engine.h won't match -----
+struct BuildIdCtx { char hex[64]; bool found; };
+int buildid_cb(struct dl_phdr_info* info, size_t, void* data) {
+	if (info->dlpi_name && info->dlpi_name[0] != '\0') return 0;  // main exe has empty name
+	BuildIdCtx* ctx = (BuildIdCtx*)data;
+	for (int i = 0; i < info->dlpi_phnum; i++) {
+		const ElfW(Phdr)& ph = info->dlpi_phdr[i];
+		if (ph.p_type != PT_NOTE) continue;
+		const unsigned char* p = (const unsigned char*)(info->dlpi_addr + ph.p_vaddr);
+		const unsigned char* end = p + ph.p_memsz;
+		while (p + 12 <= end) {
+			uint32_t namesz = *(uint32_t*)p, descsz = *(uint32_t*)(p + 4), type = *(uint32_t*)(p + 8);
+			const unsigned char* name = p + 12;
+			const unsigned char* desc = name + ((namesz + 3) & ~3u);
+			if (type == 3 && namesz == 4 && memcmp(name, "GNU", 3) == 0) {  // NT_GNU_BUILD_ID
+				char* o = ctx->hex;
+				for (uint32_t k = 0; k < descsz && k < 30; k++) { sprintf(o, "%02x", desc[k]); o += 2; }
+				ctx->found = true; return 1;
+			}
+			p = desc + ((descsz + 3) & ~3u);
+		}
+	}
+	return 0;
+}
+void check_buildid() {
+	BuildIdCtx ctx; ctx.hex[0] = 0; ctx.found = false;
+	dl_iterate_phdr(buildid_cb, &ctx);
+	if (!ctx.found) { logline("buildid: could not read running BuildID"); return; }
+	if (strcmp(ctx.hex, Eets::EXPECTED_BUILDID) == 0) {
+		logline("buildid: %s (matches engine bindings)", ctx.hex);
+	} else {
+		logline("buildid: WARNING running %s != expected %s", ctx.hex, Eets::EXPECTED_BUILDID);
+		logline("buildid: engine addresses may be wrong - regenerate gen_engine_header.sh");
+	}
 }
 
 std::string modsdir() { const char* e = getenv("EETS_MODS"); return e ? e : "mods"; }
@@ -248,6 +286,7 @@ void install_engine_event_hooks() {
 // ---- discovery + load -----------------------------------------------------
 void load_all() {
 	install_guards();
+	check_buildid();
 	std::string dir = modsdir();
 	mkdir(cachedir().c_str(), 0755);
 	logline("eetsmod v%s  include=%s compiler=%s", EETSMOD_VERSION, includedir().c_str(), compiler());
@@ -377,6 +416,21 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		static bool once = false;
 		if (!once) { once = true; logline("menu banner: \"%s\" (screen h=%d)", banner, h); }
 	}
+
+	// F1 mod-list overlay (top-left, any screen)
+	if (g_loaded && g_overlay) {
+		char line[160];
+		snprintf(line, sizeof(line), "eetsmod v%s - %zu mods", EETSMOD_VERSION, g_mods.size());
+		Eets::DrawTextSized(10, 10, line, Eets::FONT_NORMAL, Eets::Colour(255, 255, 0, 255), 0.6f);
+		int y = 30;
+		for (auto& m : g_mods) {
+			snprintf(line, sizeof(line), "%s %s%s", m.disabled ? "[x]" : "[*]",
+			         m.name.c_str(), m.version.empty() ? "" : (" v" + m.version).c_str());
+			Eets::Colour c = m.disabled ? Eets::Colour(255, 80, 80, 255) : Eets::Colour(180, 255, 180, 255);
+			Eets::DrawTextSized(10, y, line, Eets::FONT_NORMAL, c, 0.5f);
+			y += 14;
+		}
+	}
 	if (real) real(device, src, dst, window);
 }
 
@@ -388,6 +442,7 @@ int SDL_PollEvent(void* event) {
 		unsigned type = *(unsigned*)event;
 		if (type == SDL_KEYDOWN || type == SDL_KEYUP) {
 			KeyView* k = (KeyView*)event; int down = (type == SDL_KEYDOWN) ? 1 : 0;
+			if (down && k->sym == 0x4000003A) g_overlay = !g_overlay;   // F1 toggles overlay
 			for (auto& m : g_mods) if (m.onkey && !m.disabled) guard(&m, [&]{ m.onkey(k->sym, k->mod, down); });
 		} else if (type == SDL_MOUSEMOTION) {
 			MotionView* mv = (MotionView*)event; g_mouse_x = mv->x; g_mouse_y = mv->y;

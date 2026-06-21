@@ -12,6 +12,10 @@
 
 namespace Eets {
 
+// Addresses below are valid for this exact game build. The loader warns if the
+// running binary's BuildID differs (regenerate with gen_engine_header.sh).
+constexpr const char* EXPECTED_BUILDID = "e81cc5504d3ef03324805df3e9fc508c1bf8c628";
+
 struct Vector2 { float x, y; };
 struct Colour { unsigned char r, g, b, a;          // 4-byte packed (engine ABI)
 	Colour(unsigned char R=255, unsigned char G=255, unsigned char B=255, unsigned char A=255)
