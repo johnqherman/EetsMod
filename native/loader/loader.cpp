@@ -74,7 +74,23 @@ double g_time = 0.0, g_dt = 0.0;
 const int OV_X = 8, OV_Y = 8, OV_W = 320, OV_TITLE = 40, OV_ROWH = 26;  // f1 manager layout
 std::string g_selected;
 
-FILE* logfile() { static FILE* f = fopen("Log/native_mods.log", "a"); return f; }
+// absolute game dir, resolved from this .so's own path (libeetsmod.so lives in the
+// game dir). works even in the LD_PRELOAD constructor, before the game chdir's there -
+// so we must never rely on the process cwd for our paths.
+std::string base() {
+	static std::string b;
+	if (b.empty()) {
+		Dl_info info;
+		if (dladdr((void*)&base, &info) && info.dli_fname) {
+			std::string p = info.dli_fname; size_t s = p.find_last_of('/');
+			if (s != std::string::npos) b = p.substr(0, s);
+		}
+		if (b.empty()) b = ".";
+	}
+	return b;
+}
+
+FILE* logfile() { static FILE* f = fopen((base() + "/Log/native_mods.log").c_str(), "a"); return f; }
 void logline(const char* fmt, ...) {
 	char buf[2048];
 	va_list ap; va_start(ap, fmt); vsnprintf(buf, sizeof(buf), fmt, ap); va_end(ap);
@@ -166,7 +182,8 @@ void check_buildid() {
 	}
 }
 
-std::string modsdir() { const char* e = getenv("EETS_MODS"); return e ? e : "mods"; }
+std::string modsdir() { const char* e = getenv("EETS_MODS"); return e ? e : base() + "/mods"; }
+std::string datadir() { return base() + "/Data"; }
 std::string cachedir() { return modsdir() + "/.cache"; }
 time_t mtime_of(const std::string& p) { struct stat s; return stat(p.c_str(), &s) == 0 ? s.st_mtime : 0; }
 bool   exists(const std::string& p)   { struct stat s; return stat(p.c_str(), &s) == 0; }
@@ -427,12 +444,12 @@ void extract_bundles() {
 		std::string stamp = sdir + "/.stamp";
 		if (exists(stamp) && mtime_of(stamp) >= mtime_of(bundle)) continue;
 		std::string cmd = "rm -rf \"" + sdir + "\" && mkdir -p \"" + sdir + "\" && "
-		                  "tar xzf \"" + bundle + "\" -C \"" + sdir + "\" 2>>Log/native_mods.log";
+		                  "tar xzf \"" + bundle + "\" -C \"" + sdir + "\" 2>>\"" + base() + "/Log/native_mods.log\"";
 		if (system(cmd.c_str()) != 0) { logline("bundle: extract FAILED %s (need tar)", n.c_str()); continue; }
 		// a bundle's assets/ tree mirrors Data/ and is installed on extract
 		std::string adir = sdir + "/assets";
 		if (exists(adir))
-			system(("cp -r --no-preserve=mode \"" + adir + "\"/. Data/ 2>>Log/native_mods.log").c_str());
+			system(("cp -r --no-preserve=mode \"" + adir + "\"/. \"" + datadir() + "\"/ 2>>\"" + base() + "/Log/native_mods.log\"").c_str());
 		FILE* f = fopen(stamp.c_str(), "w"); if (f) fclose(f);
 		logline("bundle: installed %s", n.c_str());
 	}
@@ -459,7 +476,7 @@ void install_assets() {
 	FILE* p = popen(("find \"" + adir + "\" -type f 2>/dev/null | wc -l").c_str(), "r");
 	if (p) { char b[32]; if (fgets(b, sizeof(b), p)) n = atoi(b); pclose(p); }
 	if (n <= 0) return;
-	if (system(("cp -r --no-preserve=mode \"" + adir + "\"/. Data/ 2>>Log/native_mods.log").c_str()) == 0)
+	if (system(("cp -r --no-preserve=mode \"" + adir + "\"/. \"" + datadir() + "\"/ 2>>\"" + base() + "/Log/native_mods.log\"").c_str()) == 0)
 		logline("assets: installed %d file(s) from mods/assets/ into Data/", n);
 	else logline("assets: install failed");
 }
@@ -468,7 +485,11 @@ void install_assets() {
 // custom assets (sounds/textures) are in place for that first scan, not one launch late.
 __attribute__((constructor))
 void eetsmod_preboot() {
-	mkdir("Log", 0755);
+	// LD_PRELOAD is inherited by children; our extract/compile steps shell out via
+	// system(), and those children would re-load this .so and re-run this constructor -
+	// a fork bomb. drop it now (we are already mapped; the game does not need it set).
+	unsetenv("LD_PRELOAD");
+	mkdir((base() + "/Log").c_str(), 0755);
 	mkdir(modsdir().c_str(), 0755);
 	mkdir(cachedir().c_str(), 0755);
 	extract_bundles();
