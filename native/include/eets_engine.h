@@ -66,11 +66,13 @@ inline void World_ChangeEmotion(unsigned long objHash, unsigned int emotion) {
 	((void(*)(unsigned long, unsigned int))addr::World_ChangeEmotion)(objHash, emotion);
 }
 inline void Sound_CreateSound(const char* name, bool loop, float vol, const Vector2& pos) {
-	((void(*)(const char*, bool, float, const Vector2&))addr::Sound_CreateSound)(name, loop, vol, pos);
+	// returns a SoundHandle by value (sret): pass a hidden return buffer first
+	char handle[16] = {0};
+	((void(*)(void*, const char*, bool, float, const Vector2&))addr::Sound_CreateSound)(handle, name, loop, vol, pos);
 }
-inline void PlaySound(const char* name, float vol = 100.0f) {
+inline void PlaySound(const char* name, float vol = 0.0f) {   // 0 = normal 2d play
 	Vector2 z{0.0f, 0.0f};
-	((void(*)(const char*, bool, float, const Vector2&))addr::Sound_CreateSound)(name, false, vol, z);
+	Sound_CreateSound(name, false, vol, z);
 }
 
 inline Vector2 Object_GetPosition(Object* o) {
@@ -236,11 +238,10 @@ inline void* LoadAnim(const char* path) {
 	static std::unordered_map<std::string, void*> cache;
 	auto it = cache.find(path);
 	if (it != cache.end()) return it->second;
-	void* a = malloc(0x78);                 // sizeof(Anim::Animation)
-	if (a) {
-		memset(a, 0, 0x78);
-		((void(*)(void*, const char*, bool))addr::Animation_ctor)(a, path, true);  // loop
-	}
+	// engine operator new + ctor (no memset: ctor assigns std::string members, a
+	// zeroed buffer would construct a string from null and throw)
+	void* a = ((void*(*)(unsigned long))addr::Animation_operator_new)(0x78);
+	if (a) ((void(*)(void*, const char*, bool))addr::Animation_ctor)(a, path, true);
 	cache[path] = a;
 	return a;
 }

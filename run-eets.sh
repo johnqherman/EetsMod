@@ -8,6 +8,8 @@ GAME="${EETS_DIR:-$(pwd)}"
 [[ -f "$GAME/libeetsmod.so" ]] || { echo "libeetsmod.so not installed in '$GAME' (run: make -C native install GAME=$GAME)" >&2; exit 1; }
 
 cd "$GAME"
+# bundled assets must be in Data/ before boot (sound dirs are scanned at startup)
+[[ -d "$GAME/mods/assets" ]] && cp -rn "$GAME/mods/assets/." "$GAME/Data/" 2>/dev/null || true
 export EETS_MODS="${EETS_MODS:-$GAME/mods}"
 export LD_PRELOAD="$GAME/libeetsmod.so${LD_PRELOAD:+:$LD_PRELOAD}"
 exec ./Eets "$@"

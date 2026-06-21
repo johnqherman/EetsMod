@@ -17,10 +17,11 @@
 #include <csetjmp>
 #include <csignal>
 #include <ctime>
+#include <exception>
 #include "eets_engine.h"
 #include "hook.h"
 
-#define EETSMOD_VERSION "0.14.0"
+#define EETSMOD_VERSION "0.15.0"
 
 namespace {
 
@@ -105,7 +106,20 @@ template <class Fn>
 bool guard(Mod* m, Fn&& fn) {
 	if (m && m->disabled) return false;
 	if (sigsetjmp(g_jmp, 1) == 0) {
-		g_guarding = 1; fn(); g_guarding = 0; return true;
+		g_guarding = 1;
+		try {
+			fn();
+		} catch (const std::exception& e) {
+			g_guarding = 0;
+			if (m) { m->disabled = true; logline("EXCEPTION in mod '%s': %s - disabled", m->name.c_str(), e.what()); }
+			return false;
+		} catch (...) {
+			g_guarding = 0;
+			if (m) { m->disabled = true; logline("EXCEPTION in mod '%s' - disabled", m->name.c_str()); }
+			return false;
+		}
+		g_guarding = 0;
+		return true;
 	}
 	g_guarding = 0;
 	if (m) { m->disabled = true; logline("CRASH in mod '%s' - disabled", m->name.c_str()); }

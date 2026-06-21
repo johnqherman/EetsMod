@@ -130,6 +130,7 @@ constexpr uintptr_t Texture_UploadTexture              = 0x552b00;  // (Texture*
 constexpr uintptr_t IGraphicsEngine_i                  = 0x53e440;  // () -> IGraphicsEngine*
 constexpr uintptr_t IGraphicsEngine_DrawTexture        = 0x53e450;  // (IGE*, Texture const*, Vector2 const&)
 constexpr uintptr_t AnimExt_LoadAnimation              = 0x553940;  // (char const* path) -> anim
+constexpr uintptr_t Animation_operator_new             = 0x5015c0;  // (0x78) -> Animation*
 constexpr uintptr_t Animation_ctor                     = 0x5016a0;  // (Animation* this[0x78], char const* path, bool)
 constexpr uintptr_t Animation_Update                   = 0x5049d0;  // (Animation*, float dt)
 constexpr uintptr_t Animation_GetCurrentFrame          = 0x504920;  // (Animation*) -> Sprite*

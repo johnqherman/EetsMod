@@ -32,7 +32,7 @@ Trusted full-access Lua mods still go in `Data/Mods/<name>/mod.lua`.
 | **Localization** | binding available | `Eets::Localize("$id")` resolves; `StringPool::LoadFile` (addr) adds strings |
 | **Custom images** | works | `Eets::DrawImage(path, x, y, tint)` + `Eets::LoadSprite(path)` via `SpriteManager::Load` + `GraphicsEngine::DrawSprite` (the game's own sprite renderer; verified rendering a 512x512 PNG). jpg/tga/dds/png; draws at native size in the sprite render space |
 | **Custom animations** | works | `Eets::DrawAnim(path, x, y, dt[, fps])` (`.anim` spritesheets; per-frame UV via `GetDiffuseUV`; native rate from `AnimFrameDuration`). `Eets::DrawImageHUD` screen-locks images in-level |
-| **Sound** | partial | `Sound_CreateSound`/`Sound_PlayMusic` bindings; add files by replacing under `Data/Sound` |
+| **Sound** | works | `Eets::PlaySound(name)` / `Sound_PlayMusic(name, loop)`; custom sfx/music via `tools/add-sound.sh <name> <audiofile>` (any format -> ogg `.snd` + text `.ptch`; `--music` for tracks). verified end to end |
 | **Asset bundling** | works | native loader copies `mods/assets/<rel>` -> `Data/<rel>` at boot; reference by name via the engine's content path |
 | **Asset replacement** | works | overwrite the file under `Data/` (the `DATA:` alias is C-side only) |
 
