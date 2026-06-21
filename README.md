@@ -1,6 +1,31 @@
 # Eets Mod Framework
 
 A modding framework for **Eets** (the Klei puzzle game), a native C++ engine.
+
+## Play with mods
+
+A mod is one file: **`mymod.eetsmod`** (like a Minecraft `.jar`). It has everything
+inside - code, settings, art.
+
+1. **Turn on mod support once.** In the repo or a release, run `eetsmod setup`, then
+   paste the line it prints into the Eets **Steam launch options** (right-click Eets
+   in your library -> Properties -> General -> Launch Options):
+   ```
+   LD_PRELOAD=/path/to/Eets/libeetsmod.so %command%
+   ```
+2. **Add a mod.** Drop the `.eetsmod` file into the game's `mods` folder. That's it -
+   no compiler, no extra tools.
+3. **Play.** On the main menu, click the **MODS** button (bottom-left) to turn mods
+   on/off, change their settings, or open the mods folder to add more. (`F1` also
+   opens it.)
+
+> **Heads up:** mods are native code that runs as part of the game. Only install
+> mods from people you trust. See [`SECURITY.md`](SECURITY.md).
+
+---
+
+## For mod makers
+
 Two ways to write mods:
 
 - **Native C++ mods** - `.so` plugins injected via a small `LD_PRELOAD` loader;

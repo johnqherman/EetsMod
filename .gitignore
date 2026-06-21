@@ -5,8 +5,10 @@ Log/
 # native build artifacts
 native/build/
 native/dist/
+native/examples/build/
 *.so
 *.o
+*.eetsmod
 
 # editor / OS
 *.swp

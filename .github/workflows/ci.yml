@@ -10,10 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Lint shell tooling
+        run: for f in bin/eetsmod tools/*.sh; do bash -n "$f"; done
       - name: Build native loader
         run: make -C native
       - name: Compile sample mods the way the loader does
         run: ./tools/check-mod.sh native/examples/*.cpp
+      - name: Pack example mods into .eetsmod bundles
+        run: make -C native bundles && ls -1 native/examples/build/*.eetsmod
       - name: API reference is up to date
         run: |
           ./tools/gen-api-ref.sh

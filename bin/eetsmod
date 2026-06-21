@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# eetsmod - install the framework and build/package mods.
+# Players mostly don't need this: drop a .eetsmod in <game>/mods and manage in-game.
+# It's here for the one-time setup and for mod makers.
+#
+#   eetsmod setup [GAME]              install loader + headers, print the launch option
+#   eetsmod doctor [GAME]            diagnose the install
+#   eetsmod new <name>               scaffold a new mod
+#   eetsmod build <mod.cpp> [-o so]  compile a mod to a redistributable .so
+#   eetsmod pack <dir|mod.cpp> [-o f] bundle .so/.cpp + manifest + assets -> one .eetsmod
+#   eetsmod add <file> [GAME]         install a mod file (.eetsmod, .so, or .cpp)
+#   eetsmod remove <name> [GAME]      uninstall a mod
+#   eetsmod list [GAME]               list installed mods
+set -euo pipefail
+export LC_ALL=C
+
+SELF="$(cd "$(dirname "$0")/.." && pwd)"
+
+die()  { echo "eetsmod: $*" >&2; exit 1; }
+info() { echo "eetsmod: $*"; }
+
+# ---- locate the game ----
+find_game() {
+	local g="${1:-${EETS_DIR:-}}"
+	if [[ -n "$g" ]]; then [[ -x "$g/Eets" ]] || die "no Eets binary at $g"; echo "$g"; return; fi
+	local c
+	for c in \
+		"$HOME/.local/share/Steam/steamapps/common/Eets" \
+		"$HOME/.steam/steam/steamapps/common/Eets" \
+		"$HOME/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/Eets" \
+		"$SELF"; do
+		[[ -x "$c/Eets" ]] && { echo "$c"; return; }
+	done
+	die "could not find Eets; pass the game dir explicitly or set EETS_DIR"
+}
+
+# ---- include dir + loader (dev repo or an installed game) ----
+includedir() {
+	for c in "$SELF/native/include" "${1:-}/eetsmod-include"; do
+		[[ -f "$c/eetsmod.h" ]] && { echo "$c"; return; }
+	done
+	die "no eetsmod headers found (looked in repo and game dir)"
+}
+loader_so() {  # build from the repo if present, else use a prebuilt next to this script
+	if [[ -d "$SELF/native" ]]; then
+		make -C "$SELF/native" >/dev/null 2>&1 || die "loader build failed (need g++)"
+		echo "$SELF/native/build/libeetsmod.so"
+	elif [[ -f "$SELF/libeetsmod.so" ]]; then echo "$SELF/libeetsmod.so"
+	else die "no loader: run from the repo or a release directory"; fi
+}
+
+# ---- compile a mod the way the loader does ----
+compile_so() {  # <src.cpp> <out.so> [game-for-includes]
+	local src="$1" out="$2" inc; inc="$(includedir "${3:-}")"
+	local opt="-O2"; [[ "${EETSMOD_DEBUG:-0}" != "0" ]] && opt="-g -O0"
+	command -v "${CXX:-g++}" >/dev/null || die "need a C++ compiler (g++) to build from source"
+	"${CXX:-g++}" $opt -fPIC -std=c++17 -Wall -shared "-I$inc" ${EETSMOD_CXXFLAGS:-} -o "$out" "$src"
+}
+
+# wrap the game binary so the loader auto-injects with no Steam launch option.
+cmd_setup() {
+	local game; game="$(find_game "${1:-}")"
+	local so inc; so="$(loader_so)"; inc="$(includedir)"
+	install -m644 "$so" "$game/libeetsmod.so"
+	mkdir -p "$game/eetsmod-include" "$game/mods"
+	install -m644 "$inc"/*.h "$game/eetsmod-include/"
+	info "installed loader + headers to $game"
+	echo
+	echo "  one-time: set this as the Eets Steam launch option"
+	echo "  (right-click Eets in your library > Properties > General > Launch Options):"
+	echo
+	echo "    LD_PRELOAD=$game/libeetsmod.so %command%"
+	echo
+	echo "  then drop a .eetsmod in $game/mods and press Play."
+	echo "  in-game: click MODS (bottom-left of the main menu) to enable/configure."
+}
+
+cmd_uninstall() {
+	local game; game="$(find_game "${1:-}")"
+	rm -f "$game/libeetsmod.so"
+	info "removed the loader; clear the Steam launch option to fully disable."
+	info "mods in $game/mods are left in place (remove one with: eetsmod remove <name>)"
+}
+
+cmd_doctor() {
+	local game; game="$(find_game "${1:-}" 2>/dev/null || true)"
+	echo "game dir   : ${game:-NOT FOUND}"
+	[[ -n "$game" ]] || return 0
+	echo "loader     : $([[ -f "$game/libeetsmod.so" ]] && echo present || echo 'MISSING (run: eetsmod setup)')"
+	echo "headers    : $([[ -f "$game/eetsmod-include/eetsmod.h" ]] && echo present || echo missing)"
+	echo "mods dir   : $game/mods ($(ls "$game/mods"/*.so "$game/mods"/*.cpp 2>/dev/null | wc -l) mod file(s))"
+	echo "compiler   : $(command -v "${CXX:-g++}" >/dev/null && "${CXX:-g++}" --version | head -1 || echo 'none (prebuilt .so mods still work)')"
+	echo "tar/curl   : $(command -v tar >/dev/null && echo tar || echo 'no tar') / $(command -v curl >/dev/null && echo curl || (command -v wget >/dev/null && echo wget || echo none))"
+}
+
+cmd_new()   { "$SELF/tools/new-mod.sh" "$@"; }
+
+cmd_build() {
+	local src="" out=""
+	while [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift 2;; *) src="$1"; shift;; esac; done
+	[[ -f "$src" ]] || die "usage: eetsmod build <mod.cpp> [-o out.so]"
+	[[ -n "$out" ]] || out="$(dirname "$src")/$(basename "${src%.cpp}").so"
+	compile_so "$src" "$out"
+	info "built $out (drop it in <game>/mods/, no compiler needed to run it)"
+}
+
+# bundle layout: <name>.cfg [+ <name>.so] [+ <name>.cpp] [+ assets/...]
+cmd_pack() {
+	command -v tar >/dev/null || die "need tar to pack"
+	local in="" out=""
+	while [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift 2;; *) in="$1"; shift;; esac; done
+	[[ -n "$in" ]] || die "usage: eetsmod pack <dir|mod.cpp> [-o name.eetsmod]"
+	local tmp name; tmp="$(mktemp -d)"; trap "rm -rf '$tmp'" EXIT
+	if [[ -f "$in" && "$in" == *.cpp ]]; then
+		name="$(basename "${in%.cpp}")"
+		cp "$in" "$tmp/$name.cpp"
+		compile_so "$in" "$tmp/$name.so"            # ship a prebuilt .so so users need no compiler
+		local cfg="$(dirname "$in")/$name.cfg"
+		[[ -f "$cfg" ]] && cp "$cfg" "$tmp/$name.cfg" || printf 'version = 1.0\nauthor = unknown\n' > "$tmp/$name.cfg"
+	elif [[ -d "$in" ]]; then
+		local cfg; cfg="$(ls "$in"/*.cfg 2>/dev/null | head -1)" || true
+		[[ -n "$cfg" ]] || die "no <name>.cfg in $in"
+		name="$(basename "${cfg%.cfg}")"
+		cp "$cfg" "$tmp/$name.cfg"
+		[[ -f "$in/$name.so" ]]  && cp "$in/$name.so"  "$tmp/"
+		[[ -f "$in/$name.cpp" ]] && cp "$in/$name.cpp" "$tmp/"
+		[[ -f "$tmp/$name.so" || -f "$tmp/$name.cpp" ]] || die "no $name.so or $name.cpp in $in"
+		[[ -f "$tmp/$name.so" ]] || { [[ -f "$tmp/$name.cpp" ]] && compile_so "$in/$name.cpp" "$tmp/$name.so" 2>/dev/null || true; }
+		[[ -d "$in/assets" ]] && cp -r "$in/assets" "$tmp/"
+	else die "pack source must be a .cpp or a directory"; fi
+	[[ -n "$out" ]] || out="$name.eetsmod"
+	tar -C "$tmp" -czf "$out" .
+	info "packed $out (name=$name, $(du -h "$out" | cut -f1))"
+}
+
+cmd_add() {
+	local src="$1"; shift || true
+	local game; game="$(find_game "${1:-}")"
+	mkdir -p "$game/mods"
+	case "$src" in
+		http://*|https://*)
+			local tmp; tmp="$(mktemp --suffix=".$(basename "$src")")"
+			fetch "$src" "$tmp"; cmd_add "$tmp" "$game"; rm -f "$tmp"; return;;
+	esac
+	[[ -f "$src" ]] || die "no such file: $src"
+	case "$src" in
+		*.eetsmod)
+			command -v tar >/dev/null || die "need tar to unpack"
+			local tmp; tmp="$(mktemp -d)"; tar -C "$tmp" -xzf "$src"
+			local cfg; cfg="$(ls "$tmp"/*.cfg | head -1)"; local name; name="$(basename "${cfg%.cfg}")"
+			cp "$cfg" "$game/mods/"
+			[[ -f "$tmp/$name.so" ]]  && install -m644 "$tmp/$name.so"  "$game/mods/"
+			[[ -f "$tmp/$name.cpp" ]] && cp "$tmp/$name.cpp" "$game/mods/"
+			[[ -d "$tmp/assets" ]] && { mkdir -p "$game/mods/assets"; cp -r "$tmp/assets/." "$game/mods/assets/"; }
+			rm -rf "$tmp"; info "added '$name' to $game/mods";;
+		*.so)  install -m644 "$src" "$game/mods/"; info "added $(basename "$src") (prebuilt)";;
+		*.cpp) cp "$src" "$game/mods/"; info "added $(basename "$src") (compiles at next launch)";;
+		*) die "unsupported mod file: $src (.eetsmod, .so, .cpp, or URL)";;
+	esac
+}
+
+cmd_remove() {
+	local name="$1"; shift || true
+	local game; game="$(find_game "${1:-}")"
+	local n=0
+	for ext in so cpp cfg save; do [[ -f "$game/mods/$name.$ext" ]] && { rm -f "$game/mods/$name.$ext"; n=$((n+1)); }; done
+	rm -f "$game/mods/.cache/$name.so"
+	[[ $n -gt 0 ]] && info "removed '$name' ($n file(s))" || die "no mod '$name' in $game/mods"
+}
+
+cmd_list() {
+	local game; game="$(find_game "${1:-}")"
+	local any=0 f name ver kind seen=" "
+	for f in "$game"/mods/*.so "$game"/mods/*.cpp; do
+		[[ -e "$f" ]] || continue
+		name="$(basename "$f")"; name="${name%.*}"
+		[[ "$seen" == *" $name "* ]] && continue; seen+="$name "; any=1
+		ver="$(sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*//p' "$game/mods/$name.cfg" 2>/dev/null | head -1)"
+		kind="[source]"; [[ -f "$game/mods/$name.so" ]] && kind="[prebuilt]"
+		printf '  %-24s %s%s\n' "$name" "${ver:+v$ver }" "$kind"
+	done
+	[[ $any -eq 1 ]] || info "no mods installed in $game/mods"
+}
+
+fetch() {  # <url> <out>
+	if command -v curl >/dev/null; then curl -fsSL "$1" -o "$2"
+	elif command -v wget >/dev/null; then wget -qO "$2" "$1"
+	else die "need curl or wget to download"; fi
+}
+
+main() {
+	local cmd="${1:-}"; shift || true
+	case "$cmd" in
+		setup)   cmd_setup   "$@";;
+		uninstall) cmd_uninstall "$@";;
+		doctor)  cmd_doctor  "$@";;
+		new)     cmd_new     "$@";;
+		build)   cmd_build   "$@";;
+		pack)    cmd_pack    "$@";;
+		add)     cmd_add     "$@";;
+		remove|rm) cmd_remove "$@";;
+		list|ls) cmd_list    "$@";;
+		-h|--help|help|"") sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//';;
+		*) die "unknown command '$cmd' (try: eetsmod help)";;
+	esac
+}
+main "$@"

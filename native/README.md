@@ -30,7 +30,8 @@ Steam: Properties -> Launch Options -> `LD_PRELOAD=/full/path/Eets/libeetsmod.so
 (`tools/steam-launch-option.sh` prints it). Mods are `.cpp` compiled on launch, so
 `g++` must be on PATH; Steam's runtime may lack it - run once from a terminal to
 cache builds, or ship prebuilt `.so`. Logs: `<game>/Log/native_mods.log`.
-`F1` = interactive mod manager (click rows to enable/disable; persists).
+In-game manager: click the **MODS** button (bottom-left of the main menu) or press
+`F1` - enable/disable mods, edit config live (`-`/`+`), open the mods folder.
 
 ## Writing a mod
 
@@ -73,13 +74,19 @@ manager edits each mod's config live (`-`/`+`). Key codes are named: `EKEY_F1`,
 ## Dev workflow
 
 ```sh
-tools/new-mod.sh foo                 # scaffold foo.cpp + foo.cfg + compile_flags.txt
-tools/check-mod.sh mods/foo.cpp      # compile exactly like the loader, errors in the terminal
+bin/eetsmod new foo                  # scaffold foo.cpp + foo.cfg + compile_flags.txt
+bin/eetsmod build foo.cpp            # compile to a redistributable foo.so
+bin/eetsmod pack foo.cpp -o foo.eetsmod   # one-file bundle: .so + .cpp + manifest (+ assets/)
+tools/check-mod.sh foo.cpp           # compile exactly like the loader, errors in the terminal
 ```
 
-- **`compile_flags.txt`** is written next to your mods (and by `make install`), so
+- **One-file mods.** A `.eetsmod` (gzipped tar of `<name>.so` + `<name>.cpp` +
+  `<name>.cfg` + optional `assets/`) is how mods are shipped - like a Minecraft `.jar`.
+  Players drop it in `<game>/mods`; the loader unpacks it on launch. `make bundles`
+  packs the examples this way into `examples/build/`.
+- **`compile_flags.txt`** is written next to a scaffolded mod (`eetsmod new`), so
   clangd / VS Code / any LSP editor resolves `eetsmod.h` and gives autocomplete +
-  inline errors against the whole API.
+  inline errors against the whole API. (It is *not* installed into a player's game.)
 - **Hot-reload feedback** - save a `.cpp` while the game runs; the loader recompiles
   and shows an on-screen toast (`reloaded foo`, or the first compiler error in red).
 - **Debug builds** - `EETSMOD_DEBUG=1` (env, read by both the loader and

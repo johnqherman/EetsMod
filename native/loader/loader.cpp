@@ -21,7 +21,7 @@
 #include "eets_engine.h"
 #include "hook.h"
 
-#define EETSMOD_VERSION "0.17.0"
+#define EETSMOD_VERSION "0.18.0"
 
 namespace {
 
@@ -61,6 +61,10 @@ unsigned long g_frame = 0;
 const unsigned RELOAD_POLL_FRAMES = 30;
 int g_mouse_x = 0, g_mouse_y = 0;        // in render (viewport) space
 bool g_overlay = false;
+// main-menu MODS button hit-rect, refreshed each frame it is drawn (w=0 when hidden)
+int g_modbtn_x = 0, g_modbtn_y = 0, g_modbtn_w = 0, g_modbtn_h = 0;
+// "open mods folder" button row inside the overlay (y set during draw, -1 when hidden)
+int g_folder_btn_y = -1;
 // real render backbuffer size from FNA3D_SetViewport (correct in fullscreen,
 // where it differs from the window/configured resolution).
 int g_vp_w = 0, g_vp_h = 0;              // committed (last full frame)
@@ -399,6 +403,27 @@ void install_engine_event_hooks() {
 	try_hook("eets_death (Creator::StartEetsDeadDialog)",(void*)Eets::addr::hook_Creator_StartEetsDeadDialog,(void*)det_EetsDead,    (void**)&orig_EetsDead);
 }
 
+// a mod is one .eetsmod file (gzipped tar: <name>.so/.cpp + <name>.cfg + assets/).
+// extract each into mods/ once; re-extract only when the bundle is newer than its stamp.
+void extract_bundles() {
+	std::string dir = modsdir();
+	DIR* d = opendir(dir.c_str()); if (!d) return;
+	struct dirent* ent;
+	while ((ent = readdir(d)) != nullptr) {
+		std::string n = ent->d_name;
+		if (!ends_with(n, ".eetsmod")) continue;
+		std::string bundle = dir + "/" + n;
+		std::string stamp = cachedir() + "/" + stem(n) + ".eetsmod.stamp";
+		if (exists(stamp) && mtime_of(stamp) >= mtime_of(bundle)) continue;
+		std::string cmd = "tar xzf \"" + bundle + "\" -C \"" + dir + "\" 2>>Log/native_mods.log";
+		if (system(cmd.c_str()) == 0) {
+			logline("bundle: installed %s", n.c_str());
+			FILE* f = fopen(stamp.c_str(), "w"); if (f) fclose(f);
+		} else logline("bundle: extract FAILED %s (need tar)", n.c_str());
+	}
+	closedir(d);
+}
+
 // overwrites matching files under Data/ (intentional override)
 void install_assets() {
 	std::string adir = modsdir() + "/assets";
@@ -415,9 +440,10 @@ void install_assets() {
 void load_all() {
 	install_guards();
 	check_buildid();
-	install_assets();
 	std::string dir = modsdir();
 	mkdir(cachedir().c_str(), 0755);
+	extract_bundles();          // unpack any .eetsmod before assets/scan
+	install_assets();
 	load_disabled();
 	logline("eetsmod v%s  include=%s compiler=%s", EETSMOD_VERSION, includedir().c_str(), compiler());
 	logline("loader: scanning %s", dir.c_str());
@@ -480,6 +506,7 @@ void toast(const std::string& s, bool fail = false) { g_toast = s; g_toast_fail 
 
 void poll_reload() {
 	std::string dir = modsdir();
+	extract_bundles();   // a .eetsmod dropped while running installs on the next poll
 	for (auto& m : g_mods) {
 		if (m.src.empty()) continue;
 		time_t t = mtime_of(m.src);
@@ -543,7 +570,21 @@ struct MotionView { unsigned type, ts, win, which, state; int x, y, xrel, yrel; 
 struct ButtonView { unsigned type, ts, win, which; unsigned char button, state, clicks, pad; int x, y; };
 struct WheelView { unsigned type, ts, win, which; int x, y; unsigned dir; };
 
+void open_mods_folder() {
+	std::string md = modsdir(); std::string abs = md;
+	if (!md.empty() && md[0] != '/') { char cwd[4096]; if (getcwd(cwd, sizeof(cwd))) abs = std::string(cwd) + "/" + md; }
+	system(("xdg-open \"" + abs + "\" >/dev/null 2>&1 &").c_str());
+	logline("manager: opened mods folder %s", abs.c_str());
+}
+
 bool manage_click(int mx, int my) {
+	// close button (x) in the title bar
+	if (mx >= OV_X + OV_W - 32 && mx < OV_X + OV_W - 6 && my >= OV_Y + 7 && my < OV_Y + 33) {
+		g_overlay = false; return true;
+	}
+	// "open mods folder" button
+	if (g_folder_btn_y >= 0 && mx >= OV_X + 6 && mx < OV_X + OV_W - 6 &&
+	    my >= g_folder_btn_y && my < g_folder_btn_y + OV_ROWH) { open_mods_folder(); return true; }
 	if (mx < OV_X || mx >= OV_X + OV_W) return false;
 	int nMods = (int)g_mods.size();
 	int rel = my - (OV_Y + OV_TITLE);
@@ -644,14 +685,21 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 	if (++g_frame % RELOAD_POLL_FRAMES == 0) poll_reload();
 
 	if (g_loaded && Eets::World_IsInMainMenu()) {
+		using namespace Eets;
 		size_t active = 0; for (auto& m : g_mods) if (!m.disabled) active++;
-		char banner[128];
-		snprintf(banner, sizeof(banner), "v%s, %zu mods loaded", EETSMOD_VERSION, active);
-		int h = Eets::RenderHeight(); if (h <= 0) h = 720;
-		Eets::DrawTextOutlined(10, h - 26, banner, Eets::FONT_NORMAL, Eets::Colour(255, 255, 255, 255));
+		int h = RenderHeight(); if (h <= 0) h = 720;
+		// clickable MODS button, bottom-left. opens the manager overlay (no F1 needed).
+		g_modbtn_x = 10; g_modbtn_w = 150; g_modbtn_h = 38; g_modbtn_y = h - g_modbtn_h - 10;
+		bool hot = g_mouse_x >= g_modbtn_x && g_mouse_x < g_modbtn_x + g_modbtn_w &&
+		           g_mouse_y >= g_modbtn_y && g_mouse_y < g_modbtn_y + g_modbtn_h;
+		FillRect(g_modbtn_x + 3, g_modbtn_y + 3, g_modbtn_w, g_modbtn_h, Colour(0, 0, 0, 110));
+		FillRect(g_modbtn_x, g_modbtn_y, g_modbtn_w, g_modbtn_h, hot ? Colour(235, 70, 60, 255) : Colour(205, 40, 35, 255));
+		DrawRect(g_modbtn_x, g_modbtn_y, g_modbtn_w, g_modbtn_h, Colour(0, 0, 0, 255), 3.0f);
+		char btn[64]; snprintf(btn, sizeof(btn), "MODS (%zu)", active);
+		DrawTextOutlined(g_modbtn_x + 12, g_modbtn_y + 8, btn, FONT_BIG, Colour(255, 232, 40, 255));
 		static bool once = false;
-		if (!once) { once = true; logline("menu banner: \"%s\" (screen h=%d)", banner, h); }
-	}
+		if (!once) { once = true; logline("menu MODS button at %d,%d (screen h=%d)", g_modbtn_x, g_modbtn_y, h); }
+	} else { g_modbtn_w = 0; }
 
 	if (g_loaded && !g_toast.empty() && g_time < g_toast_until) {
 		using namespace Eets;
@@ -664,14 +712,17 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		int nMods = (int)g_mods.size();
 		int cfgRows = 0;
 		if (!g_selected.empty()) cfgRows = (int)g_cfg[g_selected].size() + 1;   // +1 header
-		int H = OV_TITLE + nMods * OV_ROWH + cfgRows * OV_ROWH + 14;
+		int H = OV_TITLE + nMods * OV_ROWH + cfgRows * OV_ROWH + OV_ROWH + 18;  // +1 row for the folder button
 		FillRect(OV_X + 5, OV_Y + 6, OV_W, H, Colour(0, 0, 0, 110));
 		FillRect(OV_X, OV_Y, OV_W, H, Colour(205, 40, 35, 255));
 		DrawRect(OV_X, OV_Y, OV_W, H, Colour(0, 0, 0, 255), 4.0f);
 		FillRect(OV_X + 4, OV_Y + 4, OV_W - 8, OV_TITLE - 6, Colour(165, 22, 20, 255));
 		char line[160];
-		snprintf(line, sizeof(line), "MODS v%s (F1)", EETSMOD_VERSION);
+		snprintf(line, sizeof(line), "MODS v%s", EETSMOD_VERSION);
 		DrawTextOutlined(OV_X + 10, OV_Y + 8, line, FONT_BIG, Colour(255, 232, 40, 255));
+		FillRect(OV_X + OV_W - 32, OV_Y + 7, 26, 26, Colour(165, 22, 20, 255));
+		DrawRect(OV_X + OV_W - 32, OV_Y + 7, 26, 26, Colour(0, 0, 0, 255), 2.0f);
+		DrawTextOutlined(OV_X + OV_W - 26, OV_Y + 8, "x", FONT_BIG, Colour(255, 232, 40, 255));
 		int y = OV_Y + OV_TITLE;
 		for (auto& m : g_mods) {
 			bool sel = (g_selected == m.name);
@@ -697,6 +748,13 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 				y += OV_ROWH;
 			}
 		}
+		// open-mods-folder button: where players drop a .eetsmod to install one
+		y += 6; g_folder_btn_y = y;
+		bool fhot = g_mouse_x >= OV_X + 6 && g_mouse_x < OV_X + OV_W - 6 &&
+		            g_mouse_y >= y && g_mouse_y < y + OV_ROWH;
+		FillRect(OV_X + 6, y, OV_W - 12, OV_ROWH, fhot ? Colour(235, 70, 60, 255) : Colour(165, 22, 20, 255));
+		DrawRect(OV_X + 6, y, OV_W - 12, OV_ROWH, Colour(0, 0, 0, 255), 2.0f);
+		DrawTextOutlined(OV_X + 14, y + 4, "+ Add a mod (open mods folder)", FONT_SMALL, Colour(255, 232, 40, 255));
 	}
 	g_vp_cur_w = g_vp_cur_h = 0;
 	if (real) real(device, src, dst, window);
@@ -732,6 +790,10 @@ int SDL_PollEvent(void* event) {
 		} else if (type == SDL_MOUSEBUTTONDOWN || type == SDL_MOUSEBUTTONUP) {
 			ButtonView* b = (ButtonView*)event; map_mouse(b->x, b->y, b->win);
 			int mx = g_mouse_x, my = g_mouse_y, down = (type == SDL_MOUSEBUTTONDOWN) ? 1 : 0, btn = b->button;
+			// MODS button in the main menu opens the manager (consume the click)
+			if (down && btn == 1 && g_modbtn_w > 0 &&
+			    mx >= g_modbtn_x && mx < g_modbtn_x + g_modbtn_w &&
+			    my >= g_modbtn_y && my < g_modbtn_y + g_modbtn_h) { g_overlay = !g_overlay; return r; }
 			// manager click (consume on press so it doesn't pass to mods/game)
 			if (g_overlay && down && btn == 1 && manage_click(mx, my)) { return r; }
 			for (auto& m : g_mods) if (m.onmouse && !m.disabled) guard(&m, [&]{ m.onmouse(mx, my, btn, down); });
