@@ -103,6 +103,8 @@ constexpr uintptr_t Simulator_i                        = 0x62ae90;  // () -> Sim
 constexpr uintptr_t GraphicsEngine_i                   = 0x549100;  // () -> GraphicsEngine*  (w@+0x40 h@+0x44)
 constexpr uintptr_t printText                          = 0x58a020;  // (int x,int y,char const*,Colour const&)
 constexpr uintptr_t TextPrinter_DrawString             = 0x541380;  // (string,size,style,Colour,Vector2,bool,Vector2 const&)
-constexpr uintptr_t GraphicsEngine_DrawLine            = 0x54a2f0;  // (GraphicsEngine*,Vector2 const&,Vector2 const&,Colour const&,float)
+constexpr uintptr_t GraphicsEngine_DrawLine            = 0x54a2f0;  // (GE*,Vector2 const&,Vector2 const&,Colour const&,float) 1px line (width ignored)
+constexpr uintptr_t GraphicsEngine_DrawSquare          = 0x54a050;  // (GE*,Vector2 const& topLeft,Vector2 const& botRight,Colour const&) FILLED rect
+constexpr uintptr_t GraphicsEngine_DrawCircleFilled    = 0x54a030;  // (GE*,Vector2 const&,float r,Colour const&,int segs)
 
 }} // namespace Eets::addr

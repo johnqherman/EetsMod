@@ -159,10 +159,19 @@ inline void DrawLine(Vector2 a, Vector2 b, Colour c, float width = 1.0f) {
 	((void(*)(void*, const Vector2&, const Vector2&, const Colour&, float))
 	 addr::GraphicsEngine_DrawLine)(g, a, b, c, width);
 }
-// filled rectangle (a horizontal line of thickness h)
+// filled rectangle (GraphicsEngine::DrawSquare = 2 triangles)
 inline void FillRect(int x, int y, int w, int h, Colour c) {
-	float cy = y + h * 0.5f;
-	DrawLine(Vector2{(float)x, cy}, Vector2{(float)(x + w), cy}, c, (float)h);
+	void* g = GraphicsEngine_i(); if (!g) return;
+	Vector2 a{(float)x, (float)y}, b{(float)(x + w), (float)(y + h)};
+	((void(*)(void*, const Vector2&, const Vector2&, const Colour&))
+	 addr::GraphicsEngine_DrawSquare)(g, a, b, c);
+}
+// filled circle
+inline void FillCircle(int x, int y, float r, Colour c, int segs = 24) {
+	void* g = GraphicsEngine_i(); if (!g) return;
+	Vector2 p{(float)x, (float)y};
+	((void(*)(void*, const Vector2&, float, const Colour&, int))
+	 addr::GraphicsEngine_DrawCircleFilled)(g, p, r, c, segs);
 }
 // rectangle outline
 inline void DrawRect(int x, int y, int w, int h, Colour c, float t = 2.0f) {
