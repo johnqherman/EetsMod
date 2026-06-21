@@ -209,24 +209,35 @@ inline void Object_CallFunction(Object* o, const char* fn) { ((void(*)(Object*, 
 inline void Object_CreateEffect(Object* o, const char* fx) { ((void(*)(Object*, const char*))addr::Object_CreateEffect)(o, fx); }
 inline unsigned long Object_GetBlueprintHash(Object* o) { return ((unsigned long(*)(Object*))addr::Object_GetBlueprintHash)(o); }
 
-// ---- custom images (EXPERIMENTAL; verify visually) -------------------------
-// Loads an image via TextureManager (caches it), looks the texture up in the
-// engine's cache (a libstdc++ unordered_map<string, KLEITEXTURE*> at the manager
-// singleton - ABI-compatible because mods build with the same libstdc++), and
-// draws it with IGraphicsEngine::DrawTexture at render-space (x, y).
-// `path` is a DATA: path, e.g. "DATA:Images/foo.tga". Returns false if not drawn.
-inline bool DrawImage(const char* path, int x, int y) {
-	void* tm = *(void**)addr::TextureManager_instance;
-	if (!tm) return false;
-	auto* cache = (std::unordered_map<std::string, void*>*)tm;   // map at manager+0
-	std::string key = path;
-	((int(*)(void*, const std::string&, int, bool))addr::TextureManager_LoadTexture)(tm, key, 0, true);
-	auto it = cache->find(key);
-	if (it == cache->end() || !it->second) return false;
-	void* ige = ((void*(*)())addr::IGraphicsEngine_i)();
-	if (!ige) return false;
-	Vector2 pos{(float)x, (float)y};
-	((void(*)(void*, void*, const Vector2&))addr::IGraphicsEngine_DrawTexture)(ige, it->second, pos);
+// ---- custom images ---------------------------------------------------------
+// Draws an image at render-space (x, y) via the engine's Sprite path (the same
+// SpriteManager::Load + GraphicsEngine::DrawSprite the game uses for its load/
+// trophy screens). The sprite is loaded once and cached per path. `scale` and
+// `tint` are optional; `path` is a DATA:/relative path (e.g. "Eets.png").
+// Returns false if the sprite couldn't be loaded.
+inline void* LoadSprite(const char* path, int format = 0) {
+	static std::unordered_map<std::string, void*> cache;
+	auto it = cache.find(path);
+	if (it != cache.end()) return it->second;
+	void* sm = ((void*(*)())addr::SpriteManager_i)();
+	void* sprite = nullptr;
+	if (sm) {
+		struct { void* sprite; void* ctrl; } holder = { nullptr, nullptr };
+		std::string p = path;
+		((void(*)(void*, void*, const std::string&, int))addr::SpriteManager_Load)(&holder, sm, p, format);
+		sprite = holder.sprite;     // keep the ref (cache it; persistent draw)
+	}
+	cache[path] = sprite;
+	return sprite;
+}
+inline bool DrawImage(const char* path, int x, int y, float scale = 1.0f, Colour tint = Colour()) {
+	void* sprite = LoadSprite(path);
+	if (!sprite) return false;
+	void* ge = GraphicsEngine_i();
+	if (!ge) return false;
+	Vector2 pos{(float)x, (float)y}, b{0.0f, 0.0f}, sc{scale, scale};
+	((void(*)(void*, void*, const Vector2&, const Vector2&, const Vector2&, const Colour&))
+	 addr::GraphicsEngine_DrawSprite)(ge, sprite, pos, b, sc, tint);
 	return true;
 }
 

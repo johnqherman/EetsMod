@@ -137,5 +137,8 @@ constexpr uintptr_t IGraphicsEngine_DrawTexture        = 0x53e450;  // (IGE*, Te
 constexpr uintptr_t AnimExt_LoadAnimation              = 0x553940;  // (char const* path) -> anim
 constexpr uintptr_t TextureManager_instance            = 0x120b708; // TextureManager* (cache = unordered_map<string,KLEITEXTURE*> at +0)
 constexpr uintptr_t TextureManager_LoadTexture         = 0x5512c0;  // (TM*, string const&, ImageFormat, bool) load+cache
+constexpr uintptr_t SpriteManager_i                    = 0x545c50;  // () -> SpriteManager*
+constexpr uintptr_t SpriteManager_Load                 = 0x546940;  // (sret{Sprite*,ctrl}, SM*, string const&, ImageFormat)
+constexpr uintptr_t GraphicsEngine_DrawSprite          = 0x54be10;  // (GE*, Sprite*, Vector2 pos, Vector2 b, Vector2 scale, Colour)
 
 }} // namespace Eets::addr
