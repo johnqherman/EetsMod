@@ -28,6 +28,8 @@ struct ObjectMgr;     // opaque
 
 // FontPrintSizes enum -> pixel height: 1=13 2=14 3=20 4=28 5=35
 enum FontSize { FONT_TINY = 1, FONT_SMALL = 2, FONT_NORMAL = 3, FONT_BIG = 4, FONT_HUGE = 5 };
+// FontPrintStyles -> typeface. STYLE_GEEK (geekabyte) is the in-game GUI font.
+enum FontStyle { STYLE_KOMIKA = 1, STYLE_GEEK = 2, STYLE_BRADY = 4 };
 
 // typed function-pointer wrappers
 inline Vector2 World_GetGravity() {
@@ -136,19 +138,18 @@ inline void DrawText(int x, int y, const char* text, Colour c = Colour()) {
 // from the FontSize enum (13/14/20/28/35 px). The `dirx` arg defaults to 1.0
 // (normal); values <1 shrink horizontally but keep the baseline horizontal.
 inline void DrawTextSized(int x, int y, const char* text, int size,
-                          Colour c = Colour(), float dirx = 1.0f) {
+                          Colour c = Colour(), int style = STYLE_GEEK, float dirx = 1.0f) {
 	std::string s = text ? text : "";
 	Vector2 pos{(float)x, (float)y}, dir{dirx, 0.0f};   // horizontal baseline
 	((void(*)(const std::string&, int, int, Colour, Vector2, bool, const Vector2&))
-	 addr::TextPrinter_DrawString)(s, size, 3, c, pos, false, dir);
+	 addr::TextPrinter_DrawString)(s, size, style, c, pos, false, dir);
 }
-// Same, with a 1px dark outline (8 offset passes) for readability over any scene.
+// Same, with a dropshadow (offset dark copy) like the game's GUI text.
 inline void DrawTextOutlined(int x, int y, const char* text, int size,
-                             Colour c = Colour(), Colour outline = Colour(0, 0, 0, 255)) {
-	for (int dx = -1; dx <= 1; dx++)
-		for (int dy = -1; dy <= 1; dy++)
-			if (dx || dy) DrawTextSized(x + dx, y + dy, text, size, outline);
-	DrawTextSized(x, y, text, size, c);
+                             Colour c = Colour(), Colour shadow = Colour(0, 0, 0, 200),
+                             int style = STYLE_GEEK) {
+	DrawTextSized(x + 2, y + 2, text, size, shadow, style);
+	DrawTextSized(x, y, text, size, c, style);
 }
 
 // ---- 2D primitives (for custom menus / HUD) --------------------------------
