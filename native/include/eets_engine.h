@@ -1,22 +1,15 @@
-// eets_engine.h - typed bindings to Eets engine functions by absolute address.
-//
-// eets is non-PIE (fixed-base) x86-64 ELF, so addresses are runtime-stable per
-// build. regenerate with native/gen_engine_header.sh on game update.
-//
-// abi note: Vector2 is { float x, y } -> one SSE eightbyte, passed/returned in
-// xmm0 exactly as the engine's own C++ does, so matching the type matches the ABI.
+// abi note: Vector2 { float x, y } is one SSE eightbyte in xmm0 - matching the type matches the abi.
 #pragma once
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <string>
 #include <unordered_map>
-#include "eets_addr.h"   // complete addr:: table (all 76 statics + methods/UI)
+#include "eets_addr.h"
 
 namespace Eets {
 
-// addresses are valid for this exact game build. the loader warns if the running
-// binary's BuildID differs (regenerate with gen_engine_header.sh).
+// valid for this exact build; loader warns if the running BuildID differs
 constexpr const char* EXPECTED_BUILDID = "e81cc5504d3ef03324805df3e9fc508c1bf8c628";
 
 struct Vector2 { float x, y; };
@@ -33,7 +26,6 @@ enum FontSize { FONT_TINY = 1, FONT_SMALL = 2, FONT_NORMAL = 3, FONT_BIG = 4, FO
 // FontPrintStyles -> typeface. STYLE_GEEK (geekabyte) is the in-game gui font.
 enum FontStyle { STYLE_KOMIKA = 1, STYLE_GEEK = 2, STYLE_BRADY = 4 };
 
-// typed function-pointer wrappers
 inline Vector2 World_GetGravity() {
 	return ((Vector2(*)())addr::World_GetGravity)();
 }
@@ -76,13 +68,11 @@ inline void World_ChangeEmotion(unsigned long objHash, unsigned int emotion) {
 inline void Sound_CreateSound(const char* name, bool loop, float vol, const Vector2& pos) {
 	((void(*)(const char*, bool, float, const Vector2&))addr::Sound_CreateSound)(name, loop, vol, pos);
 }
-// convenience: play a named sound effect (e.g. "Explosion", "Bob Activation")
 inline void PlaySound(const char* name, float vol = 100.0f) {
 	Vector2 z{0.0f, 0.0f};
 	((void(*)(const char*, bool, float, const Vector2&))addr::Sound_CreateSound)(name, false, vol, z);
 }
 
-// ---- Object methods --------------------------------------------------------
 inline Vector2 Object_GetPosition(Object* o) {
 	return ((Vector2(*)(Object*))addr::Object_GetPosition)(o);
 }
@@ -103,7 +93,6 @@ inline void Object_SetFlipped(Object* o, bool f)             { ((void(*)(Object*
 inline bool Object_GetFlipped(Object* o)                     { return ((bool(*)(Object*))addr::Object_GetFlipped)(o); }
 inline void Object_KillMe(Object* o)                        { ((void(*)(Object*))addr::Object_KillMe)(o); }
 
-// ---- MotionModel methods ---------------------------------------------------
 inline void MotionModel_PushMotion(MotionModel* m, const char* name, bool a, bool b) {
 	((void(*)(MotionModel*, const char*, bool, bool))addr::MotionModel_PushMotion)(m, name, a, b);
 }
@@ -114,12 +103,10 @@ inline const char* MotionModel_GetCurrentMotionName(MotionModel* m) {
 	return ((const char*(*)(MotionModel*))addr::MotionModel_GetCurrentMotionName)(m);
 }
 
-// ---- live object enumeration ----------------------------------------------
 // ObjectMgr holds a std::vector<Object*> at offsets +0 (begin) / +8 (end).
 inline ObjectMgr* ObjectMgr_i() {
 	return ((ObjectMgr*(*)())addr::ObjectMgr_i)();
 }
-// call `fn(Object*)` for every live object. safe no-op if no world is loaded.
 template <class Fn>
 inline void ForEachObject(Fn fn) {
 	char* mgr = (char*)ObjectMgr_i();
@@ -129,7 +116,6 @@ inline void ForEachObject(Fn fn) {
 	for (Object** p = begin; p && p < end; ++p) fn(*p);
 }
 
-// ---- state / screen / text -------------------------------------------------
 inline bool World_IsInMainMenu() {
 	return ((bool(*)())addr::World_IsInMainMenu)();
 }
@@ -141,24 +127,17 @@ inline int ScreenHeight() {
 	char* g = (char*)((void*(*)())addr::GraphicsEngine_i)();
 	return g ? *(int*)(g + 0x44) : 0;
 }
-// draw text at screen pixel (x, y), origin top-left, using the engine font
-// (normal 20px size).
 inline void DrawText(int x, int y, const char* text, Colour c = Colour()) {
 	((void(*)(int, int, const char*, const Colour&))addr::printText)(x, y, text, c);
 }
-// draw text at a chosen font size (FONT_TINY..FONT_HUGE).
-// NB: DrawString's last Vector2 is the text BASELINE DIRECTION, not a uniform
-// scale - it must stay horizontal {1,0} or the text renders rotated. size comes
-// from the FontSize enum (13/14/20/28/35 px). the `dirx` arg defaults to 1.0
-// (normal); values <1 shrink horizontally but keep the baseline horizontal.
+// warning: dir is the baseline DIRECTION not a scale - keep horizontal {1,0} or text rotates; dirx<1 shrinks horizontally.
 inline void DrawTextSized(int x, int y, const char* text, int size,
                           Colour c = Colour(), int style = STYLE_GEEK, float dirx = 1.0f) {
 	std::string s = text ? text : "";
-	Vector2 pos{(float)x, (float)y}, dir{dirx, 0.0f};   // horizontal baseline
+	Vector2 pos{(float)x, (float)y}, dir{dirx, 0.0f};
 	((void(*)(const std::string&, int, int, Colour, Vector2, bool, const Vector2&))
 	 addr::TextPrinter_DrawString)(s, size, style, c, pos, false, dir);
 }
-// same, with a dropshadow (offset dark copy) like the game's gui text.
 inline void DrawTextOutlined(int x, int y, const char* text, int size,
                              Colour c = Colour(), Colour shadow = Colour(0, 0, 0, 200),
                              int style = STYLE_GEEK) {
@@ -166,7 +145,6 @@ inline void DrawTextOutlined(int x, int y, const char* text, int size,
 	DrawTextSized(x, y, text, size, c, style);
 }
 
-// ---- 2D primitives (for custom menus / HUD) --------------------------------
 inline void* GraphicsEngine_i() { return ((void*(*)())addr::GraphicsEngine_i)(); }
 // GraphicsEngine geometry funcs swap R<->B internally; pre-swap so our RGBA shows correctly.
 inline Colour swab(Colour c) { return Colour(c.b, c.g, c.r, c.a); }
@@ -176,7 +154,6 @@ inline void DrawLine(Vector2 a, Vector2 b, Colour c, float width = 1.0f) {
 	((void(*)(void*, const Vector2&, const Vector2&, const Colour&, float))
 	 addr::GraphicsEngine_DrawLine)(g, a, b, s, width);
 }
-// filled rectangle (GraphicsEngine::DrawSquare = 2 triangles)
 inline void FillRect(int x, int y, int w, int h, Colour c) {
 	void* g = GraphicsEngine_i(); if (!g) return;
 	Colour s = swab(c);
@@ -184,7 +161,6 @@ inline void FillRect(int x, int y, int w, int h, Colour c) {
 	((void(*)(void*, const Vector2&, const Vector2&, const Colour&))
 	 addr::GraphicsEngine_DrawSquare)(g, a, b, s);
 }
-// filled circle
 inline void FillCircle(int x, int y, float r, Colour c, int segs = 24) {
 	void* g = GraphicsEngine_i(); if (!g) return;
 	Colour s = swab(c);
@@ -192,16 +168,15 @@ inline void FillCircle(int x, int y, float r, Colour c, int segs = 24) {
 	((void(*)(void*, const Vector2&, float, const Colour&, int))
 	 addr::GraphicsEngine_DrawCircleFilled)(g, p, r, s, segs);
 }
-// rectangle outline of thickness t (built from filled bars - DrawLine ignores width)
+// built from filled bars - DrawLine ignores width
 inline void DrawRect(int x, int y, int w, int h, Colour c, float t = 2.0f) {
 	int ti = (int)t; if (ti < 1) ti = 1;
-	FillRect(x, y, w, ti, c);                 // top
-	FillRect(x, y + h - ti, w, ti, c);        // bottom
-	FillRect(x, y, ti, h, c);                 // left
-	FillRect(x + w - ti, y, ti, h, c);        // right
+	FillRect(x, y, w, ti, c);
+	FillRect(x, y + h - ti, w, ti, c);
+	FillRect(x, y, ti, h, c);
+	FillRect(x + w - ti, y, ti, h, c);
 }
 
-// ---- more engine wrappers --------------------------------------------------
 inline void World_Pause()            { ((void(*)())addr::World_Pause)(); }
 inline bool World_IsPaused()         { return ((bool(*)())addr::World_IsPaused)(); }
 inline bool World_IsSimulating()     { return ((bool(*)())addr::World_IsSimulating)(); }
@@ -215,10 +190,6 @@ inline void Object_CallFunction(Object* o, const char* fn) { ((void(*)(Object*, 
 inline void Object_CreateEffect(Object* o, const char* fx) { ((void(*)(Object*, const char*))addr::Object_CreateEffect)(o, fx); }
 inline unsigned long Object_GetBlueprintHash(Object* o) { return ((unsigned long(*)(Object*))addr::Object_GetBlueprintHash)(o); }
 
-// ---- custom images ---------------------------------------------------------
-// load (and cache) a sprite from an image file. `path` is a DATA:/relative path
-// (e.g. "Eets.png", "DATA:Images/foo.jpg"; jpg/tga/dds/png). returns a Sprite*
-// (opaque) or null. cached per path, so call freely each frame.
 inline void* LoadSprite(const char* path, int format = 0) {
 	static std::unordered_map<std::string, void*> cache;
 	auto it = cache.find(path);
@@ -237,8 +208,6 @@ inline void* LoadSprite(const char* path, int format = 0) {
 inline int  SpriteWidth(void* s)  { return s ? (int)((unsigned(*)(void*))addr::Sprite_GetWidth)(s)  : 0; }
 inline int  SpriteHeight(void* s) { return s ? (int)((unsigned(*)(void*))addr::Sprite_GetHeight)(s) : 0; }
 
-// draw a sprite at (x,y) using its OWN per-frame UV sub-rect (so spritesheet
-// frames render correctly, not the whole sheet).
 inline void DrawSpriteAt(void* sprite, int x, int y, Colour tint = Colour()) {
 	void* ge = GraphicsEngine_i();
 	if (!ge || !sprite) return;
@@ -249,20 +218,12 @@ inline void DrawSpriteAt(void* sprite, int x, int y, Colour tint = Colour()) {
 	 addr::GraphicsEngine_DrawSprite)(ge, sprite, pos, uv0, uv1, tint);
 }
 
-// draw an image with its top-left at (x, y), at the sprite's native pixel size,
-// optionally tinted. uses the engine's Sprite path (SpriteManager::Load +
-// GraphicsEngine::DrawSprite - the same renderer the game's load screen uses).
-// coordinates are the sprite render space: screen-aligned in menus, world/camera
-// space inside a level. returns false if the image couldn't load.
 inline bool DrawImage(const char* path, int x, int y, Colour tint = Colour()) {
 	void* sprite = LoadSprite(path);
 	if (!sprite) return false;
 	DrawSpriteAt(sprite, x, y, tint);
 	return true;
 }
-// screen-locked image (HUD): resets the sprite view to screen space first so it
-// ignores the in-level camera. safe because mod drawing happens after the world
-// is rendered. (in menus DrawImage is already screen-aligned.)
 inline bool DrawImageHUD(const char* path, int x, int y, Colour tint = Colour()) {
 	if (((bool(*)())addr::World_IsSimulating)()) {
 		Vector2 z{0.0f, 0.0f};
@@ -271,9 +232,6 @@ inline bool DrawImageHUD(const char* path, int x, int y, Colour tint = Colour())
 	return DrawImage(path, x, y, tint);
 }
 
-// ---- animated sprites (.anim) ----------------------------------------------
-// load (and cache) an Animation from a .anim path (e.g.
-// "DATA:Animations/Eets/eets_blink.anim"). returns an opaque Animation* or null.
 inline void* LoadAnim(const char* path) {
 	static std::unordered_map<std::string, void*> cache;
 	auto it = cache.find(path);
@@ -286,13 +244,9 @@ inline void* LoadAnim(const char* path) {
 	cache[path] = a;
 	return a;
 }
-// the anim's native seconds-per-frame (drives the engine's own playback speed)
 inline float AnimFrameDuration(void* a) { return a ? *(float*)((char*)a + 0x30) : 0.0f; }
 inline int AnimFrameCount(void* a) { return a ? (int)((unsigned(*)(void*))addr::Animation_FrameCount)(a) : 0; }
 
-// advance an animation by `dt` seconds and draw its current frame at (x, y),
-// looping. `fps`: 0 (default) = the anim's native rate (1 / frame-duration); >0 =
-// a fixed override rate.
 inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Colour tint = Colour()) {
 	void* a = LoadAnim(path);
 	if (!a) return false;
@@ -315,9 +269,6 @@ inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f,
 	return true;
 }
 
-// ---- localization ----------------------------------------------------------
-// resolve a localized string id ("$01701") to its text. returns the id itself
-// if unresolved. add your own strings at boot with StringPool::LoadFile.
 inline const char* Localize(const char* id) {
 	void* sp = *(void**)addr::StringPool_instance;
 	if (!sp) return id;

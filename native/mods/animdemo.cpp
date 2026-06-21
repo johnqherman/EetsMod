@@ -1,5 +1,4 @@
 // animdemo - draw an animated sprite (.anim) at the cursor. Press J to toggle.
-// fps defaults to the anim's native rate.
 #include "eetsmod.h"
 using namespace Eets;
 

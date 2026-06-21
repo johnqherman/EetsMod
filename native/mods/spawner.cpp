@@ -1,6 +1,4 @@
-// spawner - spawn objects at the cursor; demos mouse input, events, config.
-//   left click -> spawn selected blueprint; right click -> explosion;
-//   mouse wheel -> cycle blueprint; F2 -> toggle the on-screen label.
+// spawner - spawn at cursor. left-click spawn, right-click explosion, wheel cycle, F2 label.
 #include "eetsmod.h"
 #include <vector>
 #include <string>
@@ -20,7 +18,7 @@ static bool in_game() { return !World_IsInMainMenu(); }
 
 extern "C" void EetsMod_Init() {
 	const char* list = Eets::ConfigGet("spawner", "blueprints", nullptr);
-	if (list) {   // comma-separated override
+	if (list) {
 		g_blueprints.clear();
 		std::string s = list, cur;
 		for (char ch : s) { if (ch == ',') { if (!cur.empty()) g_blueprints.push_back(cur); cur.clear(); } else if (ch != ' ') cur += ch; }

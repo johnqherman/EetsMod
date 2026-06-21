@@ -1,7 +1,5 @@
-// sandbox - sample mod for config, enumeration, and more bindings.
-//   CTRL+1/2/3 -> game speed paused/normal/fast; CTRL+E -> explosion at eets;
-//   CTRL+O -> log live object count + ids.
-// config mods/sandbox.cfg keys: explosion_radius (float), enable_speed (0/1)
+// sandbox - config/enumeration demo. CTRL+1/2/3 speed, CTRL+E explosion, CTRL+O object count.
+// config keys: explosion_radius (float), enable_speed (0/1)
 #include "eetsmod.h"
 #include <cstdio>
 using namespace Eets;

@@ -1,7 +1,6 @@
 -- eets mod framework (lua 5.0, run from localexec.lua at boot).
--- blueprints load lazily on first World_CreateObject, so new objects are runtime
--- drop-ins; new extension TYPES need a restart (registered before we run).
--- note lua 5.0 stdlib quirks: table.getn / string.gfind / math.mod.
+-- new objects are runtime drop-ins; new extension TYPES need a restart.
+-- lua 5.0 stdlib quirks: table.getn / string.gfind / math.mod.
 
 Mods = {
 	version   = "0.3.0",
@@ -18,7 +17,6 @@ Mods = {
 	frame     = 0,
 }
 
--- ---- logging --------------------------------------------------------------
 function Mods.log(msg)
 	msg = "[Mods] " .. tostring(msg)
 	if Print then Print(msg) end
@@ -26,7 +24,6 @@ function Mods.log(msg)
 	if f then f:write(msg .. "\n"); f:close() end
 end
 
--- ---- filesystem helpers ---------------------------------------------------
 local function fileexists(path)
 	local f = io.open(path, "r"); if f then f:close(); return true end; return false
 end
@@ -53,7 +50,7 @@ Mods.fileexists = fileexists
 Mods.readall = readall
 Mods.writeall = writeall
 
--- ---- key binds (engine global: Bind(key, luaCodeString)) -------------------
+-- engine global Bind(key, luaCodeString) only evals a string, so route through _fire
 function Mods.bindkey(key, fn)
 	if not Bind then Mods.log("Bind() unavailable"); return end
 	Mods._hid = Mods._hid + 1
@@ -66,12 +63,10 @@ function Mods._fire(id)
 	if f then local ok, err = pcall(f); if not ok then Mods.log("key err: "..tostring(err)) end end
 end
 
--- ---- convenience ----------------------------------------------------------
-function Mods.spawn(name, x, y)        -- World_CreateObject wrapper
+function Mods.spawn(name, x, y)
 	return World_CreateObject(name, Vector2(x, y))
 end
 
--- ---- registration (phase 1: just record; init happens after sort) ---------
 function Mods.register(def)
 	if type(def) ~= "table" or not def.name then Mods.log("register: needs .name"); return end
 	if Mods._byname[def.name] then Mods.log("register: dup '"..def.name.."'"); return end
@@ -96,10 +91,7 @@ function Mods.config(name, defaults)
 	return cfg
 end
 
--- ---- asset / object drop-in sync (copies a mod's files into game Data) -----
--- a mod dir may contain objects/*.lua, extensions/*.lua, assets/<rel>.
--- skip if the destination exists and is NOT framework-managed, so we never
--- clobber stock files. managed files are tracked in mods_installed.txt.
+-- never clobber stock files: skip dests that exist and aren't framework-managed.
 local function syncTree(moddir, sub, destroot, label)
 	local srcdir = moddir.."/"..sub
 	if not fileexists(srcdir) and table.getn(listentries(srcdir)) == 0 then return end
@@ -120,14 +112,12 @@ end
 local function syncAssets(moddir)
 	syncTree(moddir, "objects",    Mods.gamedata.."/Objects",    "object")
 	syncTree(moddir, "extensions", Mods.gamedata.."/Extensions", "extension")
-	-- assets/: mirror arbitrary relative paths under Data/
 	local adir = moddir.."/assets"
 	for _, top in ipairs(listentries(adir)) do
-		-- one level deep is enough for the common case (Images/, Sound/, ...)
 		local p = io.popen('find "'..adir..'" -type f 2>/dev/null')
 		if p then
 			while true do local rel = p:read("*l"); if not rel then break end
-				local tail = string.sub(rel, string.len(adir) + 2)  -- strip "adir/"
+				local tail = string.sub(rel, string.len(adir) + 2)  -- strip "adir/" prefix
 				local dst = Mods.gamedata.."/"..tail
 				if copyfile(rel, dst) then Mods._installed[dst] = true; Mods.log("asset: "..dst) end
 			end
@@ -137,7 +127,7 @@ local function syncAssets(moddir)
 	end
 end
 
--- ---- global hook chaining (Update / OnPause / OnUnpause) ------------------
+-- chain our ticks onto the engine's existing global Update/OnPause/OnUnpause
 function Mods._installHooks()
 	local prevUpdate = _G.Update
 	_G.Update = function(...)
@@ -158,7 +148,6 @@ function Mods._installHooks()
 	end
 end
 
--- ---- discovery + two-phase load ------------------------------------------
 local function moddirs()
 	local out = {}
 	for _, name in ipairs(listentries(Mods.root)) do
@@ -169,25 +158,20 @@ local function moddirs()
 	return out
 end
 
--- ---- sandboxed content tier ----------------------------------------------
--- content mods (Data/Mods/content/*.lua) run with no io/os/dofile/loadfile/
--- loadstring/require/package/debug - only gameplay API, safe stdlib, limited
--- Mods API, for sharing untrusted content. not a hard resource sandbox
--- (infinite loops / huge allocs are still possible).
+-- content mods run untrusted: gameplay API + safe stdlib only, no io/os/loaders.
+-- not a hard resource sandbox (infinite loops / huge allocs still possible).
 function Mods.makeSandbox()
 	local g = getfenv(1)
 	local sb = {}
-	-- gameplay api: any global Word_Word function (World_*, Object_*, FX_*, ...)
 	for k, v in pairs(g) do
 		if type(v) == "function" and string.find(k, "^[A-Z][A-Za-z]+_") then sb[k] = v end
 		if type(v) == "userdata" then sb[k] = v end          -- class ctors (Vector2, Object, ...)
 	end
-	-- safe base + stdlib
 	local allow = { "tostring","tonumber","type","pairs","ipairs","next","select",
 		"unpack","assert","error","pcall","xpcall","rawget","rawset","rawequal",
 		"setmetatable","getmetatable","print","class","_VERSION","math","string","table" }
 	for _, k in ipairs(allow) do sb[k] = g[k] end
-	-- restricted Mods API (no fs helpers, no eet/raw access)
+	-- restricted Mods API: no fs helpers, no eet/raw access
 	sb.Mods = {
 		register = Mods.register, log = Mods.log, spawn = Mods.spawn,
 		config = Mods.config, frame = 0,
@@ -208,7 +192,7 @@ function Mods.loadAll()
 	Mods.log("framework "..Mods.version.." scanning "..Mods.root)
 	Mods._installHooks()
 
-	-- phase 1: dofile every mod.lua (each calls Mods.register to record its def)
+	-- phase 1: record defs only; activation waits until after the priority sort
 	local dirByName = {}
 	for _, name in ipairs(moddirs()) do
 		local modfile = Mods.root.."/"..name.."/mod.lua"
@@ -216,12 +200,10 @@ function Mods.loadAll()
 		local ok, err = pcall(dofile, modfile)
 		if not ok then Mods.log("dofile '"..modfile.."' failed: "..tostring(err))
 		else
-			-- associate the just-registered def(s) with this dir
 			for i = before + 1, table.getn(Mods._list) do dirByName[Mods._list[i].name] = name end
 		end
 	end
 
-	-- phase 1b: sandboxed content mods (Data/Mods/content/*.lua)
 	local sb = Mods.makeSandbox()
 	for _, f in ipairs(contentfiles()) do
 		local path = Mods.root.."/content/"..f
@@ -235,7 +217,7 @@ function Mods.loadAll()
 		end
 	end
 
-	-- phase 2: sort by priority (high first), then activate
+	-- phase 2: high priority activates first
 	table.sort(Mods._list, function(a, b) return (a.priority or 0) > (b.priority or 0) end)
 	for _, def in ipairs(Mods._list) do
 		local dir = Mods.root.."/"..(dirByName[def.name] or def.name)
@@ -253,27 +235,21 @@ function Mods.loadAll()
 	Mods.log("done; "..table.getn(Mods._list).." mod(s)")
 end
 
--- ---- level (.eet) toolchain ----------------------------------------------
 -- .eet = lua 5.0 precompiled chunk that builds the level's global table.
--- uses the engine's own VM, so output is byte-compatible (verified).
 Mods.eet = {}
 
--- compile Lua level source -> .eet bytes
 function Mods.eet.compile(src)
 	local chunk, err = loadstring(src, "level")
 	if not chunk then return nil, err end
 	return string.dump(chunk)
 end
 
--- write Lua level source straight to a .eet file
 function Mods.eet.build(src, outpath)
 	local bytes, err = Mods.eet.compile(src)
 	if not bytes then Mods.log("eet compile error: "..tostring(err)); return false end
 	return writeall(outpath, bytes, true)
 end
 
--- load a .eet (or .lua) level chunk in a sandbox and return the globals table
--- it produced ("decompile to data" - gives the Level/Objects schema).
 function Mods.eet.read(path)
 	local chunk = loadfile(path)
 	if not chunk then return nil, "loadfile failed" end
@@ -284,7 +260,6 @@ function Mods.eet.read(path)
 	return env
 end
 
--- serialize a Lua table back to source (for .eet -> readable .lua)
 local function ser(v, ind)
 	local t = type(v)
 	if t == "string" then return string.format("%q", v) end

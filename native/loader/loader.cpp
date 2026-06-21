@@ -1,15 +1,4 @@
-// libeetsmod.so - native mod loader for Eets (LD_PRELOAD).
-//
-// mods are .cpp files in <game>/mods/, compiled to cached .so files on launch
-// (recompiled only when source changes), dlopen'd, then dispatched callbacks.
-// callbacks run inside a crash guard so a faulting mod is disabled, not fatal.
-//
-// interposition: Eets links FNA3D/SDL2 dynamically, so their PLT calls can be
-// hooked (the engine's internal, statically-linked calls cannot):
-//   FNA3D_SwapBuffers -> per-frame tick (load, Update, hot-recompile, banner)
-//   SDL_PollEvent     -> keyboard + mouse events
-// mods also call engine functions directly (eets_engine.h) and detour them via
-// Eets::Hook (hook.h).
+// libeetsmod.so
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -51,7 +40,6 @@ struct Mod {
 	void*       handle = nullptr;
 	time_t      srcmtime = 0;
 	bool        disabled = false;
-	// manifest (optional, from <name>.cfg meta keys)
 	std::string version, author, minFw;
 	int         priority = 0;
 	bool        sim = false;          // affects simulation (replays/leaderboard)
@@ -71,14 +59,14 @@ bool   g_loaded = false;
 unsigned long g_frame = 0;
 const unsigned RELOAD_POLL_FRAMES = 30;
 int g_mouse_x = 0, g_mouse_y = 0;        // in render (viewport) space
-bool g_overlay = false;          // f1 toggles the mod-list overlay
+bool g_overlay = false;
 // real render backbuffer size from FNA3D_SetViewport (correct in fullscreen,
 // where it differs from the window/configured resolution).
 int g_vp_w = 0, g_vp_h = 0;              // committed (last full frame)
 int g_vp_cur_w = 0, g_vp_cur_h = 0;     // max seen during the current frame
-double g_time = 0.0, g_dt = 0.0;        // seconds since first frame / last frame delta
+double g_time = 0.0, g_dt = 0.0;
 const int OV_X = 8, OV_Y = 8, OV_W = 320, OV_TITLE = 40, OV_ROWH = 26;  // f1 manager layout
-std::string g_selected;          // mod whose config is expanded in the manager
+std::string g_selected;
 
 FILE* logfile() { static FILE* f = fopen("Log/native_mods.log", "a"); return f; }
 void logline(const char* fmt, ...) {
@@ -88,7 +76,7 @@ void logline(const char* fmt, ...) {
 	FILE* f = logfile(); if (f) { fprintf(f, "%s\n", buf); fflush(f); }
 }
 
-// ---- crash guard: a faulting mod is disabled, the game survives -------------
+// crash guard: a faulting mod is disabled, the game survives
 sigjmp_buf g_jmp;
 volatile sig_atomic_t g_guarding = 0;
 struct sigaction g_old_sa[8];
@@ -96,7 +84,7 @@ const int g_sigs[] = { SIGSEGV, SIGFPE, SIGILL, SIGBUS };
 
 void crash_handler(int sig, siginfo_t* info, void* uctx) {
 	if (g_guarding) { g_guarding = 0; siglongjmp(g_jmp, sig); }
-	// not in a mod: chain to the engine's / default handler
+	// not in a mod: chain to engine/default handler
 	for (size_t i = 0; i < sizeof(g_sigs)/sizeof(g_sigs[0]); i++) {
 		if (g_sigs[i] == sig) {
 			struct sigaction& o = g_old_sa[i];
@@ -113,7 +101,6 @@ void install_guards() {
 	for (size_t i = 0; i < sizeof(g_sigs)/sizeof(g_sigs[0]); i++)
 		sigaction(g_sigs[i], &sa, &g_old_sa[i]);
 }
-// run fn() guarded; on fault mark the mod disabled. returns false if it crashed.
 template <class Fn>
 bool guard(Mod* m, Fn&& fn) {
 	if (m && m->disabled) return false;
@@ -125,10 +112,9 @@ bool guard(Mod* m, Fn&& fn) {
 	return false;
 }
 
-// ---- BuildID check: warn if the addresses in eets_engine.h won't match -----
 struct BuildIdCtx { char hex[64]; bool found; };
 int buildid_cb(struct dl_phdr_info* info, size_t, void* data) {
-	if (info->dlpi_name && info->dlpi_name[0] != '\0') return 0;  // main exe has empty name
+	if (info->dlpi_name && info->dlpi_name[0] != '\0') return 0;  // main exe: empty name
 	BuildIdCtx* ctx = (BuildIdCtx*)data;
 	for (int i = 0; i < info->dlpi_phnum; i++) {
 		const ElfW(Phdr)& ph = info->dlpi_phdr[i];
@@ -233,7 +219,6 @@ std::string trim(const std::string& s) {
 	return a == std::string::npos ? std::string() : s.substr(a, b - a + 1);
 }
 
-// ---- config + manifest (mods/<mod>.cfg, key=value) ------------------------
 std::map<std::string, std::map<std::string, std::string>> g_cfg;
 std::map<std::string, std::string>& cfg_for(const char* mod) {
 	auto it = g_cfg.find(mod); if (it != g_cfg.end()) return it->second;
@@ -252,7 +237,6 @@ std::map<std::string, std::string>& cfg_for(const char* mod) {
 	}
 	return m;
 }
-// write a mod's config map back to <mod>.cfg (used by the in-game editor)
 void cfg_flush(const std::string& mod) {
 	auto it = g_cfg.find(mod); if (it == g_cfg.end()) return;
 	FILE* f = fopen((modsdir() + "/" + mod + ".cfg").c_str(), "w");
@@ -260,7 +244,6 @@ void cfg_flush(const std::string& mod) {
 	for (auto& kv : it->second) fprintf(f, "%s = %s\n", kv.first.c_str(), kv.second.c_str());
 	fclose(f);
 }
-// adjust a config value in place: toggle 0/1, else numeric +/- step. returns new text.
 std::string cfg_adjust(const std::string& v, int dir) {
 	if (v == "0" || v == "1") return v == "0" ? "1" : "0";
 	char* end = nullptr; double d = strtod(v.c_str(), &end);
@@ -272,7 +255,7 @@ std::string cfg_adjust(const std::string& v, int dir) {
 		else     snprintf(b, sizeof(b), "%ld", (long)d);
 		return b;
 	}
-	return v;   // non-numeric: leave
+	return v;
 }
 
 void read_manifest(Mod& m) {
@@ -295,7 +278,6 @@ bool have_mod(const std::string& name) {
 	for (auto& m : g_mods) if (m.name == name && !m.disabled) return true;
 	return false;
 }
-// compare dotted versions: returns <0,0,>0
 int vercmp(const std::string& a, const std::string& b) {
 	int ai = 0, bi = 0;
 	while (ai < (int)a.size() || bi < (int)b.size()) {
@@ -309,7 +291,6 @@ int vercmp(const std::string& a, const std::string& b) {
 	return 0;
 }
 
-// ---- user enable/disable persistence (mods/.disabled) ---------------------
 std::vector<std::string> g_userDisabled;
 bool is_user_disabled(const std::string& n) {
 	for (auto& d : g_userDisabled) if (d == n) return true;
@@ -336,13 +317,11 @@ void set_user_disabled(const std::string& n, bool dis) {
 	save_disabled();
 }
 
-// ---- events ---------------------------------------------------------------
 void fire_event(const char* name, void* a, void* b) {
 	for (auto& m : g_mods) if (m.onevent && !m.disabled)
 		guard(&m, [&]{ m.onevent(name, a, b); });
 }
 
-// detour: ObjectMgr::CreateObject -> "object_spawn"
 typedef void* (*CreateObjectFn)(void*, const char*, unsigned);
 CreateObjectFn orig_CreateObject = nullptr;
 void* det_CreateObject(void* self, const char* name, unsigned layer) {
@@ -350,7 +329,6 @@ void* det_CreateObject(void* self, const char* name, unsigned layer) {
 	fire_event("object_spawn", o, (void*)name);
 	return o;
 }
-// generic single-arg (this) detours for the other events
 typedef void (*ThisFn)(void*);
 ThisFn orig_LoadWin = nullptr, orig_Reset = nullptr, orig_KillMe = nullptr, orig_EetsDead = nullptr;
 typedef void (*ThisArgFn)(void*, void*);
@@ -366,8 +344,7 @@ void det_Emotion(unsigned long h, unsigned int e) { orig_Emotion(h, e); fire_eve
 typedef void (*GoalFn)(void*);
 GoalFn orig_Goal = nullptr;
 void det_Goal(void* o) { orig_Goal(o); fire_event("goal_check", o, nullptr); }
-// (eets_death has a short-jcc prologue the inline hooker can't relocate;
-//  detect death via "object_killed" of World_GetEets() instead.)
+// note: eets_death prologue isn't relocatable; detect via object_killed of World_GetEets()
 
 void try_hook(const char* name, void* target, void* detour, void** orig) {
 	if (eets_hook::install(target, detour, orig)) logline("hook: %s", name);
@@ -384,11 +361,7 @@ void install_engine_event_hooks() {
 	try_hook("eets_death (Creator::StartEetsDeadDialog)",(void*)Eets::addr::hook_Creator_StartEetsDeadDialog,(void*)det_EetsDead,    (void**)&orig_EetsDead);
 }
 
-// ---- asset bundling: mods/assets/<rel> -> Data/<rel> ----------------------
-// lets a mod ship custom textures/anims/sounds/levels the engine loads by name
-// via its normal content path (World_CreateEffect, blueprints, Sound, GUI).
-// note: overwrites matching files under Data/ (intentional override); originals
-// are the user's game files, so back up Data/ if unsure.
+// overwrites matching files under Data/ (intentional override)
 void install_assets() {
 	std::string adir = modsdir() + "/assets";
 	if (!exists(adir)) return;
@@ -401,7 +374,6 @@ void install_assets() {
 	else logline("assets: install failed");
 }
 
-// ---- discovery + load -----------------------------------------------------
 void load_all() {
 	install_guards();
 	check_buildid();
@@ -412,7 +384,6 @@ void load_all() {
 	logline("eetsmod v%s  include=%s compiler=%s", EETSMOD_VERSION, includedir().c_str(), compiler());
 	logline("loader: scanning %s", dir.c_str());
 
-	// 1. discover mod files + read manifests
 	std::vector<Mod> found;
 	DIR* d = opendir(dir.c_str());
 	if (d) {
@@ -429,12 +400,10 @@ void load_all() {
 		closedir(d);
 	} else logline("loader: no mods dir (%s)", dir.c_str());
 
-	// 2. order by priority (high first)
 	for (size_t i = 0; i < found.size(); i++)
 		for (size_t j = i + 1; j < found.size(); j++)
 			if (found[j].priority > found[i].priority) std::swap(found[i], found[j]);
 
-	// 3. compile + open + dependency check
 	for (auto& m : found) {
 		if (!open_mod(m)) continue;
 		g_mods.push_back(m);
@@ -445,7 +414,6 @@ void load_all() {
 		        m.update?1:0, m.onkey?1:0, m.onmouse?1:0, m.onevent?1:0,
 		        m.src.empty() ? " [prebuilt]" : " [compiled]");
 	}
-	// user-disabled (persisted) + version compat + deps
 	for (auto& m : g_mods) {
 		if (is_user_disabled(m.name)) { m.disabled = true; logline("'%s' disabled by user", m.name.c_str()); }
 		if (!m.minFw.empty() && vercmp(EETSMOD_VERSION, m.minFw) < 0) {
@@ -460,12 +428,10 @@ void load_all() {
 		}
 	}
 
-	// 4. engine event hooks, then init
 	install_engine_event_hooks();
 	for (auto& m : g_mods) if (m.init && !m.disabled) guard(&m, [&]{ m.init(); });
 	int active = 0; for (auto& m : g_mods) if (!m.disabled) active++;
 	logline("loader: %d/%zu mod(s) active", active, g_mods.size());
-	// replay/leaderboard integrity warning
 	for (auto& m : g_mods) if (m.sim && !m.disabled)
 		logline("integrity: '%s' affects simulation - replays/leaderboards may be invalid", m.name.c_str());
 }
@@ -501,7 +467,6 @@ void poll_reload() {
 	closedir(d);
 }
 
-// ---- persistent per-mod save data (mods/<mod>.save, key=value) -------------
 std::map<std::string, std::map<std::string, std::string>> g_save;
 std::map<std::string, std::string>& save_for(const char* mod) {
 	auto it = g_save.find(mod); if (it != g_save.end()) return it->second;
@@ -535,9 +500,6 @@ struct MotionView { unsigned type, ts, win, which, state; int x, y, xrel, yrel; 
 struct ButtonView { unsigned type, ts, win, which; unsigned char button, state, clicks, pad; int x, y; };
 struct WheelView { unsigned type, ts, win, which; int x, y; unsigned dir; };
 
-// f1 manager click (render-space mx,my). ON/OFF zone toggles enable; the name
-// expands the mod's config; in the config section, [-]/[+] edit a value.
-// returns true if the click landed on the manager (so it shouldn't pass through).
 bool manage_click(int mx, int my) {
 	if (mx < OV_X || mx >= OV_X + OV_W) return false;
 	int nMods = (int)g_mods.size();
@@ -552,11 +514,10 @@ bool manage_click(int mx, int my) {
 			if (!dis && m.init) guard(&m, [&]{ m.init(); });
 		} else {                                    // name -> expand config
 			g_selected = (g_selected == m.name) ? std::string() : m.name;
-			if (!g_selected.empty()) cfg_for(g_selected.c_str());   // ensure loaded
+			if (!g_selected.empty()) cfg_for(g_selected.c_str());
 		}
 		return true;
 	}
-	// config section (below the mod list)
 	if (g_selected.empty()) return true;
 	auto& cfg = g_cfg[g_selected];
 	int cy0 = OV_Y + OV_TITLE + nMods * OV_ROWH;
@@ -594,11 +555,8 @@ namespace Eets {
 	bool  Hook(void* target, void* detour, void** original) { return eets_hook::install(target, detour, original); }
 	int   MouseX() { return g_mouse_x; }
 	int   MouseY() { return g_mouse_y; }
-	// actual render dimensions (viewport); correct in fullscreen. falls back to
-	// the configured backbuffer size before the first frame is drawn.
 	int   RenderWidth()  { return g_vp_w > 0 ? g_vp_w : ScreenWidth(); }
 	int   RenderHeight() { return g_vp_h > 0 ? g_vp_h : ScreenHeight(); }
-	// persistent per-mod save data (survives restarts; mods/<mod>.save)
 	const char* SaveGet(const char* mod, const char* key, const char* def) {
 		auto& m = save_for(mod); auto it = m.find(key);
 		return it != m.end() ? it->second.c_str() : def;
@@ -610,10 +568,8 @@ namespace Eets {
 	void  SaveSetInt(const char* mod, const char* key, int v)     { char b[32]; snprintf(b, sizeof(b), "%d", v); SaveSet(mod, key, b); }
 	float SaveGetFloat(const char* mod, const char* key, float d) { const char* v = SaveGet(mod, key, nullptr); return v ? (float)atof(v) : d; }
 	void  SaveSetFloat(const char* mod, const char* key, float v) { char b[48]; snprintf(b, sizeof(b), "%g", v); SaveSet(mod, key, b); }
-	// frame timing
-	double Time()      { return g_time; }   // seconds since the first frame
-	double DeltaTime() { return g_dt; }     // seconds since the previous frame
-	// text input: call StartTextInput to begin receiving EetsMod_OnText(utf8)
+	double Time()      { return g_time; }
+	double DeltaTime() { return g_dt; }
 	void StartTextInput() { auto f = (void(*)())dlsym(RTLD_NEXT, "SDL_StartTextInput"); if (f) f(); }
 	void StopTextInput()  { auto f = (void(*)())dlsym(RTLD_NEXT, "SDL_StopTextInput");  if (f) f(); }
 }
@@ -633,14 +589,13 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 	static void (*real)(void*, void*, void*, void*) = nullptr;
 	if (!real) real = (decltype(real))dlsym(RTLD_NEXT, "FNA3D_SwapBuffers");
 	if (!g_loaded) { g_loaded = true; load_all(); }
-	// frame timing
 	{
 		struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
 		double now = ts.tv_sec + ts.tv_nsec * 1e-9;
 		static double start = now, last = now;
 		g_dt = now - last; last = now; g_time = now - start;
 	}
-	if (g_vp_cur_w > 0) { g_vp_w = g_vp_cur_w; g_vp_h = g_vp_cur_h; }   // commit frame viewport
+	if (g_vp_cur_w > 0) { g_vp_w = g_vp_cur_w; g_vp_h = g_vp_cur_h; }
 	{ static bool vlog = false; if (!vlog && g_vp_w > 0) { vlog = true; logline("render dims: %dx%d (configured %dx%d)", g_vp_w, g_vp_h, Eets::ScreenWidth(), Eets::ScreenHeight()); } }
 	for (auto& m : g_mods) if (m.update && !m.disabled) guard(&m, [&]{ m.update(); });
 	if (++g_frame % RELOAD_POLL_FRAMES == 0) poll_reload();
@@ -655,7 +610,6 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		if (!once) { once = true; logline("menu banner: \"%s\" (screen h=%d)", banner, h); }
 	}
 
-	// f1 interactive mod manager: ON/OFF toggles enable, name expands config
 	if (g_loaded && g_overlay) {
 		using namespace Eets;
 		int nMods = (int)g_mods.size();
@@ -679,7 +633,6 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 			DrawTextOutlined(OV_X + 64, y + 4, line, FONT_NORMAL, Colour(255, 255, 255, 255));
 			y += OV_ROWH;
 		}
-		// config editor for the selected mod
 		if (!g_selected.empty()) {
 			DrawTextOutlined(OV_X + 10, y + 4, ("config: " + g_selected).c_str(), FONT_SMALL, Colour(255, 232, 40, 255));
 			y += OV_ROWH;
@@ -696,11 +649,10 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 			}
 		}
 	}
-	g_vp_cur_w = g_vp_cur_h = 0;     // reset; recomputed next frame
+	g_vp_cur_w = g_vp_cur_h = 0;
 	if (real) real(device, src, dst, window);
 }
 
-// map window-pixel mouse coords to render (backbuffer/viewport) space
 void map_mouse(int rx, int ry, unsigned winId) {
 	static void* (*getWin)(unsigned) = nullptr;
 	static void  (*getSize)(void*, int*, int*) = nullptr;

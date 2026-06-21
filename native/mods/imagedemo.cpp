@@ -15,6 +15,5 @@ extern "C" void EetsMod_OnKey(int key, int, int down) {
 extern "C" void EetsMod_OnMouse(int x, int y, int, int) { (void)x; (void)y; }
 extern "C" void EetsMod_Update() {
 	if (!g_on) return;
-	// draw Eets centered on the cursor (sprite is 512x512)
 	DrawImage("Eets.png", MouseX() - 256, MouseY() - 256);
 }

@@ -1,11 +1,4 @@
-// hook.h - minimal, safe inline x86-64 detour for hooking engine functions.
-//
-// Overwrites a function's prologue with a 14-byte absolute jump to a detour, and
-// builds a trampoline (copied prologue + jump back) so the detour can still call
-// the original. The length decoder ACCEPTS only instruction forms it can decode
-// and relocate with certainty, and REJECTS everything else (returns 0) so a hook
-// is simply refused rather than corrupting code. RIP-relative and relative
-// call/jmp instructions in the prologue are rejected (cannot be relocated here).
+// hook.h
 #pragma once
 #include <cstdint>
 #include <cstring>
@@ -18,7 +11,6 @@
 
 namespace eets_hook {
 
-// ---- platform glue (page protection / executable alloc) --------------------
 #ifdef _WIN32
 inline void* alloc_exec(size_t n) {
 	return VirtualAlloc(nullptr, n, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
@@ -72,11 +64,9 @@ inline bool make_writable(void* a, size_t l) { return prot(a, l, PROT_READ | PRO
 inline void make_exec(void* a, size_t l)     { prot(a, l, PROT_READ | PROT_EXEC); }
 #endif
 
-inline int modrm_len(const uint8_t* p);   // fwd
+inline int modrm_len(const uint8_t* p);
 
-// Decode one instruction at p. Returns its length, or 0 if it cannot be safely
-// decoded/relocated. Handles legacy prefixes, REX, and a prologue-common opcode
-// subset with full ModRM/SIB/disp/imm sizing.
+// returns instruction length, or 0 if it can't be safely relocated
 inline int insn_len(const uint8_t* p) {
 	int len = 0;
 	bool op66 = false;            // operand-size override
@@ -186,9 +176,6 @@ inline void write_abs_jmp(uint8_t* at, void* target) {
 	*(uint64_t*)(at + 6) = (uint64_t)target;
 }
 
-// Install a detour at `target`. On success *original receives a callable
-// trampoline to the unhooked function. Returns false (no change) if the prologue
-// can't be safely relocated. Cross-platform (Linux/Windows x86-64).
 inline int prefix_len(const uint8_t* ins) {   // legacy prefixes + REX
 	int i = 0;
 	while (ins[i] == 0x66 || ins[i] == 0x67 || ins[i] == 0xF2 || ins[i] == 0xF3 ||
@@ -198,16 +185,14 @@ inline int prefix_len(const uint8_t* ins) {   // legacy prefixes + REX
 	return i;
 }
 inline bool emit_rel(uint8_t* tramp, int& tp, const uint8_t* op, int opbytes, uint8_t* target) {
-	for (int k = 0; k < opbytes; k++) tramp[tp++] = op[k];      // opcode byte(s)
+	for (int k = 0; k < opbytes; k++) tramp[tp++] = op[k];
 	int64_t rel = (int64_t)target - (int64_t)(tramp + tp + 4);
 	if (rel < INT32_MIN || rel > INT32_MAX) return false;
 	*(int32_t*)(tramp + tp) = (int32_t)rel; tp += 4;
 	return true;
 }
 
-// Install a detour. Copies the prologue to a trampoline near the target,
-// re-encoding relative branches (rel8/rel32 call/jmp/jcc) to reach their original
-// targets, then patches the target with an absolute jmp to the detour.
+// re-encodes rel8/rel32 branches in the copied prologue so they still reach.
 inline bool install(void* target, void* detour, void** original) {
 	uint8_t* t = (uint8_t*)target;
 	int copied = 0;

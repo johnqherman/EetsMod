@@ -1,37 +1,22 @@
-// eets_ui.h - tiny immediate-mode UI for custom menus in Eets mods.
-// styled to match the in-game gui: geekabyte font, dropshadow text, warm panel
-// with a cream border and a maroon title bar, yellow/green highlights.
-//
-//   #include "eets_ui.h"
-//   static bool g_open = true, g_god = false;
-//   extern "C" void EetsMod_OnMouse(int x,int y,int b,int down){ Eets::UI::FeedMouse(x,y,b,down); }
-//   extern "C" void EetsMod_Update() {
-//       if (!g_open) return;
-//       Eets::UI::Begin(40, 40, 240, "My Menu");
-//       if (Eets::UI::Button("Spawn whale")) Eets::World_CreateObject("whale", {500,300});
-//       Eets::UI::Toggle("God mode", g_god);
-//       Eets::UI::End();
-//   }
 #pragma once
 #include "eets_engine.h"
 
 namespace Eets { namespace UI {
 
-// ---- Eets palette (bright red, thick black outlines, yellow/white text) -----
 namespace col {
 	inline Colour black()     { return Colour(0, 0, 0, 255); }
 	inline Colour shadow()    { return Colour(0, 0, 0, 110); }
-	inline Colour panel()     { return Colour(205, 40, 35, 255); }     // Eets red
-	inline Colour titlebar()  { return Colour(165, 22, 20, 255); }     // darker red
-	inline Colour title()     { return Colour(255, 232, 40, 255); }    // yellow
-	inline Colour btn()       { return Colour(230, 58, 48, 255); }     // brighter red
-	inline Colour btnHover()  { return Colour(255, 120, 55, 255); }    // orange
+	inline Colour panel()     { return Colour(205, 40, 35, 255); }
+	inline Colour titlebar()  { return Colour(165, 22, 20, 255); }
+	inline Colour title()     { return Colour(255, 232, 40, 255); }
+	inline Colour btn()       { return Colour(230, 58, 48, 255); }
+	inline Colour btnHover()  { return Colour(255, 120, 55, 255); }
 	inline Colour textC()     { return Colour(255, 255, 255, 255); }
-	inline Colour textHover() { return Colour(255, 232, 40, 255); }    // yellow
+	inline Colour textHover() { return Colour(255, 232, 40, 255); }
 	inline Colour label()     { return Colour(255, 255, 255, 255); }
 	inline Colour cream()     { return Colour(255, 224, 193, 255); }
-	inline Colour on()        { return Colour(255, 210, 40, 255); }    // yellow check
-	inline Colour off()       { return Colour(120, 20, 18, 255); }     // dark red
+	inline Colour on()        { return Colour(255, 210, 40, 255); }
+	inline Colour off()       { return Colour(120, 20, 18, 255); }
 }
 
 struct State {
@@ -62,12 +47,12 @@ inline void Begin(int x, int y, int w, const char* title = nullptr) {
 	State& s = S();
 	s.px = x; s.py = y; s.pw = w; s.top = y;
 	int H = s.lastH;
-	FillRect(x + 6, y + 7, w, H, col::shadow());          // drop shadow
-	FillRect(x, y, w, H, col::panel());                   // red panel
-	DrawRect(x, y, w, H, col::black(), 4.0f);             // thick black outline
+	FillRect(x + 6, y + 7, w, H, col::shadow());
+	FillRect(x, y, w, H, col::panel());
+	DrawRect(x, y, w, H, col::black(), 4.0f);
 	if (title) {
 		FillRect(x + 4, y + 4, w - 8, s.rowh + 2, col::titlebar());
-		FillRect(x + 4, y + s.rowh + 4, w - 8, 3, col::black());   // separator
+		FillRect(x + 4, y + s.rowh + 4, w - 8, 3, col::black());
 		DrawTextOutlined(x + s.pad, y + 7, title, FONT_BIG, col::title());
 		s.cy = y + s.rowh + s.pad + 6;
 	} else {
@@ -80,7 +65,7 @@ inline bool Button(const char* label) {
 	int x = s.px + s.pad, y = s.cy, w = s.pw - 2*s.pad, h = s.rowh + 4;
 	bool hov = hover(x, y, w, h);
 	FillRect(x, y, w, h, hov ? col::btnHover() : col::btn());
-	DrawRect(x, y, w, h, col::black(), 3.0f);             // thick black outline
+	DrawRect(x, y, w, h, col::black(), 3.0f);
 	DrawTextOutlined(x + 12, y + 7, label, FONT_NORMAL, hov ? col::textHover() : col::textC());
 	s.cy += h + 8;
 	bool c = s.clicked && hit(x, y, w, h);
@@ -113,7 +98,7 @@ inline float Slider(const char* label, float& value, float lo, float hi) {
 	int by = y + 20, bh = 14;
 	FillRect(x, by, w, bh, col::off());
 	float t = (value - lo) / (hi - lo); if (t < 0) t = 0; if (t > 1) t = 1;
-	FillRect(x, by, (int)(w * t), bh, col::on());         // yellow fill
+	FillRect(x, by, (int)(w * t), bh, col::on());
 	DrawRect(x, by, w, bh, col::black(), 3.0f);
 	if (s.down && hover(x, by - 8, w, bh + 16)) {
 		float nt = (float)(s.mx - x) / (float)w; if (nt < 0) nt = 0; if (nt > 1) nt = 1;
