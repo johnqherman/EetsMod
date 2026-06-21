@@ -19,12 +19,22 @@ void EetsMod_Update();
 // 0 on release. Optional.
 void EetsMod_OnKey(int keycode, int mods, int down);
 
+// Called before the mod is unloaded (hot-reload or shutdown). Optional.
+void EetsMod_Shutdown();
+
 } // extern "C"
 
 // ---- helpers provided by the loader (resolved at dlopen time) --------------
 namespace Eets {
 	// Log a line to stderr and to <game>/Log/native_mods.log.
 	void Log(const char* fmt, ...);
+
+	// Read a value from <game>/mods/<mod>.cfg (simple key=value lines).
+	// Returns `def` if the file or key is absent. Pointer is valid until the
+	// next ConfigGet call for the same mod.
+	const char* ConfigGet(const char* mod, const char* key, const char* def);
+	int   ConfigGetInt(const char* mod, const char* key, int def);
+	float ConfigGetFloat(const char* mod, const char* key, float def);
 }
 
 // Minimal SDL keycode / modifier constants (so mods don't need SDL headers).

@@ -1,25 +1,24 @@
-# Build the native loader and all sample mods.
-#   make                 -> build/libeetsmod.so + build/mods/*.so
-#   make install GAME=..  -> copy loader to <GAME>/ and mods to <GAME>/mods/
-.PHONY: all loader mods install clean
+# Build the loader. Mods are NOT built here - they are plain .cpp files that the
+# loader compiles at runtime when you drop them in <game>/mods/.
+#   make                  -> build/libeetsmod.so
+#   make install GAME=..   -> install loader + headers + sample mods into <GAME>
+.PHONY: all loader install clean
 
-all: loader mods
+all: loader
 
 loader:
 	$(MAKE) -C loader
-
-mods:
-	$(MAKE) -C mods/lowgrav
 
 install: all
 	@test -n "$(GAME)" || { echo "usage: make install GAME=/path/to/Eets"; exit 1; }
 	@test -x "$(GAME)/Eets" || { echo "no Eets binary at $(GAME)"; exit 1; }
 	install -m644 build/libeetsmod.so "$(GAME)/libeetsmod.so"
-	mkdir -p "$(GAME)/mods"
-	install -m644 build/mods/*.so "$(GAME)/mods/"
-	@echo "installed loader + $$(ls build/mods | wc -l) mod(s) to $(GAME)"
+	mkdir -p "$(GAME)/eetsmod-include" "$(GAME)/mods"
+	install -m644 include/*.h "$(GAME)/eetsmod-include/"
+	@for f in mods/*.cpp mods/*.cfg; do [ -f "$$f" ] && install -m644 "$$f" "$(GAME)/mods/$$(basename $$f)"; done; true
+	@echo "installed loader + headers + sample mods to $(GAME)"
+	@echo "mods are compiled on launch; drop .cpp files in $(GAME)/mods/"
 
 clean:
 	$(MAKE) -C loader clean
-	$(MAKE) -C mods/lowgrav clean
 	rm -rf build

@@ -8,11 +8,19 @@
 // xmm0 exactly as the engine's own C++ does, so matching the type matches the ABI.
 #pragma once
 #include <cstdint>
+#include <string>
 
 namespace Eets {
 
 struct Vector2 { float x, y; };
+struct Colour { unsigned char r, g, b, a;          // 4-byte packed (engine ABI)
+	Colour(unsigned char R=255, unsigned char G=255, unsigned char B=255, unsigned char A=255)
+		: r(R), g(G), b(B), a(A) {}
+};
 struct Object;   // opaque engine type
+
+struct MotionModel;   // opaque
+struct ObjectMgr;     // opaque
 
 namespace addr {
 	// World_* (Lua-binding statics; thin forwarders to the Simulator singleton)
@@ -20,12 +28,37 @@ namespace addr {
 	constexpr uintptr_t World_SetGravity            = 0x5bc6d0;
 	constexpr uintptr_t World_CreateObject          = 0x5bc660;
 	constexpr uintptr_t World_GetEets               = 0x5bca40;
+	constexpr uintptr_t World_GetObjectByID         = 0x5bc6b0;
 	constexpr uintptr_t World_CreateExplosion       = 0x5bc0d0;
 	constexpr uintptr_t World_CreateExplosionSpecial= 0x5bc170;
+	constexpr uintptr_t World_CreateEffect          = 0x5bc090;
+	constexpr uintptr_t World_Scare                 = 0x5bc9e0;
+	constexpr uintptr_t World_SetGameSpeed          = 0x5bc070;
+	constexpr uintptr_t World_ChangeEmotion         = 0x5bcb90;
+	constexpr uintptr_t Sound_CreateSound           = 0x5bcdd0;
 	// Object_* (take an Object*)
 	constexpr uintptr_t Object_ApplyImpulse         = 0x5c9d40;
 	constexpr uintptr_t Object_EnablePhysics        = 0x5c9d10;
+	// Object methods (__thiscall: Object* in first arg)
+	constexpr uintptr_t Object_GetPosition          = 0x5739c0;
+	constexpr uintptr_t Object_GetVelocity          = 0x573a00;
+	constexpr uintptr_t Object_GetID                = 0x574250;
+	constexpr uintptr_t Object_GetMotionModel       = 0x5ca360;
+	// MotionModel methods (__thiscall)
+	constexpr uintptr_t MotionModel_PushMotion      = 0x50d830;
+	constexpr uintptr_t MotionModel_PopMotion       = 0x50dc60;
+	constexpr uintptr_t MotionModel_GetCurrentMotionName = 0x50dc40;
+	// singletons / state / UI
+	constexpr uintptr_t ObjectMgr_i                 = 0x576280;
+	constexpr uintptr_t Simulator_i                 = 0x62ae90;
+	constexpr uintptr_t GraphicsEngine_i            = 0x549100;
+	constexpr uintptr_t World_IsInMainMenu          = 0x5bc870;
+	constexpr uintptr_t printText                   = 0x58a020;  // (int x,int y,const char*,Colour const&)
+	constexpr uintptr_t TextPrinter_DrawString      = 0x541380;  // (string,size,style,Colour,pos,bool,scale)
 }
+
+// FontPrintSizes enum -> pixel height: 1=13 2=14 3=20 4=28 5=35
+enum FontSize { FONT_TINY = 1, FONT_SMALL = 2, FONT_NORMAL = 3, FONT_BIG = 4, FONT_HUGE = 5 };
 
 // typed function-pointer wrappers
 inline Vector2 World_GetGravity() {
@@ -51,6 +84,89 @@ inline void Object_ApplyImpulse(Object* o, const Vector2& impulse) {
 }
 inline void Object_EnablePhysics(Object* o, bool enabled) {
 	((void(*)(Object*, bool))addr::Object_EnablePhysics)(o, enabled);
+}
+inline Object* World_GetObjectByID(unsigned long id) {
+	return ((Object*(*)(unsigned long))addr::World_GetObjectByID)(id);
+}
+inline void World_CreateEffect(const char* name, Vector2 pos) {
+	((void(*)(const char*, Vector2))addr::World_CreateEffect)(name, pos);
+}
+inline void World_Scare(const Vector2& pos, float radius, int strength) {
+	((void(*)(const Vector2&, float, int))addr::World_Scare)(pos, radius, strength);
+}
+inline void World_SetGameSpeed(unsigned long speed) {   // 0 = paused, 1 = normal, 2 = fast
+	((void(*)(unsigned long))addr::World_SetGameSpeed)(speed);
+}
+inline void World_ChangeEmotion(unsigned long objHash, unsigned int emotion) {
+	((void(*)(unsigned long, unsigned int))addr::World_ChangeEmotion)(objHash, emotion);
+}
+inline void Sound_CreateSound(const char* name, bool loop, float vol, const Vector2& pos) {
+	((void(*)(const char*, bool, float, const Vector2&))addr::Sound_CreateSound)(name, loop, vol, pos);
+}
+
+// ---- Object methods --------------------------------------------------------
+inline Vector2 Object_GetPosition(Object* o) {
+	return ((Vector2(*)(Object*))addr::Object_GetPosition)(o);
+}
+inline Vector2 Object_GetVelocity(Object* o) {
+	return ((Vector2(*)(Object*))addr::Object_GetVelocity)(o);
+}
+inline unsigned long Object_GetID(Object* o) {
+	return ((unsigned long(*)(Object*))addr::Object_GetID)(o);
+}
+inline MotionModel* Object_GetMotionModel(Object* o) {
+	return ((MotionModel*(*)(Object*))addr::Object_GetMotionModel)(o);
+}
+
+// ---- MotionModel methods ---------------------------------------------------
+inline void MotionModel_PushMotion(MotionModel* m, const char* name, bool a, bool b) {
+	((void(*)(MotionModel*, const char*, bool, bool))addr::MotionModel_PushMotion)(m, name, a, b);
+}
+inline void MotionModel_PopMotion(MotionModel* m) {
+	((void(*)(MotionModel*))addr::MotionModel_PopMotion)(m);
+}
+inline const char* MotionModel_GetCurrentMotionName(MotionModel* m) {
+	return ((const char*(*)(MotionModel*))addr::MotionModel_GetCurrentMotionName)(m);
+}
+
+// ---- live object enumeration ----------------------------------------------
+// ObjectMgr holds a std::vector<Object*> at offsets +0 (begin) / +8 (end).
+inline ObjectMgr* ObjectMgr_i() {
+	return ((ObjectMgr*(*)())addr::ObjectMgr_i)();
+}
+// Call `fn(Object*)` for every live object. Safe no-op if no world is loaded.
+template <class Fn>
+inline void ForEachObject(Fn fn) {
+	char* mgr = (char*)ObjectMgr_i();
+	if (!mgr) return;
+	Object** begin = *(Object***)(mgr + 0);
+	Object** end   = *(Object***)(mgr + 8);
+	for (Object** p = begin; p && p < end; ++p) fn(*p);
+}
+
+// ---- state / screen / text -------------------------------------------------
+inline bool World_IsInMainMenu() {
+	return ((bool(*)())addr::World_IsInMainMenu)();
+}
+inline int ScreenWidth() {
+	char* g = (char*)((void*(*)())addr::GraphicsEngine_i)();
+	return g ? *(int*)(g + 0x40) : 0;
+}
+inline int ScreenHeight() {
+	char* g = (char*)((void*(*)())addr::GraphicsEngine_i)();
+	return g ? *(int*)(g + 0x44) : 0;
+}
+// Draw text at screen pixel (x, y), origin top-left, using the engine font
+// (normal 20px size).
+inline void DrawText(int x, int y, const char* text, Colour c = Colour()) {
+	((void(*)(int, int, const char*, const Colour&))addr::printText)(x, y, text, c);
+}
+// Draw text at a chosen font size (FONT_TINY..FONT_HUGE).
+inline void DrawTextSized(int x, int y, const char* text, int size, Colour c = Colour()) {
+	std::string s = text ? text : "";
+	Vector2 pos{(float)x, (float)y}, scale{1.0f, 1.0f};
+	((void(*)(const std::string&, int, int, Colour, Vector2, bool, const Vector2&))
+	 addr::TextPrinter_DrawString)(s, size, 3, c, pos, false, scale);
 }
 
 } // namespace Eets
