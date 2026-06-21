@@ -183,5 +183,13 @@ inline void DrawTextSized(int x, int y, const char* text, int size,
 	((void(*)(const std::string&, int, int, Colour, Vector2, bool, const Vector2&))
 	 addr::TextPrinter_DrawString)(s, size, 3, c, pos, false, dir);
 }
+// Same, with a 1px dark outline (8 offset passes) for readability over any scene.
+inline void DrawTextOutlined(int x, int y, const char* text, int size,
+                             Colour c = Colour(), Colour outline = Colour(0, 0, 0, 255)) {
+	for (int dx = -1; dx <= 1; dx++)
+		for (int dy = -1; dy <= 1; dy++)
+			if (dx || dy) DrawTextSized(x + dx, y + dy, text, size, outline);
+	DrawTextSized(x, y, text, size, c);
+}
 
 } // namespace Eets
