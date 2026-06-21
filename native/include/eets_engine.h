@@ -154,24 +154,29 @@ inline void DrawTextOutlined(int x, int y, const char* text, int size,
 
 // ---- 2D primitives (for custom menus / HUD) --------------------------------
 inline void* GraphicsEngine_i() { return ((void*(*)())addr::GraphicsEngine_i)(); }
+// GraphicsEngine geometry funcs swap R<->B internally; pre-swap so our RGBA shows correctly.
+inline Colour swab(Colour c) { return Colour(c.b, c.g, c.r, c.a); }
 inline void DrawLine(Vector2 a, Vector2 b, Colour c, float width = 1.0f) {
 	void* g = GraphicsEngine_i(); if (!g) return;
+	Colour s = swab(c);
 	((void(*)(void*, const Vector2&, const Vector2&, const Colour&, float))
-	 addr::GraphicsEngine_DrawLine)(g, a, b, c, width);
+	 addr::GraphicsEngine_DrawLine)(g, a, b, s, width);
 }
 // filled rectangle (GraphicsEngine::DrawSquare = 2 triangles)
 inline void FillRect(int x, int y, int w, int h, Colour c) {
 	void* g = GraphicsEngine_i(); if (!g) return;
+	Colour s = swab(c);
 	Vector2 a{(float)x, (float)y}, b{(float)(x + w), (float)(y + h)};
 	((void(*)(void*, const Vector2&, const Vector2&, const Colour&))
-	 addr::GraphicsEngine_DrawSquare)(g, a, b, c);
+	 addr::GraphicsEngine_DrawSquare)(g, a, b, s);
 }
 // filled circle
 inline void FillCircle(int x, int y, float r, Colour c, int segs = 24) {
 	void* g = GraphicsEngine_i(); if (!g) return;
+	Colour s = swab(c);
 	Vector2 p{(float)x, (float)y};
 	((void(*)(void*, const Vector2&, float, const Colour&, int))
-	 addr::GraphicsEngine_DrawCircleFilled)(g, p, r, c, segs);
+	 addr::GraphicsEngine_DrawCircleFilled)(g, p, r, s, segs);
 }
 // rectangle outline
 inline void DrawRect(int x, int y, int w, int h, Colour c, float t = 2.0f) {
