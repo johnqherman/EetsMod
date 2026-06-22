@@ -64,3 +64,25 @@ Target binary: **Eets.exe, PE32 i386, ImageBase 0x400000, ASLR on** (preserved a
 
 ## Branch
 `windows-parity` (pushed). Publish-prep on `main`. ~18 commits; Linux build/examples green throughout.
+
+## Bulk recovery pipeline (for the 55 internals)
+Per-function MCP calls are too slow. Use the headless decompile dump:
+```
+/opt/ghidra/support/analyzeHeadless /tmp/ghproj eetsdump -import ~/eets-win-ref/Eets.exe \
+    -postScript DumpDecomp.java -scriptPath tools/win        # ~12 min, -> /tmp/eets_decomp.c
+```
+`tools/win/DumpDecomp.java` exports all 7981 functions as `//FUNC <addr>` + decompiled C.
+Parse to `{addr: body}` and grep. Validated: `004dbef0` = World_GetGravity (gravity getter).
+
+Recovery leads found in the decomp:
+- **Singletons** (`*_i`): tiny `return DAT_xxxx;` accessors — 39 candidates. e.g. `004f8600 -> DAT_00ee3cbc`
+  (the singleton World_CreateObject uses). Map each DAT to its class via the constructor that writes
+  it + sets the (RTTI-named) vtable. GraphicsEngine vtable @ `0x564668` (meta-ptr `0x564664`, COL `0x58b630`).
+- **Rendering**: FNA3D imports are named (`FNA3D_DrawPrimitives` ×10 callers = the draw layer; the public
+  DrawSquare/Line/Circle batch, so they don't call FNA3D directly — trace from the GraphicsEngine ctor's
+  method cluster, ~`0x487-0x48e`).
+- **Methods**: reachable from the known World wrappers (e.g. `World_CreateObject 0x4dbe60 -> FUN_004f6ff0`
+  = the create path; `World_Alert/ShowGoalBox/ShowTutorial -> text`; `World_CreateLight -> 0x487* GE`).
+- **Off-by-one** in the class registrars is fixed; `methods_fixed.json` in /tmp has the corrected pairs.
+
+Remaining is the per-function identity-mapping RE on top of this dump + a runtime launch per batch.
