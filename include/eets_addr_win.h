@@ -11,7 +11,7 @@ inline uintptr_t resolve(uintptr_t rva){ return rva?(uintptr_t)GetModuleHandleA(
 inline uintptr_t Anim_GetCurrentFrameIndex          = resolve(0);  // (Anim::Animation*)  // TODO
 inline uintptr_t Anim_SetCurrentFrameIndex          = resolve(0);  // (Anim::Animation*, unsigned int)  // TODO
 inline uintptr_t Creator_Undo                       = resolve(0xd9c30);  // ()
-inline uintptr_t Misc_BindKey                       = resolve(0);  // (char const*, char const*)  // TODO
+inline uintptr_t Misc_BindKey                       = resolve(0xd9d60);  // (char const*, char const*) Misc luabind table; wraps FUN_00498650
 inline uintptr_t Misc_PauseProfile                  = resolve(0xd9d80);  // ()
 inline uintptr_t Misc_Print                         = resolve(0xd9d90);  // (char const*)
 inline uintptr_t Misc_Profile                       = resolve(0xd9da0);  // ()
@@ -108,13 +108,13 @@ inline uintptr_t hook_ObjectMgr_CreateObject        = resolve(0);  // -> "object
 inline uintptr_t hook_World_ChangeEmotion           = resolve(0xdb8f0);  // -> "emotion_change" (ulong hash, uint emotion)
 inline uintptr_t hook_World_CheckGoal               = resolve(0xdb910);  // -> "goal_check" (Object*)
 inline uintptr_t hook_Creator_OnEndEetsDeadDialog   = resolve(0);  // -> "eets_death" (Creator*, int)  // TODO
-inline uintptr_t MotionModel_PushMotion             = resolve(0);  // (MotionModel*, char const*, bool, bool)  // TODO
-inline uintptr_t MotionModel_PopMotion              = resolve(0);  // (MotionModel*)  // TODO
-inline uintptr_t MotionModel_GetCurrentMotionName   = resolve(0);  // (MotionModel*) -> char const*  // TODO
+inline uintptr_t MotionModel_PushMotion             = resolve(0x58300);  // (MotionModel*, char const*, bool, bool) thiscall
+inline uintptr_t MotionModel_PopMotion              = resolve(0x582a0);  // (MotionModel*) thiscall
+inline uintptr_t MotionModel_GetCurrentMotionName   = resolve(0x57d10);  // (MotionModel*) -> char const* thiscall
 
 // ===== singletons / engine / UI =====
-inline uintptr_t ObjectMgr_i                        = resolve(0);  // () -> ObjectMgr*  // TODO
-inline uintptr_t Simulator_i                        = resolve(0);  // () -> Simulator*  // TODO
+inline uintptr_t ObjectMgr_i                        = resolve(0xad2f0);  // () -> ObjectMgr* (MOV EAX,[0xedf168]); ctor FUN_004ace30
+inline uintptr_t Simulator_i                        = resolve(0x138d80);  // () -> Simulator* (MOV EAX,[0xee3d9c]); vftable 0x56cf34
 inline uintptr_t GraphicsEngine_i                   = resolve(0x6ae51c);  // GLOBAL DAT_00aae51c = GraphicsEngine (vtable 0x564668); +0x20 = live FNA3D device (proven: FNA3D_VerifySampler(DAT_00aae51c+0x20)). `this` for vtable draw methods 0x48d880/0x48e030. accessor 0x481c80.
 inline uintptr_t printText                          = resolve(0xb9b30);  // (int x,int y,char const*,Color const&) cdecl wrapper -> DrawString(size=3,style=3)
 inline uintptr_t TextPrinter_DrawString             = resolve(0x83a40);  // (string const&,size,style,Color,Vector2,bool,Vector2 const&) cdecl; string by ptr, caller-owned (printText frees it)
@@ -123,14 +123,14 @@ inline uintptr_t GraphicsEngine_DrawSquare          = resolve(0x8e030);  // (GE*
 inline uintptr_t GraphicsEngine_DrawCircleFilled    = resolve(0);  // ABSENT in Win build: full GE vtable @0x564668 has no circle method; Eets draws circles as whitecircle sprites. FillCircle guards on 0.
 
 // ===== localization (StringPool) =====
-inline uintptr_t StringPool_instance                = resolve(0);  // StringPool* (read the pointer)  // TODO
-inline uintptr_t StringPool_Resolve                 = resolve(0);  // (StringPool*, char const* id) -> char const*  // TODO
-inline uintptr_t StringPool_LoadFile                = resolve(0);  // (char const* path) load extra strings  // TODO
+inline uintptr_t StringPool_instance                = resolve(0xae3be8);  // StringPool* global DAT_00ee3be8 (read the pointer)
+inline uintptr_t StringPool_Resolve                 = resolve(0xba5f0);  // (StringPool* this, char const* id) thiscall RET 4; '$' keys -> map lookup
+inline uintptr_t StringPool_LoadFile                = resolve(0xba0e0);  // (StringPool* this, char const* path) thiscall; fopen+parse id->string
 
 // ===== assets (ADVANCED/experimental: ABI not wrapper-validated) =====
 inline uintptr_t Texture_Load                       = resolve(0);  // (Texture* this, char const* path)  // TODO
 inline uintptr_t Texture_UploadTexture              = resolve(0);  // (Texture* this, int)  // TODO
-inline uintptr_t IGraphicsEngine_i                  = resolve(0);  // () -> IGraphicsEngine*  // TODO
+inline uintptr_t IGraphicsEngine_i                  = resolve(0x81c80);  // () -> IGraphicsEngine* = same accessor as GraphicsEngine_i (offset-0 base; MOV EAX,[0xaae51c])
 inline uintptr_t IGraphicsEngine_DrawTexture        = resolve(0);  // (IGE*, Texture const*, Vector2 const&)  // TODO
 inline uintptr_t AnimExt_LoadAnimation              = resolve(0);  // (char const* path) -> anim  // TODO
 inline uintptr_t Animation_operator_new             = resolve(0);  // (0x78) -> Animation*  // TODO
@@ -140,7 +140,7 @@ inline uintptr_t Animation_GetCurrentFrame          = resolve(0);  // (Animation
 inline uintptr_t Animation_FrameCount               = resolve(0);  // (Animation*) -> unsigned  // TODO
 inline uintptr_t Animation_SetCurrentFrame          = resolve(0);  // (Animation*, unsigned idx)  // TODO
 inline uintptr_t Animation_Restart                  = resolve(0);  // (Animation*)  // TODO
-inline uintptr_t TextureManager_instance            = resolve(0);  // TextureManager* (cache = unordered_map<string,KLEITEXTURE*> at +0)  // TODO
+inline uintptr_t TextureManager_instance            = resolve(0xadf090);  // TextureManager* global DAT_00edf090 (cache map<string,tex*> at +0)
 inline uintptr_t TextureManager_LoadTexture         = resolve(0);  // (TM*, string const&, ImageFormat, bool) load+cache  // TODO
 inline uintptr_t SpriteManager_i                    = resolve(0x89ff0);  // () -> SpriteManager* (mov eax,[0xe7ef38]; ret)
 inline uintptr_t SpriteManager_Load                 = resolve(0x896c0);  // (sret{Sprite*,ctrl}, SM* this, string const&, ImageFormat) thiscall, RET 0xc; caches in hashmap

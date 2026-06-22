@@ -190,7 +190,7 @@ inline void ForEachObject(Fn fn) {
 	char* mgr = (char*)ObjectMgr_i();
 	if (!mgr) return;
 	Object** begin = *(Object***)(mgr + 0);
-	Object** end   = *(Object***)(mgr + 8);
+	Object** end   = *(Object***)(mgr + sizeof(void*));   // std::vector end ptr: +8 (x64) / +4 (win32)
 	for (Object** p = begin; p && p < end; ++p) fn(*p);
 }
 
@@ -358,7 +358,7 @@ inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f,
 inline const char* Localize(const char* id) {
 	void* sp = *(void**)addr::StringPool_instance;
 	if (!sp) return id;
-	return ((const char*(*)(void*, const char*))addr::StringPool_Resolve)(sp, id);
+	return ((const char*(ECALL*)(void*, const char*))addr::StringPool_Resolve)(sp, id);   // __thiscall (this=StringPool*)
 }
 
 // ---- remaining binding statics (auto-wrapped; return types best-effort) ----
@@ -423,7 +423,13 @@ inline LightingExtension* Object_GetLightingExtension(Object* o) { return ((Ligh
 inline HoldingExtension* Object_GetHoldingExtension(Object* o) { return ((HoldingExtension*(ECALL *)(Object*))addr::Object_GetHoldingExtension)(o); }
 inline RollingExtension* Object_GetRollingExtension(Object* o) { return ((RollingExtension*(ECALL *)(Object*))addr::Object_GetRollingExtension)(o); }
 // physics has no templated getter; it sits at a fixed Object slot
-inline PhysicsExtension* Object_GetPhysicsExtension(Object* o) { return o ? *(PhysicsExtension**)((char*)o + 0x90) : nullptr; }
+inline PhysicsExtension* Object_GetPhysicsExtension(Object* o) {
+#ifdef _WIN32
+	(void)o; return nullptr;   // 0x90 is the x64 Object slot; the win32 (4-byte-ptr) offset + MSVC deque walk are unported
+#else
+	return o ? *(PhysicsExtension**)((char*)o + 0x90) : nullptr;
+#endif
+}
 
 inline void WalkingExtension_SetWalkSpeed(WalkingExtension* w, float s) { ((void(ECALL *)(WalkingExtension*, float))addr::WalkingExtension_SetWalkSpeed)(w, s); }
 inline void WalkingExtension_SetActive(WalkingExtension* w, bool a) { ((void(ECALL *)(WalkingExtension*, bool))addr::WalkingExtension_SetActive)(w, a); }
@@ -473,7 +479,7 @@ inline void ForEachHeld(HoldingExtension* h, Fn fn) {
 	char* vec = (char*)((void*(ECALL *)(HoldingExtension*))addr::HoldingExtension_GetHolds)(h);
 	if (!vec) return;
 	Object** begin = *(Object***)(vec + 0);
-	Object** end   = *(Object***)(vec + 8);
+	Object** end   = *(Object***)(vec + sizeof(void*));   // std::vector end ptr: +8 (x64) / +4 (win32)
 	for (Object** p = begin; p && p < end; ++p) fn(*p);
 }
 
@@ -492,6 +498,9 @@ inline void EmotionPlatformExtension_SetEmotion(EmotionPlatformExtension* e, uns
 // reading enables accumulation, so the engine keeps refilling the deque each step.
 template <class Fn>
 inline void ForEachCollision(Object* o, Fn fn) {
+#ifdef _WIN32
+	(void)o; (void)fn; return;   // walker below is libstdc++ deque + 8-byte unsigned long; MSVC deque port pending
+#else
 	PhysicsExtension* phys = Object_GetPhysicsExtension(o);
 	if (!phys) return;
 	// std::deque<CollisionReport>; element is 0x28 bytes, libstdc++ chunk holds 512/0x28 = 12 per node
@@ -507,6 +516,7 @@ inline void ForEachCollision(Object* o, Fn fn) {
 		cur += sizeof(CollisionReport);
 		if (cur == last) { ++node; cur = *node; last = *node + bufsz * sizeof(CollisionReport); }
 	}
+#endif
 }
 
 // pure math on our Vector2 (no engine call needed)
