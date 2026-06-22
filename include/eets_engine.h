@@ -358,12 +358,21 @@ inline void* LoadAnim(const char* path) {
 	static std::unordered_map<std::string, void*> cache;
 	auto it = cache.find(path);
 	if (it != cache.end()) return it->second;
+#ifdef _WIN32
+	void* a = FC<void*(unsigned long)>(addr::Animation_operator_new)(0x54);     // Animation is 0x54 bytes on Win (0x78 on Linux)
+	if (a) EC<void(void*, const char*, bool)>(addr::Animation_ctor)(a, path, true);  // ctor is __thiscall (this in ECX)
+#else
 	void* a = FC<void*(unsigned long)>(addr::Animation_operator_new)(0x78);
 	if (a) FC<void(void*, const char*, bool)>(addr::Animation_ctor)(a, path, true);
+#endif
 	cache[path] = a;
 	return a;
 }
+#ifdef _WIN32
+inline float AnimFrameDuration(void* a) { return a ? *(float*)((char*)a + 0x18) : 0.0f; }   // duration @+0x18 on Win
+#else
 inline float AnimFrameDuration(void* a) { return a ? *(float*)((char*)a + 0x30) : 0.0f; }
+#endif
 inline int AnimFrameCount(void* a) { return a ? (int)FC<unsigned(void*)>(addr::Animation_FrameCount)(a) : 0; }
 
 inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color()) {
