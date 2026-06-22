@@ -610,11 +610,7 @@ void load_all() {
 		}
 	}
 
-#ifndef _WIN32
-	install_engine_event_hooks();   // inline engine hooks need 32-bit hook.h (Phase 3) + the hook RVAs (Phase 0 tail)
-#else
-	logline("engine event hooks: deferred on Windows (32-bit hook path + RVAs pending)");
-#endif
+	install_engine_event_hooks();   // 32-bit E9 hook path (hook.h) on Win; unresolved hook RVAs null-guard in install()
 	for (auto& m : g_mods) if (m.init && !m.disabled) guard(&m, [&]{ m.init(); });
 	int active = 0; for (auto& m : g_mods) if (!m.disabled) active++;
 	logline("loader: %d/%zu mod(s) active", active, g_mods.size());
