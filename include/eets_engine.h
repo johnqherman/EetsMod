@@ -176,12 +176,21 @@ inline void ForEachObject(Fn fn) {
 inline bool World_IsInMainMenu() {
 	return ((bool(*)())addr::World_IsInMainMenu)();
 }
+// the GraphicsEngine singleton. Linux: an accessor function. Win32: a global variable
+// holding the GE pointer (DAT_00ee3db0) - there is no accessor, so deref the global.
+inline void* GE_instance() {
+#ifdef _WIN32
+	return addr::GraphicsEngine_i ? *(void**)addr::GraphicsEngine_i : nullptr;
+#else
+	return ((void*(*)())addr::GraphicsEngine_i)();
+#endif
+}
 inline int ScreenWidth() {
-	char* g = (char*)((void*(*)())addr::GraphicsEngine_i)();
+	char* g = (char*)GE_instance();
 	return g ? *(int*)(g + 0x40) : 0;
 }
 inline int ScreenHeight() {
-	char* g = (char*)((void*(*)())addr::GraphicsEngine_i)();
+	char* g = (char*)GE_instance();
 	return g ? *(int*)(g + 0x44) : 0;
 }
 inline void DrawText(int x, int y, const char* text, Color c = Color()) {
@@ -202,7 +211,7 @@ inline void DrawTextOutlined(int x, int y, const char* text, int size,
 	DrawTextSized(x, y, text, size, c, style);
 }
 
-inline void* GraphicsEngine_i() { return ((void*(*)())addr::GraphicsEngine_i)(); }
+inline void* GraphicsEngine_i() { return GE_instance(); }
 // GraphicsEngine geometry funcs swap R<->B internally; pre-swap so our RGBA shows correctly.
 inline Color swab(Color c) { return Color(c.b, c.g, c.r, c.a); }
 inline void DrawLine(Vector2 a, Vector2 b, Color c, float width = 1.0f) {

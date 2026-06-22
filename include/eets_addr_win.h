@@ -115,7 +115,7 @@ inline uintptr_t MotionModel_GetCurrentMotionName   = resolve(0);  // (MotionMod
 // ===== singletons / engine / UI =====
 inline uintptr_t ObjectMgr_i                        = resolve(0);  // () -> ObjectMgr*  // TODO
 inline uintptr_t Simulator_i                        = resolve(0);  // () -> Simulator*  // TODO
-inline uintptr_t GraphicsEngine_i                   = resolve(0);  // () -> GraphicsEngine*  (w@+0x40 h@+0x44)  // TODO
+inline uintptr_t GraphicsEngine_i                   = resolve(0xae3db0);  // GLOBAL DAT_00ee3db0 holding GE* (deref); w@+0x40 h@+0x44
 inline uintptr_t printText                          = resolve(0);  // (int x,int y,char const*,Color const&)  // TODO
 inline uintptr_t TextPrinter_DrawString             = resolve(0);  // (string,size,style,Color,Vector2,bool,Vector2 const&)  // TODO
 inline uintptr_t GraphicsEngine_DrawLine            = resolve(0);  // (GE*,Vector2 const&,Vector2 const&,Color const&,float) 1px line (width ignored)  // TODO
