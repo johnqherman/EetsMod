@@ -475,7 +475,7 @@ inline RollingExtension* Object_GetRollingExtension(Object* o) { return FC<Rolli
 // physics has no templated getter; it sits at a fixed Object slot
 inline PhysicsExtension* Object_GetPhysicsExtension(Object* o) {
 #ifdef _WIN32
-	(void)o; return nullptr;   // 0x90 is the x64 Object slot; the win32 (4-byte-ptr) offset + MSVC deque walk are unported
+	return o ? *(PhysicsExtension**)((char*)o + 0x60) : nullptr;   // win32 Object->physics slot (x64 is +0x90)
 #else
 	return o ? *(PhysicsExtension**)((char*)o + 0x90) : nullptr;
 #endif
@@ -500,9 +500,18 @@ inline bool ThwackerExtension_IsThwacking(ThwackerExtension* t) {
 #endif
 }
 inline Vector2 ThwackerExtension_GetCentre(ThwackerExtension* t) {
-	Vector2 r{0.0f, 0.0f};   // default; the Win build computes the centre inline (no standalone fn) - see below
+	Vector2 r{0.0f, 0.0f};
 #ifdef _WIN32
-	(void)t;   // ThwackerExtension::GetCentre is MSVC-inlined; no address and no stored Vector2 field to read.
+	// MSVC-inlined; reconstruct from the call site: centre = owner.pos + normalize(owner.facing) * reach,
+	// where owner = *(this+0x4) (an Object*) and reach = *(float*)(this+0x3c).
+	if (!t) return r;
+	Object* owner = *(Object**)((char*)t + 0x4);
+	if (!owner) return r;
+	Vector2 pos = Object_GetPosition(owner), fac = Object_GetFacing(owner);
+	float reach = *(float*)((char*)t + 0x3c);
+	float len = __builtin_sqrtf(fac.x * fac.x + fac.y * fac.y);
+	if (len > 0.0f) { r.x = pos.x + fac.x / len * reach; r.y = pos.y + fac.y / len * reach; }
+	else r = pos;
 #else
 	r = FC<Vector2(ThwackerExtension*)>(addr::ThwackerExtension_GetCentre)(t);
 #endif
@@ -544,7 +553,27 @@ inline bool HoldingExtension_IsHolding(HoldingExtension* h, Object* o) { return 
 inline bool HoldingExtension_IsHoldingAny(HoldingExtension* h) { return EC<bool(HoldingExtension*)>(addr::HoldingExtension_IsHoldingAny)(h); }
 inline void HoldingExtension_HoldObject(HoldingExtension* h, Object* o) { EC<void(HoldingExtension*, Object*)>(addr::HoldingExtension_HoldObject)(h, o); }
 inline void HoldingExtension_ReleaseAll(HoldingExtension* h) { EC<void(HoldingExtension*)>(addr::HoldingExtension_ReleaseAll)(h); }
-inline void HoldingExtension_ReleaseObject(HoldingExtension* h, Object* o) { EC<void(HoldingExtension*, Object*)>(addr::HoldingExtension_ReleaseObject)(h, o); }
+inline void HoldingExtension_ReleaseObject(HoldingExtension* h, Object* o) {
+#ifdef _WIN32
+	// MSVC-inlined; reconstruct as the single-object inverse of HoldObject: erase o from the held
+	// vector<Object*> (begin@h+0x8, end@h+0xc) then restore the object (re-enable physics/collision/
+	// visibility/update - SetVisibility=0x5c400, SetUpdate=0xab180 are __thiscall(Object*,bool)).
+	if (!h || !o) return;
+	void** begin = *(void***)((char*)h + 0x8);
+	void** end   = *(void***)((char*)h + 0xc);
+	bool found = false;
+	for (void** p = begin; p < end; ++p) {
+		if (*p == o) { for (void** q = p; q + 1 < end; ++q) *q = *(q + 1); *(void***)((char*)h + 0xc) = end - 1; found = true; break; }
+	}
+	if (!found) return;
+	Object_EnablePhysics(o, true);
+	Object_EnableCollisions(o, true);
+	EC<void(Object*, bool)>(addr::resolve(0x5c400))(o, true);   // SetVisibility(true)
+	EC<void(Object*, bool)>(addr::resolve(0xab180))(o, true);   // SetUpdate(true)
+#else
+	EC<void(HoldingExtension*, Object*)>(addr::HoldingExtension_ReleaseObject)(h, o);
+#endif
+}
 // GetHolds returns a std::vector<Object*> const& (pointer to {begin,end,cap}); walk it
 template <class Fn>
 inline void ForEachHeld(HoldingExtension* h, Fn fn) {
@@ -579,14 +608,25 @@ inline void EmotionPlatformExtension_SetEmotion(EmotionPlatformExtension* e, uns
 // reading enables accumulation, so the engine keeps refilling the deque each step.
 template <class Fn>
 inline void ForEachCollision(Object* o, Fn fn) {
-#ifdef _WIN32
-	(void)o; (void)fn; return;   // walker below is libstdc++ deque + 8-byte unsigned long; MSVC deque port pending
-#else
 	PhysicsExtension* phys = Object_GetPhysicsExtension(o);
 	if (!phys) return;
-	// std::deque<CollisionReport>; element is 0x28 bytes, libstdc++ chunk holds 512/0x28 = 12 per node
 	char* dq = (char*)EC<void*(PhysicsExtension*)>(addr::PhysicsExtension_GetAccumulate)(phys);
 	if (!dq) return;
+#ifdef _WIN32
+	// MSVC std::deque<CollisionReport> at &dq: _Map@0 (T**), _Mapsize@4, _Myoff@8, _Mysize@0xc.
+	// CollisionReport is 0x1c bytes on Win32 (unsigned long = 4) so the engine's element matches ours;
+	// _DEQUESIZ for a 0x1c-byte element is 1, so each map slot points to exactly one report.
+	char**   map     = *(char***)(dq + 0x0);
+	unsigned mapsize = *(unsigned*)(dq + 0x4);
+	unsigned myoff   = *(unsigned*)(dq + 0x8);
+	unsigned mysize  = *(unsigned*)(dq + 0xc);
+	if (!map || !mapsize) return;
+	for (unsigned i = 0; i < mysize; ++i) {
+		char* blk = map[(myoff + i) % mapsize];
+		if (blk) fn(*(const CollisionReport*)blk);
+	}
+#else
+	// libstdc++ std::deque<CollisionReport>; element 0x28 bytes, chunk holds 512/0x28 = 12 per node
 	const long bufsz = 12;
 	char*  cur     = *(char**)(dq + 0x10);  // start._M_cur
 	char*  last    = *(char**)(dq + 0x20);  // start._M_last

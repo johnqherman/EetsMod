@@ -437,7 +437,9 @@ ThisArgFn orig_Complete = nullptr;
 void ECALL det_LoadWin(void* s)  { orig_LoadWin(s);  fire_event("level_load", s, nullptr); }
 void ECALL det_Reset(void* s)    { orig_Reset(s);    fire_event("level_reset", s, nullptr); }
 void ECALL det_KillMe(void* s)   { fire_event("object_killed", s, nullptr); orig_KillMe(s); }
-void ECALL det_EetsDead(void* s) { orig_EetsDead(s); fire_event("eets_death", s, nullptr); }
+typedef void (ECALL *ThisIntFn)(void*, int);
+ThisIntFn orig_EetsDead2 = nullptr;
+void ECALL det_EetsDead(void* s, int arg) { orig_EetsDead2(s, arg); fire_event("eets_death", s, (void*)(intptr_t)arg); }
 void ECALL det_Complete(void* s, void* p) { orig_Complete(s, p); fire_event("level_complete", s, p); }
 typedef void (*EmotionFn)(unsigned long, unsigned int);
 EmotionFn orig_Emotion = nullptr;
@@ -459,10 +461,10 @@ void install_engine_event_hooks() {
 	try_hook("object_killed (Object::KillMe)",          (void*)Eets::addr::hook_Object_KillMe,              (void*)det_KillMe,       (void**)&orig_KillMe);
 	try_hook("emotion_change (World_ChangeEmotion)",    (void*)Eets::addr::hook_World_ChangeEmotion,        (void*)det_Emotion,      (void**)&orig_Emotion);
 	try_hook("goal_check (World_CheckGoal)",            (void*)Eets::addr::hook_World_CheckGoal,            (void*)det_Goal,         (void**)&orig_Goal);
-	// eets_death: StartEetsDeadDialog (0x12b5d0) is a GENERIC name-based modal opener (fires for every
-	// dialog, and takes a stack name arg this detour's arity doesn't match) - not hooked. The eets-death
-	// event is better derived from object_killed of World_GetEets(); revisit with the right signature/filter.
-	(void)det_EetsDead; (void)orig_EetsDead;
+	// eets_death: hook Creator::OnEndEetsDeadDialog (the dialog-close handler, __thiscall(Creator*, int)),
+	// not the generic StartEetsDeadDialog opener. Fires once when the death dialog ends.
+	try_hook("eets_death (Creator::OnEndEetsDeadDialog)", (void*)Eets::addr::hook_Creator_OnEndEetsDeadDialog,(void*)det_EetsDead, (void**)&orig_EetsDead2);
+	(void)orig_EetsDead;
 }
 
 // a mod is one self-contained .eetsmod file (a STORED ustar tar: <name>.so + <name>.dll
