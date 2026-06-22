@@ -1,11 +1,11 @@
 #pragma once
-// Windows (PE32 i386) addresses for Eets.exe, as RVAs resolved against the runtime PE
-// base. Recovered from the luabind registrars (see ~/eets-win-ref/recovered-rvas.txt).
-// Mirrors include/eets_addr.h so eets_engine.h consumes addr::NAME identically.
+// Windows (PE32 i386) RVAs for Eets.exe, resolved at runtime. World/Sound/Misc from the
+// free-function registrar; Object/extension methods from the class registrars (backward-paired
+// funcptr). Struct-returning methods are luabind wrappers - deferred (TODO).
 #include <cstdint>
 #include <windows.h>
 namespace Eets { namespace addr {
-inline uintptr_t resolve(uintptr_t rva) { return rva ? (uintptr_t)GetModuleHandleA(nullptr) + rva : 0; }
+inline uintptr_t resolve(uintptr_t rva){ return rva?(uintptr_t)GetModuleHandleA(nullptr)+rva:0; }
 
 // ===== Lua-binding statics (all 76) =====
 inline uintptr_t Anim_GetCurrentFrameIndex          = resolve(0);  // (Anim::Animation*)  // TODO
@@ -16,21 +16,21 @@ inline uintptr_t Misc_PauseProfile                  = resolve(0xd9d80);  // ()
 inline uintptr_t Misc_Print                         = resolve(0xd9d90);  // (char const*)
 inline uintptr_t Misc_Profile                       = resolve(0xd9da0);  // ()
 inline uintptr_t Misc_SaveScreenshot                = resolve(0xd9db0);  // ()
-inline uintptr_t Object_ApplyImpulse                = resolve(0xed370);  // (Object*, Vector2 const&)
-inline uintptr_t Object_CallFunction                = resolve(0xaa0c0);  // (Object*, char const*)
-inline uintptr_t Object_CreateEffect                = resolve(0xab170);  // (Object*, char const*)
-inline uintptr_t Object_EnableCollisions            = resolve(0xab150);  // (Object*, bool)
-inline uintptr_t Object_EnablePhysics               = resolve(0xed1d0);  // (Object*, bool)
-inline uintptr_t Object_GetBlueprintHash            = resolve(0xed220);  // (Object*)
-inline uintptr_t Object_GetBlueprintName            = resolve(0xed1a0);  // (Object*)
-inline uintptr_t Object_GetCollisionReports         = resolve(0xed290);  // (Object*)
-inline uintptr_t Object_HoldObject                  = resolve(0xed2d0);  // (Object*, Object*)
-inline uintptr_t Object_IsHolding                   = resolve(0xed390);  // (Object*, Object*)
-inline uintptr_t Object_IsPhysicsEnabled            = resolve(0xed190);  // (Object*)
-inline uintptr_t Object_IsRolling                   = resolve(0x5c3f0);  // (Object*) [VERIFY: dup]
-inline uintptr_t Object_IsWalker                    = resolve(0xe6050);  // (Object*)
-inline uintptr_t Object_ReleaseAll                  = resolve(0xed320);  // (Object*)
-inline uintptr_t Object_SetAltCollision             = resolve(0xed240);  // (Object*, char const*)
+inline uintptr_t Object_ApplyImpulse                = resolve(0xed170);  // (Object*, Vector2 const&)
+inline uintptr_t Object_CallFunction                = resolve(0xed190);  // (Object*, char const*)
+inline uintptr_t Object_CreateEffect                = resolve(0xed1a0);  // (Object*, char const*)
+inline uintptr_t Object_EnableCollisions            = resolve(0xed1d0);  // (Object*, bool)
+inline uintptr_t Object_EnablePhysics               = resolve(0xed1f0);  // (Object*, bool)
+inline uintptr_t Object_GetBlueprintHash            = resolve(0xed210);  // (Object*)
+inline uintptr_t Object_GetBlueprintName            = resolve(0xed220);  // (Object*)
+inline uintptr_t Object_GetCollisionReports         = resolve(0xed240);  // (Object*)
+inline uintptr_t Object_HoldObject                  = resolve(0xed290);  // (Object*, Object*)
+inline uintptr_t Object_IsHolding                   = resolve(0xed2d0);  // (Object*, Object*)
+inline uintptr_t Object_IsPhysicsEnabled            = resolve(0xed310);  // (Object*)
+inline uintptr_t Object_IsRolling                   = resolve(0xed320);  // (Object*)
+inline uintptr_t Object_IsWalker                    = resolve(0xed370);  // (Object*)
+inline uintptr_t Object_ReleaseAll                  = resolve(0xed390);  // (Object*)
+inline uintptr_t Object_SetAltCollision             = resolve(0xed3d0);  // (Object*, char const*)
 inline uintptr_t Sound_CreateSound                  = resolve(0xdb790);  // (char const*, bool, float, Vector2 const&)
 inline uintptr_t Sound_PlayMusic                    = resolve(0xdb7c0);  // (char const*, bool)
 inline uintptr_t Sound_SetMusicVolume               = resolve(0xdb7e0);  // (long)
@@ -38,8 +38,8 @@ inline uintptr_t World_AddBackgroundImage           = resolve(0xdb800);  // (cha
 inline uintptr_t World_AddForegroundImage           = resolve(0xdb840);  // (char const*, Vector2 const&, Vector2 const&, float, Color const&, float)
 inline uintptr_t World_Alert                        = resolve(0xdb880);  // (Vector2 const&, float)
 inline uintptr_t World_AnimationsEqual              = resolve(0xdb8e0);  // (Anim::Animation const*, Anim::Animation const*)
-inline uintptr_t World_ChangeEmotion                = resolve(0xdb8f0);  // (unsigned long, unsigned int) [VERIFY: dup]
-inline uintptr_t World_CheckGoal                    = resolve(0xdb910);  // (Object*) [VERIFY: dup]
+inline uintptr_t World_ChangeEmotion                = resolve(0xdb8f0);  // (unsigned long, unsigned int)
+inline uintptr_t World_CheckGoal                    = resolve(0xdb910);  // (Object*)
 inline uintptr_t World_CopyItem                     = resolve(0xdb9d0);  // ()
 inline uintptr_t World_CreateEffect                 = resolve(0xdb9f0);  // (char const*, Vector2)
 inline uintptr_t World_CreateExplosion              = resolve(0xdba10);  // (Vector2 const&, float)
@@ -86,27 +86,27 @@ inline uintptr_t World_ShowSolutionTime             = resolve(0xdc8d0);  // (flo
 inline uintptr_t World_ShowTutorialDialog           = resolve(0xdc900);  // (char const*)
 
 // ===== class methods (__thiscall: first arg is the object) =====
-inline uintptr_t Object_GetPosition                 = resolve(0xaa190);  // (Object*) -> Vector2
-inline uintptr_t Object_GetVelocity                 = resolve(0xaa0f0);  // (Object*) -> Vector2
-inline uintptr_t Object_GetID                       = resolve(0xed170);  // (Object*) -> unsigned long
-inline uintptr_t Object_GetMotionModel              = resolve(0xaa050);  // (Object*) -> MotionModel*
-inline uintptr_t Object_SetPosition                 = resolve(0xee1b0);  // (Object*, Vector2 const&)
-inline uintptr_t Object_ForcePosition               = resolve(0x5c3f0);  // (Object*, Vector2 const&) [VERIFY: dup]
-inline uintptr_t Object_SetFacing                   = resolve(0xaa000);  // (Object*, Vector2 const&)
-inline uintptr_t Object_GetFacing                   = resolve(0xed040);  // (Object*) -> Vector2
-inline uintptr_t Object_SetFlipped                  = resolve(0x5c1c0);  // (Object*, bool)
-inline uintptr_t Object_GetFlipped                  = resolve(0xed210);  // (Object*) -> bool
-inline uintptr_t Object_KillMe                      = resolve(0xaa0b0);  // (Object*) [VERIFY: dup]
+inline uintptr_t Object_GetPosition                 = resolve(0);  // (Object*) -> Vector2  // TODO
+inline uintptr_t Object_GetVelocity                 = resolve(0);  // (Object*) -> Vector2  // TODO
+inline uintptr_t Object_GetID                       = resolve(0xaa0b0);  // (Object*) -> unsigned long
+inline uintptr_t Object_GetMotionModel              = resolve(0xed050);  // (Object*) -> MotionModel*
+inline uintptr_t Object_SetPosition                 = resolve(0xab170);  // (Object*, Vector2 const&)
+inline uintptr_t Object_ForcePosition               = resolve(0xaa040);  // (Object*, Vector2 const&)
+inline uintptr_t Object_SetFacing                   = resolve(0xab0a0);  // (Object*, Vector2 const&)
+inline uintptr_t Object_GetFacing                   = resolve(0);  // (Object*) -> Vector2  // TODO
+inline uintptr_t Object_SetFlipped                  = resolve(0xee1b0);  // (Object*, bool)
+inline uintptr_t Object_GetFlipped                  = resolve(0xed040);  // (Object*) -> bool
+inline uintptr_t Object_KillMe                      = resolve(0xaa2a0);  // (Object*)
 
 // ===== event hook targets (detoured by the loader to fire EetsMod_OnEvent) =====
 inline uintptr_t hook_Simulator_LoadWinCondition    = resolve(0);  // -> "level_load"  // TODO
 inline uintptr_t hook_Simulator_ResetSimulation     = resolve(0);  // -> "level_reset"  // TODO
 inline uintptr_t hook_LevelManager_CompleteLevel    = resolve(0);  // -> "level_complete"  // TODO
 inline uintptr_t hook_Creator_StartEetsDeadDialog   = resolve(0);  // -> "eets_death"  // TODO
-inline uintptr_t hook_Object_KillMe                 = resolve(0xaa0b0);  // -> "object_killed" [VERIFY: dup]
+inline uintptr_t hook_Object_KillMe                 = resolve(0);  // -> "object_killed"  // TODO
 inline uintptr_t hook_ObjectMgr_CreateObject        = resolve(0);  // -> "object_spawn"  // TODO
-inline uintptr_t hook_World_ChangeEmotion           = resolve(0xdb8f0);  // -> "emotion_change" (ulong hash, uint emotion) [VERIFY: dup]
-inline uintptr_t hook_World_CheckGoal               = resolve(0xdb910);  // -> "goal_check" (Object*) [VERIFY: dup]
+inline uintptr_t hook_World_ChangeEmotion           = resolve(0xdb8f0);  // -> "emotion_change" (ulong hash, uint emotion)
+inline uintptr_t hook_World_CheckGoal               = resolve(0xdb910);  // -> "goal_check" (Object*)
 inline uintptr_t hook_Creator_OnEndEetsDeadDialog   = resolve(0);  // -> "eets_death" (Creator*, int)  // TODO
 inline uintptr_t MotionModel_PushMotion             = resolve(0);  // (MotionModel*, char const*, bool, bool)  // TODO
 inline uintptr_t MotionModel_PopMotion              = resolve(0);  // (MotionModel*)  // TODO
@@ -150,57 +150,57 @@ inline uintptr_t Sprite_GetHeight                   = resolve(0);  // (Sprite*) 
 inline uintptr_t Sprite_GetDiffuseUV                = resolve(0);  // (Sprite*, Vector2& uv0, Vector2& uv1) per-frame texcoords  // TODO
 
 // ===== object -> extension accessors (each reads a fixed Object+offset, returns Ext* or null) =====
-inline uintptr_t Object_GetPositionExtension        = resolve(0xe6070);  // (Object*) -> PositionExtension*
-inline uintptr_t Object_GetSuckableExtension        = resolve(0xe6090);  // (Object*) -> SuckableExtension*
-inline uintptr_t Object_GetWalkingExtension         = resolve(0xe6080);  // (Object*) -> WalkingExtension*
-inline uintptr_t Object_GetThwackerExtension        = resolve(0xe6010);  // (Object*) -> ThwackerExtension*
-inline uintptr_t Object_GetEmotionPlatformExtension = resolve(0xe5ff0);  // (Object*) -> EmotionPlatformExtension*
-inline uintptr_t Object_GetEdibleExtension          = resolve(0xe6000);  // (Object*) -> EdibleExtension*
-inline uintptr_t Object_GetEmotionExtension         = resolve(0xe6020);  // (Object*) -> EmotionExtension*
-inline uintptr_t Object_GetFlyingExtension          = resolve(0xe6040);  // (Object*) -> FlyingExtension*
-inline uintptr_t Object_GetLightingExtension        = resolve(0xe6030);  // (Object*) -> LightingExtension*
-inline uintptr_t Object_GetHoldingExtension         = resolve(0xe6060);  // (Object*) -> HoldingExtension*
-inline uintptr_t Object_GetRollingExtension         = resolve(0xed3d0);  // (Object*) -> RollingExtension*
+inline uintptr_t Object_GetPositionExtension        = resolve(0xe6050);  // (Object*) -> PositionExtension*
+inline uintptr_t Object_GetSuckableExtension        = resolve(0xe6070);  // (Object*) -> SuckableExtension*
+inline uintptr_t Object_GetWalkingExtension         = resolve(0xe6090);  // (Object*) -> WalkingExtension*
+inline uintptr_t Object_GetThwackerExtension        = resolve(0xe6080);  // (Object*) -> ThwackerExtension*
+inline uintptr_t Object_GetEmotionPlatformExtension = resolve(0xe6010);  // (Object*) -> EmotionPlatformExtension*
+inline uintptr_t Object_GetEdibleExtension          = resolve(0xe5ff0);  // (Object*) -> EdibleExtension*
+inline uintptr_t Object_GetEmotionExtension         = resolve(0xe6000);  // (Object*) -> EmotionExtension*
+inline uintptr_t Object_GetFlyingExtension          = resolve(0xe6020);  // (Object*) -> FlyingExtension*
+inline uintptr_t Object_GetLightingExtension        = resolve(0xe6040);  // (Object*) -> LightingExtension*
+inline uintptr_t Object_GetHoldingExtension         = resolve(0xe6030);  // (Object*) -> HoldingExtension*
+inline uintptr_t Object_GetRollingExtension         = resolve(0xe6060);  // (Object*) -> RollingExtension*
 inline uintptr_t PhysicsExtension_GetAccumulate     = resolve(0);  // (Physics*) -> deque<WorldCollisionReport>& (sets accumulate flag)  // TODO
 inline uintptr_t PhysicsExtension_GetCollisions     = resolve(0);  // (Physics*) const -> deque<WorldCollisionReport>&  // TODO
 
 // ===== extension methods (thiscall: first arg is the extension pointer) =====
-inline uintptr_t WalkingExtension_SetWalkSpeed      = resolve(0x106370);  // (Walking*, float)
-inline uintptr_t WalkingExtension_SetActive         = resolve(0);  // (Walking*, bool)  // TODO
-inline uintptr_t WalkingExtension_GetState          = resolve(0);  // (Walking*) const -> unsigned long (WES_*)  // TODO
-inline uintptr_t WalkingExtension_StartWalking      = resolve(0x105ab0);  // (Walking*)
-inline uintptr_t WalkingExtension_StopWalking       = resolve(0x1071b0);  // (Walking*)
-inline uintptr_t WalkingExtension_KnockDown         = resolve(0x107200);  // (Walking*, Vector2 const&)
-inline uintptr_t WalkingExtension_SetNoWalkFrame    = resolve(0x107170);  // (Walking*, int)
+inline uintptr_t WalkingExtension_SetWalkSpeed      = resolve(0x107170);  // (Walking*, float)
+inline uintptr_t WalkingExtension_SetActive         = resolve(0x106fe0);  // (Walking*, bool)
+inline uintptr_t WalkingExtension_GetState          = resolve(0xf75e0);  // (Walking*) const -> unsigned long (WES_*)
+inline uintptr_t WalkingExtension_StartWalking      = resolve(0x1071b0);  // (Walking*)
+inline uintptr_t WalkingExtension_StopWalking       = resolve(0x107200);  // (Walking*)
+inline uintptr_t WalkingExtension_KnockDown         = resolve(0x106370);  // (Walking*, Vector2 const&)
+inline uintptr_t WalkingExtension_SetNoWalkFrame    = resolve(0x107030);  // (Walking*, int)
 inline uintptr_t WalkingExtension_ForceReset        = resolve(0);  // (Walking*)  // TODO
-inline uintptr_t WalkingExtension_Reset             = resolve(0x106fe0);  // (Walking*)
-inline uintptr_t ThwackerExtension_SetThwackSpeed   = resolve(0);  // (Thwacker*, float)  // TODO
+inline uintptr_t WalkingExtension_Reset             = resolve(0x105ab0);  // (Walking*)
+inline uintptr_t ThwackerExtension_SetThwackSpeed   = resolve(0x1036b0);  // (Thwacker*, float)
 inline uintptr_t ThwackerExtension_IsThwacking      = resolve(0);  // (Thwacker*) const -> bool  // TODO
 inline uintptr_t ThwackerExtension_GetCentre        = resolve(0);  // (Thwacker*) const -> Vector2  // TODO
-inline uintptr_t EdibleExtension_GetEaten           = resolve(0);  // (Edible*) const -> bool  // TODO
+inline uintptr_t EdibleExtension_GetEaten           = resolve(0xfcca0);  // (Edible*) const -> bool
 inline uintptr_t EdibleExtension_GetEater           = resolve(0);  // (Edible*) const -> unsigned int  // TODO
 inline uintptr_t EdibleExtension_IsEatenBy          = resolve(0);  // (Edible*, unsigned int) const -> bool  // TODO
-inline uintptr_t LightingExtension_IsLit            = resolve(0);  // (Lighting*) const -> bool  // TODO
-inline uintptr_t SuckableExtension_WasRecentlySucked = resolve(0xf8930);  // (Suckable*) const -> bool
-inline uintptr_t SuckableExtension_SetSucked        = resolve(0);  // (Suckable*)  // TODO
-inline uintptr_t PositionExtension_IsForeground     = resolve(0xfedf0);  // (Position*) const -> bool
-inline uintptr_t PositionExtension_IsBackground     = resolve(0xd45c0);  // (Position*) const -> bool
-inline uintptr_t PositionExtension_SetIsForeground  = resolve(0xd45b0);  // (Position*, bool)
-inline uintptr_t PositionExtension_SetIsBackground  = resolve(0);  // (Position*, bool)  // TODO
-inline uintptr_t RollingExtension_IsRolling         = resolve(0);  // (Rolling*) const -> bool  // TODO
-inline uintptr_t HoldingExtension_IsHolding         = resolve(0xfe930);  // (Holding*, Object const*) const -> bool
-inline uintptr_t HoldingExtension_IsHoldingAny      = resolve(0xfe850);  // (Holding*) const -> bool
-inline uintptr_t HoldingExtension_HoldObject        = resolve(0xd38e0);  // (Holding*, Object*)
-inline uintptr_t HoldingExtension_ReleaseAll        = resolve(0);  // (Holding*)  // TODO
+inline uintptr_t LightingExtension_IsLit            = resolve(0xff550);  // (Lighting*) const -> bool
+inline uintptr_t SuckableExtension_WasRecentlySucked = resolve(0x102f50);  // (Suckable*) const -> bool
+inline uintptr_t SuckableExtension_SetSucked        = resolve(0xf8930);  // (Suckable*)
+inline uintptr_t PositionExtension_IsForeground     = resolve(0xfedd0);  // (Position*) const -> bool
+inline uintptr_t PositionExtension_IsBackground     = resolve(0xfedf0);  // (Position*) const -> bool
+inline uintptr_t PositionExtension_SetIsForeground  = resolve(0xd45c0);  // (Position*, bool)
+inline uintptr_t PositionExtension_SetIsBackground  = resolve(0xd45b0);  // (Position*, bool)
+inline uintptr_t RollingExtension_IsRolling         = resolve(0x1025d0);  // (Rolling*) const -> bool
+inline uintptr_t HoldingExtension_IsHolding         = resolve(0xfe900);  // (Holding*, Object const*) const -> bool
+inline uintptr_t HoldingExtension_IsHoldingAny      = resolve(0xfe930);  // (Holding*) const -> bool
+inline uintptr_t HoldingExtension_HoldObject        = resolve(0xfe850);  // (Holding*, Object*)
+inline uintptr_t HoldingExtension_ReleaseAll        = resolve(0xfe940);  // (Holding*)
 inline uintptr_t HoldingExtension_ReleaseObject     = resolve(0);  // (Holding*, Object const*)  // TODO
-inline uintptr_t HoldingExtension_GetHolds          = resolve(0xfe940);  // (Holding*) const -> vector<Object*>&
-inline uintptr_t FlyingExtension_SetState           = resolve(0xf75e0);  // (Flying*, unsigned long FS_*)
-inline uintptr_t FlyingExtension_GetState           = resolve(0);  // (Flying*) const -> unsigned long (FS_*)  // TODO
-inline uintptr_t EmotionExtension_RecentlyChanged   = resolve(0);  // (Emotion*) const -> bool  // TODO
+inline uintptr_t HoldingExtension_GetHolds          = resolve(0xd38e0);  // (Holding*) const -> vector<Object*>&
+inline uintptr_t FlyingExtension_SetState           = resolve(0xfe4e0);  // (Flying*, unsigned long FS_*)
+inline uintptr_t FlyingExtension_GetState           = resolve(0xf75e0);  // (Flying*) const -> unsigned long (FS_*)
+inline uintptr_t EmotionExtension_RecentlyChanged   = resolve(0xfda90);  // (Emotion*) const -> bool
 inline uintptr_t EmotionExtension_GetEmotionName    = resolve(0);  // (Emotion*) const -> char const*  // TODO
 inline uintptr_t EmotionExtension_SetEmotionName    = resolve(0);  // (Emotion*, char const*)  // TODO
-inline uintptr_t EmotionPlatformExtension_GetCurrentEmotion = resolve(0xfdf40);  // (EmoPlat*) const -> unsigned int
-inline uintptr_t EmotionPlatformExtension_MatchesCurrentEmotion = resolve(0);  // (EmoPlat*) const -> bool  // TODO
+inline uintptr_t EmotionPlatformExtension_GetCurrentEmotion = resolve(0xfdd20);  // (EmoPlat*) const -> unsigned int
+inline uintptr_t EmotionPlatformExtension_MatchesCurrentEmotion = resolve(0xfdf40);  // (EmoPlat*) const -> bool
 inline uintptr_t EmotionPlatformExtension_SetEmotion = resolve(0);  // (EmoPlat*, unsigned int)  // TODO
 
 }} // namespace Eets::addr
