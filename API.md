@@ -1,4 +1,4 @@
-# Native API reference
+# API reference
 
 Auto-generated from `include/*.h` by `tools/gen-api-ref.sh`. Do not edit by hand.
 All symbols live in namespace `Eets`. Signatures only; see the headers for offset/ABI notes.

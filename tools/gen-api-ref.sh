@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Generate docs/NATIVE_API.md from the public header signatures, so the native
+# Generate API.md from the public header signatures, so the
 # API is discoverable without grepping headers. Run after changing the headers.
 set -euo pipefail
 export LC_ALL=C   # deterministic sort order across machines (CI runs C locale)
 SELF="$(cd "$(dirname "$0")/.." && pwd)"
 INC="$SELF/include"
-OUT="$SELF/docs/NATIVE_API.md"
+OUT="$SELF/API.md"
 
 inlines() {  # eets_engine.h / eets_ui.h: inline RET Name(args) { ... }
 	grep -hE '^[[:space:]]*inline ' "$1" 2>/dev/null \
@@ -18,7 +18,7 @@ decls() {    # eetsmod.h: indented function declarations ending in );
 }
 
 {
-	echo "# Native API reference"
+	echo "# API reference"
 	echo
 	echo "Auto-generated from \`include/*.h\` by \`tools/gen-api-ref.sh\`. Do not edit by hand."
 	echo "All symbols live in namespace \`Eets\`. Signatures only; see the headers for offset/ABI notes."

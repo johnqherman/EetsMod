@@ -21,8 +21,8 @@ jobs:
       - name: API reference is up to date
         run: |
           ./tools/gen-api-ref.sh
-          git diff --exit-code docs/NATIVE_API.md || {
-            echo "docs/NATIVE_API.md is stale; run tools/gen-api-ref.sh and commit"; exit 1; }
+          git diff --exit-code API.md || {
+            echo "API.md is stale; run tools/gen-api-ref.sh and commit"; exit 1; }
       - name: Upload loader artifact
         uses: actions/upload-artifact@v5
         with:

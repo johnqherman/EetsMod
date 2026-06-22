@@ -46,7 +46,7 @@ extern "C" void EetsMod_OnKey(int key, int mods, int down) {
 ```
 
 `eetsmod new` scaffolds a mod; `eetsmod pack` bundles it; the in-game **MODS** button
-manages it. The engine API is in [`docs/NATIVE_API.md`](docs/NATIVE_API.md) and the
+manages it. The engine API is in [`API.md`](API.md) and the
 `include/` headers; learn by example in [`examples/`](examples) (gravity, custom
 images/sounds/anims, the UI toolkit, object extensions, collisions).
 
@@ -65,7 +65,7 @@ loader/        the LD_PRELOAD loader (hooks, crash isolation, .eetsmod staging)
 include/       mod headers: engine API, addresses, UI toolkit
 examples/      example mods (source + <name>.assets/)
 tools/         check-mod, add-sound, gen-api-ref, new-mod
-docs/          NATIVE_API.md (generated API reference)
+API.md         generated engine-API reference
 Makefile       build / check / bundles / apidoc / release
 ```
 
