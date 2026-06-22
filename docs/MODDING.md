@@ -175,9 +175,9 @@ comment). Regenerate addresses after a game update: `tools/gen_engine_header.sh`
 full signature list lives in [`docs/NATIVE_API.md`](NATIVE_API.md)
 (`make apidoc`).
 
-**Object extensions** - the behaviour components Eets and objects carry are
-reachable from native, same surface as Lua. `Object_Get<Type>Extension(o)` returns
-a typed pointer or null; the methods take that pointer:
+**Object extensions** - the behaviour components Eets and objects carry.
+`Object_Get<Type>Extension(o)` returns a typed pointer or null; the methods take that
+pointer:
 
 ```cpp
 if (WalkingExtension* w = Object_GetWalkingExtension(World_GetEets())) {
@@ -189,7 +189,7 @@ ForEachCollision(o, [](const CollisionReport& r){ /* r.id_2, r.relative_velocity
 
 Covered types: Walking, Thwacker, Edible, Lighting, Suckable, Position, Rolling,
 Holding, Flying, Emotion, EmotionPlatform, Physics. `ForEachCollision` walks the
-physics report deque (enabling accumulation, matching Lua `GetCollisionReports`).
+physics report deque; calling it enables accumulation, so the deque keeps filling.
 See `examples/extdemo.cpp`.
 
 ## Robustness
