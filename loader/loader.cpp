@@ -947,7 +947,13 @@ HMODULE real_version_dll() {
 		std::string path = (n && n < MAX_PATH) ? std::string(dir) : std::string("C:\\Windows\\System32");
 		path += "\\version.dll";
 		HMODULE m = LoadLibraryA(path.c_str());
-		logline("version-proxy: real version.dll %s (%s)", m ? "loaded" : "FAILED to load", path.c_str());
+		// Under a Wine "version=n,b" override the name request can resolve back to THIS
+		// proxy; forwarding to ourselves would recurse forever. Detect and refuse.
+		HMODULE self = nullptr;
+		GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		                   (LPCSTR)&real_version_dll, &self);
+		if (m == self) { logline("version-proxy: real version.dll resolved to self - refusing (would recurse)"); m = nullptr; }
+		else logline("version-proxy: real version.dll %s (%s)", m ? "loaded" : "FAILED to load", path.c_str());
 		return m;
 	}();
 	return h;
@@ -1052,15 +1058,25 @@ void install_iat_hooks() {
 } // namespace
 
 // ---- 3) DllMain ------------------------------------------------------------
-// Windows entry point. On attach: stage assets (preboot) and install the IAT
-// hooks so the game's FNA3D/SDL calls route through us. Kept lean for loader-lock
-// safety - preboot only touches the filesystem, and the IAT walk reads our own
-// already-mapped image plus a couple of VirtualProtect calls, all safe here.
+// We must do almost nothing in DllMain: eetsmod_preboot() shells out via
+// system()/popen(), and spawning a process (or waiting on other DLLs) while the
+// loader lock is held deadlocks - especially under Wine. So DllMain only starts a
+// worker thread, which runs AFTER the loader lock is released. The thread waits
+// for the game's render/input DLLs to be mapped (so their IAT slots are bound),
+// then stages assets and installs the hooks.
+DWORD WINAPI eets_init_thread(LPVOID) {
+	for (int i = 0; i < 400; i++) {            // up to ~20s for FNA3D + SDL2 to load
+		if (GetModuleHandleA("FNA3D.dll") && GetModuleHandleA("SDL2.dll")) break;
+		Sleep(50);
+	}
+	eetsmod_preboot();
+	install_iat_hooks();
+	return 0;
+}
 BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
 	if (reason == DLL_PROCESS_ATTACH) {
-		DisableThreadLibraryCalls(hinst);   // we don't need per-thread notifications
-		eetsmod_preboot();
-		install_iat_hooks();
+		DisableThreadLibraryCalls(hinst);
+		CreateThread(nullptr, 0, eets_init_thread, nullptr, 0, nullptr);
 	}
 	return TRUE;
 }
