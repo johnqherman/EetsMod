@@ -577,20 +577,13 @@ bool make_bundle_mod(const std::string& name, Mod& m) {
 	return true;
 }
 
-// overwrites matching files under Data/ (intentional override)
+// overwrites matching files under Data/ (intentional override). in-process recursive copy
+// (no find/cp shell-out) so it works identically on Linux and under Wine.
 void install_assets() {
-#ifdef _WIN32
-	return;   // shells out to find/cp (absent under Wine); Windows asset install is Phase 4
-#endif
 	std::string adir = modsdir() + "/assets";
 	if (!exists(adir)) return;
-	int n = 0;
-	FILE* p = popen(("find \"" + adir + "\" -type f 2>/dev/null | wc -l").c_str(), "r");
-	if (p) { char b[32]; if (fgets(b, sizeof(b), p)) n = atoi(b); pclose(p); }
-	if (n <= 0) return;
-	if (system(("cp -r --no-preserve=mode \"" + adir + "\"/. \"" + datadir() + "\"/ 2>>\"" + base() + "/Log/native_mods.log\"").c_str()) == 0)
-		logline("assets: installed %d file(s) from mods/assets/ into Data/", n);
-	else logline("assets: install failed");
+	copy_tree(adir, datadir());
+	logline("assets: installed mods/assets/ into Data/");
 }
 
 // runs at load, before the engine scans Data/ at boot - so a bundle's custom assets
