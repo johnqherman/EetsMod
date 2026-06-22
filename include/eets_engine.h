@@ -11,6 +11,16 @@
 #include "eets_addr.h"       // Linux x86-64 absolute addresses
 #endif
 
+// On 32-bit MSVC (Win32) C++ member functions use __thiscall (this in ECX, not a
+// stack arg). The wrappers below pass the object/extension/this as the first
+// explicit arg, so member-targeting casts must carry __thiscall there. On Linux
+// (SysV) the convention attribute is empty and these casts are unchanged.
+#ifdef _WIN32
+#  define ECALL __thiscall
+#else
+#  define ECALL
+#endif
+
 namespace Eets {
 
 // valid for this exact build; loader warns if the running BuildID differs
@@ -107,33 +117,47 @@ inline void PlaySound(const char* name, float vol = 0.0f) {
 }
 
 inline Vector2 Object_GetPosition(Object* o) {
+#ifdef _WIN32
+	Vector2 r; ((void(ECALL *)(Object*, Vector2*))addr::Object_GetPosition)(o, &r); return r;
+#else
 	return ((Vector2(*)(Object*))addr::Object_GetPosition)(o);
+#endif
 }
 inline Vector2 Object_GetVelocity(Object* o) {
+#ifdef _WIN32
+	Vector2 r; ((void(ECALL *)(Object*, Vector2*))addr::Object_GetVelocity)(o, &r); return r;
+#else
 	return ((Vector2(*)(Object*))addr::Object_GetVelocity)(o);
+#endif
 }
 inline unsigned long Object_GetID(Object* o) {
-	return ((unsigned long(*)(Object*))addr::Object_GetID)(o);
+	return ((unsigned long(ECALL *)(Object*))addr::Object_GetID)(o);
 }
 inline MotionModel* Object_GetMotionModel(Object* o) {
-	return ((MotionModel*(*)(Object*))addr::Object_GetMotionModel)(o);
+	return ((MotionModel*(ECALL *)(Object*))addr::Object_GetMotionModel)(o);
 }
-inline void Object_SetPosition(Object* o, const Vector2& p)   { ((void(*)(Object*, const Vector2&))addr::Object_SetPosition)(o, p); }
-inline void Object_ForcePosition(Object* o, const Vector2& p) { ((void(*)(Object*, const Vector2&))addr::Object_ForcePosition)(o, p); }
-inline void Object_SetFacing(Object* o, const Vector2& f)     { ((void(*)(Object*, const Vector2&))addr::Object_SetFacing)(o, f); }
-inline Vector2 Object_GetFacing(Object* o)                    { return ((Vector2(*)(Object*))addr::Object_GetFacing)(o); }
-inline void Object_SetFlipped(Object* o, bool f)             { ((void(*)(Object*, bool))addr::Object_SetFlipped)(o, f); }
-inline bool Object_GetFlipped(Object* o)                     { return ((bool(*)(Object*))addr::Object_GetFlipped)(o); }
-inline void Object_KillMe(Object* o)                        { ((void(*)(Object*))addr::Object_KillMe)(o); }
+inline void Object_SetPosition(Object* o, const Vector2& p)   { ((void(ECALL *)(Object*, const Vector2&))addr::Object_SetPosition)(o, p); }
+inline void Object_ForcePosition(Object* o, const Vector2& p) { ((void(ECALL *)(Object*, const Vector2&))addr::Object_ForcePosition)(o, p); }
+inline void Object_SetFacing(Object* o, const Vector2& f)     { ((void(ECALL *)(Object*, const Vector2&))addr::Object_SetFacing)(o, f); }
+inline Vector2 Object_GetFacing(Object* o) {
+#ifdef _WIN32
+	Vector2 r; ((void(ECALL *)(Object*, Vector2*))addr::Object_GetFacing)(o, &r); return r;
+#else
+	return ((Vector2(*)(Object*))addr::Object_GetFacing)(o);
+#endif
+}
+inline void Object_SetFlipped(Object* o, bool f)             { ((void(ECALL *)(Object*, bool))addr::Object_SetFlipped)(o, f); }
+inline bool Object_GetFlipped(Object* o)                     { return ((bool(ECALL *)(Object*))addr::Object_GetFlipped)(o); }
+inline void Object_KillMe(Object* o)                        { ((void(ECALL *)(Object*))addr::Object_KillMe)(o); }
 
 inline void MotionModel_PushMotion(MotionModel* m, const char* name, bool a, bool b) {
-	((void(*)(MotionModel*, const char*, bool, bool))addr::MotionModel_PushMotion)(m, name, a, b);
+	((void(ECALL *)(MotionModel*, const char*, bool, bool))addr::MotionModel_PushMotion)(m, name, a, b);
 }
 inline void MotionModel_PopMotion(MotionModel* m) {
-	((void(*)(MotionModel*))addr::MotionModel_PopMotion)(m);
+	((void(ECALL *)(MotionModel*))addr::MotionModel_PopMotion)(m);
 }
 inline const char* MotionModel_GetCurrentMotionName(MotionModel* m) {
-	return ((const char*(*)(MotionModel*))addr::MotionModel_GetCurrentMotionName)(m);
+	return ((const char*(ECALL *)(MotionModel*))addr::MotionModel_GetCurrentMotionName)(m);
 }
 
 // ObjectMgr holds a std::vector<Object*> at offsets +0 (begin) / +8 (end).
@@ -355,76 +379,82 @@ inline void World_ShowTutorialDialog(const char* a) { ((void(*)(const char*))add
 
 // ===== object extensions =====
 // each accessor returns null if the object lacks that extension; always null-check.
-inline PositionExtension* Object_GetPositionExtension(Object* o) { return ((PositionExtension*(*)(Object*))addr::Object_GetPositionExtension)(o); }
-inline SuckableExtension* Object_GetSuckableExtension(Object* o) { return ((SuckableExtension*(*)(Object*))addr::Object_GetSuckableExtension)(o); }
-inline WalkingExtension* Object_GetWalkingExtension(Object* o) { return ((WalkingExtension*(*)(Object*))addr::Object_GetWalkingExtension)(o); }
-inline ThwackerExtension* Object_GetThwackerExtension(Object* o) { return ((ThwackerExtension*(*)(Object*))addr::Object_GetThwackerExtension)(o); }
-inline EmotionPlatformExtension* Object_GetEmotionPlatformExtension(Object* o) { return ((EmotionPlatformExtension*(*)(Object*))addr::Object_GetEmotionPlatformExtension)(o); }
-inline EdibleExtension* Object_GetEdibleExtension(Object* o) { return ((EdibleExtension*(*)(Object*))addr::Object_GetEdibleExtension)(o); }
-inline EmotionExtension* Object_GetEmotionExtension(Object* o) { return ((EmotionExtension*(*)(Object*))addr::Object_GetEmotionExtension)(o); }
-inline FlyingExtension* Object_GetFlyingExtension(Object* o) { return ((FlyingExtension*(*)(Object*))addr::Object_GetFlyingExtension)(o); }
-inline LightingExtension* Object_GetLightingExtension(Object* o) { return ((LightingExtension*(*)(Object*))addr::Object_GetLightingExtension)(o); }
-inline HoldingExtension* Object_GetHoldingExtension(Object* o) { return ((HoldingExtension*(*)(Object*))addr::Object_GetHoldingExtension)(o); }
-inline RollingExtension* Object_GetRollingExtension(Object* o) { return ((RollingExtension*(*)(Object*))addr::Object_GetRollingExtension)(o); }
+inline PositionExtension* Object_GetPositionExtension(Object* o) { return ((PositionExtension*(ECALL *)(Object*))addr::Object_GetPositionExtension)(o); }
+inline SuckableExtension* Object_GetSuckableExtension(Object* o) { return ((SuckableExtension*(ECALL *)(Object*))addr::Object_GetSuckableExtension)(o); }
+inline WalkingExtension* Object_GetWalkingExtension(Object* o) { return ((WalkingExtension*(ECALL *)(Object*))addr::Object_GetWalkingExtension)(o); }
+inline ThwackerExtension* Object_GetThwackerExtension(Object* o) { return ((ThwackerExtension*(ECALL *)(Object*))addr::Object_GetThwackerExtension)(o); }
+inline EmotionPlatformExtension* Object_GetEmotionPlatformExtension(Object* o) { return ((EmotionPlatformExtension*(ECALL *)(Object*))addr::Object_GetEmotionPlatformExtension)(o); }
+inline EdibleExtension* Object_GetEdibleExtension(Object* o) { return ((EdibleExtension*(ECALL *)(Object*))addr::Object_GetEdibleExtension)(o); }
+inline EmotionExtension* Object_GetEmotionExtension(Object* o) { return ((EmotionExtension*(ECALL *)(Object*))addr::Object_GetEmotionExtension)(o); }
+inline FlyingExtension* Object_GetFlyingExtension(Object* o) { return ((FlyingExtension*(ECALL *)(Object*))addr::Object_GetFlyingExtension)(o); }
+inline LightingExtension* Object_GetLightingExtension(Object* o) { return ((LightingExtension*(ECALL *)(Object*))addr::Object_GetLightingExtension)(o); }
+inline HoldingExtension* Object_GetHoldingExtension(Object* o) { return ((HoldingExtension*(ECALL *)(Object*))addr::Object_GetHoldingExtension)(o); }
+inline RollingExtension* Object_GetRollingExtension(Object* o) { return ((RollingExtension*(ECALL *)(Object*))addr::Object_GetRollingExtension)(o); }
 // physics has no templated getter; it sits at a fixed Object slot
 inline PhysicsExtension* Object_GetPhysicsExtension(Object* o) { return o ? *(PhysicsExtension**)((char*)o + 0x90) : nullptr; }
 
-inline void WalkingExtension_SetWalkSpeed(WalkingExtension* w, float s) { ((void(*)(WalkingExtension*, float))addr::WalkingExtension_SetWalkSpeed)(w, s); }
-inline void WalkingExtension_SetActive(WalkingExtension* w, bool a) { ((void(*)(WalkingExtension*, bool))addr::WalkingExtension_SetActive)(w, a); }
-inline unsigned long WalkingExtension_GetState(WalkingExtension* w) { return ((unsigned long(*)(WalkingExtension*))addr::WalkingExtension_GetState)(w); }
-inline void WalkingExtension_StartWalking(WalkingExtension* w) { ((void(*)(WalkingExtension*))addr::WalkingExtension_StartWalking)(w); }
-inline void WalkingExtension_StopWalking(WalkingExtension* w) { ((void(*)(WalkingExtension*))addr::WalkingExtension_StopWalking)(w); }
-inline void WalkingExtension_KnockDown(WalkingExtension* w, const Vector2& dir) { ((void(*)(WalkingExtension*, const Vector2&))addr::WalkingExtension_KnockDown)(w, dir); }
-inline void WalkingExtension_SetNoWalkFrame(WalkingExtension* w, int f) { ((void(*)(WalkingExtension*, int))addr::WalkingExtension_SetNoWalkFrame)(w, f); }
-inline void WalkingExtension_ForceReset(WalkingExtension* w) { ((void(*)(WalkingExtension*))addr::WalkingExtension_ForceReset)(w); }
-inline void WalkingExtension_Reset(WalkingExtension* w) { ((void(*)(WalkingExtension*))addr::WalkingExtension_Reset)(w); }
+inline void WalkingExtension_SetWalkSpeed(WalkingExtension* w, float s) { ((void(ECALL *)(WalkingExtension*, float))addr::WalkingExtension_SetWalkSpeed)(w, s); }
+inline void WalkingExtension_SetActive(WalkingExtension* w, bool a) { ((void(ECALL *)(WalkingExtension*, bool))addr::WalkingExtension_SetActive)(w, a); }
+inline unsigned long WalkingExtension_GetState(WalkingExtension* w) { return ((unsigned long(ECALL *)(WalkingExtension*))addr::WalkingExtension_GetState)(w); }
+inline void WalkingExtension_StartWalking(WalkingExtension* w) { ((void(ECALL *)(WalkingExtension*))addr::WalkingExtension_StartWalking)(w); }
+inline void WalkingExtension_StopWalking(WalkingExtension* w) { ((void(ECALL *)(WalkingExtension*))addr::WalkingExtension_StopWalking)(w); }
+inline void WalkingExtension_KnockDown(WalkingExtension* w, const Vector2& dir) { ((void(ECALL *)(WalkingExtension*, const Vector2&))addr::WalkingExtension_KnockDown)(w, dir); }
+inline void WalkingExtension_SetNoWalkFrame(WalkingExtension* w, int f) { ((void(ECALL *)(WalkingExtension*, int))addr::WalkingExtension_SetNoWalkFrame)(w, f); }
+inline void WalkingExtension_ForceReset(WalkingExtension* w) { ((void(ECALL *)(WalkingExtension*))addr::WalkingExtension_ForceReset)(w); }
+inline void WalkingExtension_Reset(WalkingExtension* w) { ((void(ECALL *)(WalkingExtension*))addr::WalkingExtension_Reset)(w); }
 
-inline void ThwackerExtension_SetThwackSpeed(ThwackerExtension* t, float s) { ((void(*)(ThwackerExtension*, float))addr::ThwackerExtension_SetThwackSpeed)(t, s); }
-inline bool ThwackerExtension_IsThwacking(ThwackerExtension* t) { return ((bool(*)(ThwackerExtension*))addr::ThwackerExtension_IsThwacking)(t); }
-inline Vector2 ThwackerExtension_GetCentre(ThwackerExtension* t) { return ((Vector2(*)(ThwackerExtension*))addr::ThwackerExtension_GetCentre)(t); }
+inline void ThwackerExtension_SetThwackSpeed(ThwackerExtension* t, float s) { ((void(ECALL *)(ThwackerExtension*, float))addr::ThwackerExtension_SetThwackSpeed)(t, s); }
+inline bool ThwackerExtension_IsThwacking(ThwackerExtension* t) { return ((bool(ECALL *)(ThwackerExtension*))addr::ThwackerExtension_IsThwacking)(t); }
+inline Vector2 ThwackerExtension_GetCentre(ThwackerExtension* t) {
+#ifdef _WIN32
+	Vector2 r; ((void(ECALL *)(ThwackerExtension*, Vector2*))addr::ThwackerExtension_GetCentre)(t, &r); return r;
+#else
+	return ((Vector2(*)(ThwackerExtension*))addr::ThwackerExtension_GetCentre)(t);
+#endif
+}
 
-inline bool EdibleExtension_GetEaten(EdibleExtension* e) { return ((bool(*)(EdibleExtension*))addr::EdibleExtension_GetEaten)(e); }
-inline unsigned EdibleExtension_GetEater(EdibleExtension* e) { return ((unsigned(*)(EdibleExtension*))addr::EdibleExtension_GetEater)(e); }
-inline bool EdibleExtension_IsEatenBy(EdibleExtension* e, unsigned id) { return ((bool(*)(EdibleExtension*, unsigned))addr::EdibleExtension_IsEatenBy)(e, id); }
+inline bool EdibleExtension_GetEaten(EdibleExtension* e) { return ((bool(ECALL *)(EdibleExtension*))addr::EdibleExtension_GetEaten)(e); }
+inline unsigned EdibleExtension_GetEater(EdibleExtension* e) { return ((unsigned(ECALL *)(EdibleExtension*))addr::EdibleExtension_GetEater)(e); }
+inline bool EdibleExtension_IsEatenBy(EdibleExtension* e, unsigned id) { return ((bool(ECALL *)(EdibleExtension*, unsigned))addr::EdibleExtension_IsEatenBy)(e, id); }
 
-inline bool LightingExtension_IsLit(LightingExtension* l) { return ((bool(*)(LightingExtension*))addr::LightingExtension_IsLit)(l); }
+inline bool LightingExtension_IsLit(LightingExtension* l) { return ((bool(ECALL *)(LightingExtension*))addr::LightingExtension_IsLit)(l); }
 
-inline bool SuckableExtension_WasRecentlySucked(SuckableExtension* s) { return ((bool(*)(SuckableExtension*))addr::SuckableExtension_WasRecentlySucked)(s); }
-inline void SuckableExtension_SetSucked(SuckableExtension* s) { ((void(*)(SuckableExtension*))addr::SuckableExtension_SetSucked)(s); }
+inline bool SuckableExtension_WasRecentlySucked(SuckableExtension* s) { return ((bool(ECALL *)(SuckableExtension*))addr::SuckableExtension_WasRecentlySucked)(s); }
+inline void SuckableExtension_SetSucked(SuckableExtension* s) { ((void(ECALL *)(SuckableExtension*))addr::SuckableExtension_SetSucked)(s); }
 
-inline bool PositionExtension_IsForeground(PositionExtension* p) { return ((bool(*)(PositionExtension*))addr::PositionExtension_IsForeground)(p); }
-inline bool PositionExtension_IsBackground(PositionExtension* p) { return ((bool(*)(PositionExtension*))addr::PositionExtension_IsBackground)(p); }
-inline void PositionExtension_SetIsForeground(PositionExtension* p, bool v) { ((void(*)(PositionExtension*, bool))addr::PositionExtension_SetIsForeground)(p, v); }
-inline void PositionExtension_SetIsBackground(PositionExtension* p, bool v) { ((void(*)(PositionExtension*, bool))addr::PositionExtension_SetIsBackground)(p, v); }
+inline bool PositionExtension_IsForeground(PositionExtension* p) { return ((bool(ECALL *)(PositionExtension*))addr::PositionExtension_IsForeground)(p); }
+inline bool PositionExtension_IsBackground(PositionExtension* p) { return ((bool(ECALL *)(PositionExtension*))addr::PositionExtension_IsBackground)(p); }
+inline void PositionExtension_SetIsForeground(PositionExtension* p, bool v) { ((void(ECALL *)(PositionExtension*, bool))addr::PositionExtension_SetIsForeground)(p, v); }
+inline void PositionExtension_SetIsBackground(PositionExtension* p, bool v) { ((void(ECALL *)(PositionExtension*, bool))addr::PositionExtension_SetIsBackground)(p, v); }
 
-inline bool RollingExtension_IsRolling(RollingExtension* r) { return ((bool(*)(RollingExtension*))addr::RollingExtension_IsRolling)(r); }
+inline bool RollingExtension_IsRolling(RollingExtension* r) { return ((bool(ECALL *)(RollingExtension*))addr::RollingExtension_IsRolling)(r); }
 
-inline bool HoldingExtension_IsHolding(HoldingExtension* h, Object* o) { return ((bool(*)(HoldingExtension*, Object*))addr::HoldingExtension_IsHolding)(h, o); }
-inline bool HoldingExtension_IsHoldingAny(HoldingExtension* h) { return ((bool(*)(HoldingExtension*))addr::HoldingExtension_IsHoldingAny)(h); }
-inline void HoldingExtension_HoldObject(HoldingExtension* h, Object* o) { ((void(*)(HoldingExtension*, Object*))addr::HoldingExtension_HoldObject)(h, o); }
-inline void HoldingExtension_ReleaseAll(HoldingExtension* h) { ((void(*)(HoldingExtension*))addr::HoldingExtension_ReleaseAll)(h); }
-inline void HoldingExtension_ReleaseObject(HoldingExtension* h, Object* o) { ((void(*)(HoldingExtension*, Object*))addr::HoldingExtension_ReleaseObject)(h, o); }
+inline bool HoldingExtension_IsHolding(HoldingExtension* h, Object* o) { return ((bool(ECALL *)(HoldingExtension*, Object*))addr::HoldingExtension_IsHolding)(h, o); }
+inline bool HoldingExtension_IsHoldingAny(HoldingExtension* h) { return ((bool(ECALL *)(HoldingExtension*))addr::HoldingExtension_IsHoldingAny)(h); }
+inline void HoldingExtension_HoldObject(HoldingExtension* h, Object* o) { ((void(ECALL *)(HoldingExtension*, Object*))addr::HoldingExtension_HoldObject)(h, o); }
+inline void HoldingExtension_ReleaseAll(HoldingExtension* h) { ((void(ECALL *)(HoldingExtension*))addr::HoldingExtension_ReleaseAll)(h); }
+inline void HoldingExtension_ReleaseObject(HoldingExtension* h, Object* o) { ((void(ECALL *)(HoldingExtension*, Object*))addr::HoldingExtension_ReleaseObject)(h, o); }
 // GetHolds returns a std::vector<Object*> const& (pointer to {begin,end,cap}); walk it
 template <class Fn>
 inline void ForEachHeld(HoldingExtension* h, Fn fn) {
 	if (!h) return;
-	char* vec = (char*)((void*(*)(HoldingExtension*))addr::HoldingExtension_GetHolds)(h);
+	char* vec = (char*)((void*(ECALL *)(HoldingExtension*))addr::HoldingExtension_GetHolds)(h);
 	if (!vec) return;
 	Object** begin = *(Object***)(vec + 0);
 	Object** end   = *(Object***)(vec + 8);
 	for (Object** p = begin; p && p < end; ++p) fn(*p);
 }
 
-inline void FlyingExtension_SetState(FlyingExtension* f, unsigned long s) { ((void(*)(FlyingExtension*, unsigned long))addr::FlyingExtension_SetState)(f, s); }
-inline unsigned long FlyingExtension_GetState(FlyingExtension* f) { return ((unsigned long(*)(FlyingExtension*))addr::FlyingExtension_GetState)(f); }
+inline void FlyingExtension_SetState(FlyingExtension* f, unsigned long s) { ((void(ECALL *)(FlyingExtension*, unsigned long))addr::FlyingExtension_SetState)(f, s); }
+inline unsigned long FlyingExtension_GetState(FlyingExtension* f) { return ((unsigned long(ECALL *)(FlyingExtension*))addr::FlyingExtension_GetState)(f); }
 
-inline bool EmotionExtension_RecentlyChanged(EmotionExtension* e) { return ((bool(*)(EmotionExtension*))addr::EmotionExtension_RecentlyChanged)(e); }
-inline const char* EmotionExtension_GetEmotionName(EmotionExtension* e) { return ((const char*(*)(EmotionExtension*))addr::EmotionExtension_GetEmotionName)(e); }
-inline void EmotionExtension_SetEmotionName(EmotionExtension* e, const char* n) { ((void(*)(EmotionExtension*, const char*))addr::EmotionExtension_SetEmotionName)(e, n); }
+inline bool EmotionExtension_RecentlyChanged(EmotionExtension* e) { return ((bool(ECALL *)(EmotionExtension*))addr::EmotionExtension_RecentlyChanged)(e); }
+inline const char* EmotionExtension_GetEmotionName(EmotionExtension* e) { return ((const char*(ECALL *)(EmotionExtension*))addr::EmotionExtension_GetEmotionName)(e); }
+inline void EmotionExtension_SetEmotionName(EmotionExtension* e, const char* n) { ((void(ECALL *)(EmotionExtension*, const char*))addr::EmotionExtension_SetEmotionName)(e, n); }
 
-inline unsigned EmotionPlatformExtension_GetCurrentEmotion(EmotionPlatformExtension* e) { return ((unsigned(*)(EmotionPlatformExtension*))addr::EmotionPlatformExtension_GetCurrentEmotion)(e); }
-inline bool EmotionPlatformExtension_MatchesCurrentEmotion(EmotionPlatformExtension* e) { return ((bool(*)(EmotionPlatformExtension*))addr::EmotionPlatformExtension_MatchesCurrentEmotion)(e); }
-inline void EmotionPlatformExtension_SetEmotion(EmotionPlatformExtension* e, unsigned id) { ((void(*)(EmotionPlatformExtension*, unsigned))addr::EmotionPlatformExtension_SetEmotion)(e, id); }
+inline unsigned EmotionPlatformExtension_GetCurrentEmotion(EmotionPlatformExtension* e) { return ((unsigned(ECALL *)(EmotionPlatformExtension*))addr::EmotionPlatformExtension_GetCurrentEmotion)(e); }
+inline bool EmotionPlatformExtension_MatchesCurrentEmotion(EmotionPlatformExtension* e) { return ((bool(ECALL *)(EmotionPlatformExtension*))addr::EmotionPlatformExtension_MatchesCurrentEmotion)(e); }
+inline void EmotionPlatformExtension_SetEmotion(EmotionPlatformExtension* e, unsigned id) { ((void(ECALL *)(EmotionPlatformExtension*, unsigned))addr::EmotionPlatformExtension_SetEmotion)(e, id); }
 
 // iterate an object's accumulated collision contacts. matches the Lua GetCollisionReports path:
 // reading enables accumulation, so the engine keeps refilling the deque each step.
@@ -433,7 +463,7 @@ inline void ForEachCollision(Object* o, Fn fn) {
 	PhysicsExtension* phys = Object_GetPhysicsExtension(o);
 	if (!phys) return;
 	// std::deque<CollisionReport>; element is 0x28 bytes, libstdc++ chunk holds 512/0x28 = 12 per node
-	char* dq = (char*)((void*(*)(PhysicsExtension*))addr::PhysicsExtension_GetAccumulate)(phys);
+	char* dq = (char*)((void*(ECALL *)(PhysicsExtension*))addr::PhysicsExtension_GetAccumulate)(phys);
 	if (!dq) return;
 	const long bufsz = 12;
 	char*  cur     = *(char**)(dq + 0x10);  // start._M_cur
