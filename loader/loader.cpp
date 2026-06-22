@@ -464,6 +464,14 @@ void install_engine_event_hooks() {
 std::string bundle_dir(const std::string& name) { return cachedir() + "/" + name + ".d"; }
 
 void extract_bundles() {
+#ifdef _WIN32
+	// .eetsmod extraction shells out to tar/rm/cp - absent under Wine, and spawning a
+	// process here every reload-poll causes a visible frame hitch. Windows uses loose
+	// .dll mods for now; in-process untar is Phase 4.
+	static bool warned = false;
+	if (!warned) { warned = true; logline("bundle: .eetsmod extraction deferred on Windows (use loose .dll mods; Phase 4)"); }
+	return;
+#endif
 	std::string dir = modsdir();
 	DIR* d = opendir(dir.c_str()); if (!d) return;
 	struct dirent* ent;
@@ -500,6 +508,9 @@ bool make_bundle_mod(const std::string& name, Mod& m) {
 
 // overwrites matching files under Data/ (intentional override)
 void install_assets() {
+#ifdef _WIN32
+	return;   // shells out to find/cp (absent under Wine); Windows asset install is Phase 4
+#endif
 	std::string adir = modsdir() + "/assets";
 	if (!exists(adir)) return;
 	int n = 0;
