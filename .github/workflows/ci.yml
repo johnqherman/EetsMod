@@ -13,11 +13,11 @@ jobs:
       - name: Lint shell tooling
         run: for f in bin/eetsmod tools/*.sh; do bash -n "$f"; done
       - name: Build native loader
-        run: make -C native
+        run: make
       - name: Compile sample mods the way the loader does
-        run: ./tools/check-mod.sh native/examples/*.cpp
+        run: ./tools/check-mod.sh examples/*.cpp
       - name: Pack example mods into .eetsmod bundles
-        run: make -C native bundles && ls -1 native/examples/build/*.eetsmod
+        run: make bundles && ls -1 examples/build/*.eetsmod
       - name: API reference is up to date
         run: |
           ./tools/gen-api-ref.sh
@@ -27,4 +27,4 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: libeetsmod.so
-          path: native/build/libeetsmod.so
+          path: build/libeetsmod.so

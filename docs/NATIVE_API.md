@@ -1,6 +1,6 @@
 # Native API reference
 
-Auto-generated from `native/include/*.h` by `tools/gen-api-ref.sh`. Do not edit by hand.
+Auto-generated from `include/*.h` by `tools/gen-api-ref.sh`. Do not edit by hand.
 All symbols live in namespace `Eets`. Signatures only; see the headers for offset/ABI notes.
 
 ## Engine wrappers (`eets_engine.h`)

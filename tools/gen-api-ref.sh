@@ -4,7 +4,7 @@
 set -euo pipefail
 export LC_ALL=C   # deterministic sort order across machines (CI runs C locale)
 SELF="$(cd "$(dirname "$0")/.." && pwd)"
-INC="$SELF/native/include"
+INC="$SELF/include"
 OUT="$SELF/docs/NATIVE_API.md"
 
 inlines() {  # eets_engine.h / eets_ui.h: inline RET Name(args) { ... }
@@ -20,7 +20,7 @@ decls() {    # eetsmod.h: indented function declarations ending in );
 {
 	echo "# Native API reference"
 	echo
-	echo "Auto-generated from \`native/include/*.h\` by \`tools/gen-api-ref.sh\`. Do not edit by hand."
+	echo "Auto-generated from \`include/*.h\` by \`tools/gen-api-ref.sh\`. Do not edit by hand."
 	echo "All symbols live in namespace \`Eets\`. Signatures only; see the headers for offset/ABI notes."
 	echo
 	echo "## Engine wrappers (\`eets_engine.h\`)"
@@ -36,7 +36,7 @@ decls() {    # eetsmod.h: indented function declarations ending in );
 	echo
 	echo "Define any subset as \`extern \"C\"\`; the loader resolves each by name:"
 	echo '```cpp'
-	grep -hoE 'EetsMod_[A-Za-z]+' "$INC/eetsmod.h" "$SELF/native/loader/loader.cpp" | sort -u | sed 's/^/  /'
+	grep -hoE 'EetsMod_[A-Za-z]+' "$INC/eetsmod.h" "$SELF/loader/loader.cpp" | sort -u | sed 's/^/  /'
 	echo '```'
 } > "$OUT"
 echo "wrote $OUT ($(wc -l < "$OUT") lines)"

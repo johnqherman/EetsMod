@@ -36,15 +36,15 @@ find_game() {
 
 # ---- include dir + loader (dev repo or an installed game) ----
 includedir() {
-	for c in "$SELF/native/include" "${1:-}/eetsmod-include"; do
+	for c in "$SELF/include" "${1:-}/eetsmod-include"; do
 		[[ -f "$c/eetsmod.h" ]] && { echo "$c"; return; }
 	done
 	die "no eetsmod headers found (looked in repo and game dir)"
 }
 loader_so() {  # build from the repo if present, else use a prebuilt next to this script
-	if [[ -d "$SELF/native" ]]; then
-		make -C "$SELF/native" >/dev/null 2>&1 || die "loader build failed (need g++)"
-		echo "$SELF/native/build/libeetsmod.so"
+	if [[ -f "$SELF/Makefile" && -d "$SELF/loader" ]]; then
+		make -C "$SELF" >/dev/null 2>&1 || die "loader build failed (need g++)"
+		echo "$SELF/build/libeetsmod.so"
 	elif [[ -f "$SELF/libeetsmod.so" ]]; then echo "$SELF/libeetsmod.so"
 	else die "no loader: run from the repo or a release directory"; fi
 }

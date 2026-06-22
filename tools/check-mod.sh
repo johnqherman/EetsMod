@@ -8,7 +8,7 @@ set -euo pipefail
 [[ $# -ge 1 ]] || { echo "usage: $0 <mod.cpp> [more.cpp ...]" >&2; exit 1; }
 
 SELF="$(cd "$(dirname "$0")/.." && pwd)"
-INC="${EETS_INCLUDE:-$SELF/native/include}"
+INC="${EETS_INCLUDE:-$SELF/include}"
 [[ -f "$INC/eetsmod.h" ]] || { echo "no eetsmod.h under $INC (set EETS_INCLUDE)" >&2; exit 1; }
 CXX="${CXX:-g++}"
 

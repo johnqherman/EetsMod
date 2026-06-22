@@ -3,9 +3,9 @@
 Log/
 
 # native build artifacts
-native/build/
-native/dist/
-native/examples/build/
+build/
+dist/
+examples/build/
 *.so
 *.o
 *.eetsmod

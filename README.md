@@ -42,8 +42,8 @@ extern "C" void EetsMod_OnKey(int key, int mods, int down) {
 ```
 
 Full guide, the engine API, custom images/sounds/anims, the in-game UI toolkit, and
-build details: **[`native/README.md`](native/README.md)**. API reference:
-[`docs/NATIVE_API.md`](docs/NATIVE_API.md). Example mods: [`native/examples/`](native/examples).
+build details: **[`docs/MODDING.md`](docs/MODDING.md)**. API reference:
+[`docs/NATIVE_API.md`](docs/NATIVE_API.md). Example mods: [`examples/`](examples).
 
 ## How it works
 
@@ -55,13 +55,13 @@ reverse-engineering the binary; see [`docs/INTERNALS.md`](docs/INTERNALS.md).
 ## Layout
 
 ```
-bin/eetsmod          setup + build/pack/manage CLI
-native/
-  loader/            the LD_PRELOAD loader (hooks, crash isolation, .eetsmod staging)
-  include/           mod headers: engine API, addresses, UI toolkit
-  examples/          example mods (source + <name>.assets/)
-tools/               check-mod, add-sound, gen-api-ref, decompile helpers
-docs/                INTERNALS, NATIVE_API, WINDOWS (port plan)
+bin/eetsmod    setup + build/pack/manage CLI
+loader/        the LD_PRELOAD loader (hooks, crash isolation, .eetsmod staging)
+include/       mod headers: engine API, addresses, UI toolkit
+examples/      example mods (source + <name>.assets/)
+tools/         check-mod, add-sound, gen-api-ref, new-mod
+docs/          MODDING guide, NATIVE_API, INTERNALS, WINDOWS (port plan)
+Makefile       build / check / bundles / apidoc / release
 ```
 
 ## License
