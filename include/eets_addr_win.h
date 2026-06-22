@@ -115,12 +115,12 @@ inline uintptr_t MotionModel_GetCurrentMotionName   = resolve(0);  // (MotionMod
 // ===== singletons / engine / UI =====
 inline uintptr_t ObjectMgr_i                        = resolve(0);  // () -> ObjectMgr*  // TODO
 inline uintptr_t Simulator_i                        = resolve(0);  // () -> Simulator*  // TODO
-inline uintptr_t GraphicsEngine_i                   = resolve(0xae3db0);  // GLOBAL DAT_00ee3db0 holding GE* (deref); w@+0x40 h@+0x44
-inline uintptr_t printText                          = resolve(0);  // (int x,int y,char const*,Color const&)  // TODO
-inline uintptr_t TextPrinter_DrawString             = resolve(0);  // (string,size,style,Color,Vector2,bool,Vector2 const&)  // TODO
-inline uintptr_t GraphicsEngine_DrawLine            = resolve(0);  // (GE*,Vector2 const&,Vector2 const&,Color const&,float) 1px line (width ignored)  // TODO
-inline uintptr_t GraphicsEngine_DrawSquare          = resolve(0);  // (GE*,Vector2 const& topLeft,Vector2 const& botRight,Color const&) FILLED rect  // TODO
-inline uintptr_t GraphicsEngine_DrawCircleFilled    = resolve(0);  // (GE*,Vector2 const&,float r,Color const&,int segs)  // TODO
+inline uintptr_t GraphicsEngine_i                   = resolve(0x6ae51c);  // GLOBAL DAT_00aae51c = GraphicsEngine (vtable 0x564668); +0x20 = live FNA3D device (proven: FNA3D_VerifySampler(DAT_00aae51c+0x20)). `this` for vtable draw methods 0x48d880/0x48e030. accessor 0x481c80.
+inline uintptr_t printText                          = resolve(0xb9b30);  // (int x,int y,char const*,Color const&) cdecl wrapper -> DrawString(size=3,style=3)
+inline uintptr_t TextPrinter_DrawString             = resolve(0x83a40);  // (string const&,size,style,Color,Vector2,bool,Vector2 const&) cdecl; string by ptr, caller-owned (printText frees it)
+inline uintptr_t GraphicsEngine_DrawLine            = resolve(0x8d880);  // (GE*,Vector2 const&,Vector2 const&,Color const&) FNA3D prim 2 (LineList,1); R<->B swizzle confirmed
+inline uintptr_t GraphicsEngine_DrawSquare          = resolve(0x8e030);  // (GE*,Vector2 const& topLeft,Vector2 const& botRight,Color const&) FNA3D prim 0 (TriList,2) FILLED rect
+inline uintptr_t GraphicsEngine_DrawCircleFilled    = resolve(0);  // ABSENT in Win build: full GE vtable @0x564668 has no circle method; Eets draws circles as whitecircle sprites. FillCircle guards on 0.
 
 // ===== localization (StringPool) =====
 inline uintptr_t StringPool_instance                = resolve(0);  // StringPool* (read the pointer)  // TODO
@@ -142,12 +142,12 @@ inline uintptr_t Animation_SetCurrentFrame          = resolve(0);  // (Animation
 inline uintptr_t Animation_Restart                  = resolve(0);  // (Animation*)  // TODO
 inline uintptr_t TextureManager_instance            = resolve(0);  // TextureManager* (cache = unordered_map<string,KLEITEXTURE*> at +0)  // TODO
 inline uintptr_t TextureManager_LoadTexture         = resolve(0);  // (TM*, string const&, ImageFormat, bool) load+cache  // TODO
-inline uintptr_t SpriteManager_i                    = resolve(0);  // () -> SpriteManager*  // TODO
-inline uintptr_t SpriteManager_Load                 = resolve(0);  // (sret{Sprite*,ctrl}, SM*, string const&, ImageFormat)  // TODO
-inline uintptr_t GraphicsEngine_DrawSprite          = resolve(0);  // (GE*, Sprite*, Vector2 pos, Vector2 uv0, Vector2 uv1, Color)  // TODO
-inline uintptr_t Sprite_GetWidth                    = resolve(0);  // (Sprite*) -> unsigned  // TODO
-inline uintptr_t Sprite_GetHeight                   = resolve(0);  // (Sprite*) -> unsigned  // TODO
-inline uintptr_t Sprite_GetDiffuseUV                = resolve(0);  // (Sprite*, Vector2& uv0, Vector2& uv1) per-frame texcoords  // TODO
+inline uintptr_t SpriteManager_i                    = resolve(0x89ff0);  // () -> SpriteManager* (mov eax,[0xe7ef38]; ret)
+inline uintptr_t SpriteManager_Load                 = resolve(0x896c0);  // (sret{Sprite*,ctrl}, SM* this, string const&, ImageFormat) thiscall, RET 0xc; caches in hashmap
+inline uintptr_t GraphicsEngine_DrawSprite          = resolve(0x8dbd0);  // (GE*, Sprite*, Vector2 pos, Vector2 uv0, Vector2 uv1, Color) FNA3D prim 0 (TriList,2)
+inline uintptr_t Sprite_GetWidth                    = resolve(0x88170);  // (Sprite*) -> unsigned (mov eax,[ecx+0x60])
+inline uintptr_t Sprite_GetHeight                   = resolve(0x88130);  // (Sprite*) -> unsigned (mov eax,[ecx+0x64])
+inline uintptr_t Sprite_GetDiffuseUV                = resolve(0x88100);  // (Sprite*, Vector2& uv0, Vector2& uv1) thiscall RET 8; uv0=+0x40/+0x44 uv1=+0x48/+0x4c
 
 // ===== object -> extension accessors (each reads a fixed Object+offset, returns Ext* or null) =====
 inline uintptr_t Object_GetPositionExtension        = resolve(0xe6050);  // (Object*) -> PositionExtension*

@@ -87,18 +87,22 @@ Recovery leads found in the decomp:
 
 Remaining is the per-function identity-mapping RE on top of this dump + a runtime launch per batch.
 
-## Graphics recovery — KEYSTONE DONE (GraphicsEngine_i)
-- **GraphicsEngine_i = global `DAT_00ee3db0` (RVA 0xae3db0)** holding GE* — NOT a function on Win32.
-  Proof: GE ctor `0x48e670` is called `FUN(DAT_00ee3db0,...)` by `0x4c1c30`, which reads `this+0x40/+0x44`
-  (= Linux w@+0x40 h@+0x44). Wired via `GE_instance()` (derefs global on Win32). Builds green; validate with a draw.
-
-## Graphics recovery — candidates found (NOT yet validated)
-Draw layer = the FNA3D_DrawPrimitives callers (GraphicsEngine methods, `__thiscall`, read device at `this+0x20`):
-- **DrawLine ≈ 0x48d880** (primType 2=LineList, 1 line; sig `this, Vector2*, Vector2*, Color`) — high confidence
-- Quad-drawers (primType 0, 2 triangles = filled quad): `0x48dbd0`, `0x48e030`, `0x48bf80` — one is DrawSquare,
-  others DrawSprite/DrawTexture/bg-image; disambiguate by texture binding + arg shape.
-- GE constructor = **0x48e670** (`FNA3D_CreateDevice(this+0x24,...)`).
-- **BLOCKER: GraphicsEngine_i** (the GE singleton accessor) — the ctor is this-based; the singleton is stored
-  by the ctor's *caller* via an indirect write the decompiler hides. Find the caller of 0x48e670 → the global
-  it stores → the tiny accessor returning it. Until then the draws can't be called/validated.
-These are UNCOMMITTED candidates; validating needs GraphicsEngine_i + a runtime launch (loader UI re-enable).
+## Graphics recovery — ✅ VALIDATED ON WINDOWS (runtime, in-game panel rendered)
+- **GraphicsEngine_i = global `DAT_00aae51c` (VA 0xaae51c → RVA `0x6ae51c`)** holding GE*; deref on Win32.
+  GE has **vtable `0x564668`** (ctor `FUN_0048b7f0` writes `GraphicsEngine::vftable`); **device@+0x20**
+  (proven: `FNA3D_VerifySampler(DAT_00aae51c+0x20,...)`); accessor `FUN_00481c80` (`MOV EAX,[0xaae51c]`).
+  ⚠️ The old keystone `0xae3db0` (`DAT_00ee3db0`) was the **SDL_Window** (`= SDL_CreateWindow(...)`), NOT the GE —
+  draws on it silently no-op'd. Confirmed by in-process probe (GE vtableRVA must = `0x164668`).
+- **Draw methods are vtable entries** of that GE (`__thiscall`, read device at `this+0x20`), wired + validated:
+  - **DrawSquare `0x8e030`** (FNA3D prim 0, 2 tris = filled rect; `RET 0xc` = 3 args) — `FillRect`. R↔B color swizzle.
+  - **DrawLine `0x8d880`** (FNA3D prim 2; **`RET 0x10` = 4 args incl. `width`** — must pass width or stack corrupts/crashes).
+  - **DrawSprite `0x8dbd0`** (prim 0). Sprite deps: `SpriteManager_i 0x89ff0`, `SpriteManager_Load 0x896c0`,
+    `Sprite_GetWidth 0x88170`, `Sprite_GetHeight 0x88130`, `Sprite_GetDiffuseUV 0x88100` (sprite path not runtime-validated yet).
+  - **printText `0xb9b30`** (cdecl `(int x,int y,char const*,Color const&)`) — builds the MSVC std::string internally →
+    the **Windows-safe text API**. ⚠️ `TextPrinter_DrawString 0x83a40` takes an **MSVC `std::string` by value** —
+    NOT layout-compatible with mingw `std::string`; calling it from a mingw mod crashes. Route Win32 sized text via printText.
+  - **DrawCircleFilled: ABSENT** in the Win build (full GE vtable enumerated; Eets draws circles as whitecircle sprites). FillCircle guards on 0.
+- **Build-recipe fix (all Win mods using std::string/static-locals):** the documented `-Wl,-Bstatic,-lwinpthread,-Bdynamic`
+  LEAKS a `libwinpthread-1.dll` import (load-fails: "Module not found"). Use
+  `-Wl,-Bstatic,--whole-archive,-l:libwinpthread.a,--no-whole-archive,-Bdynamic` to force-include the static pthread objects.
+- GE ctor (FNA3D device wrapper) `0x48e670`; fullscreen-fade `0x48eb00`. Vtable order: slot4=DrawLine(0x8d880), slot5=DrawSquare(0x8e030).

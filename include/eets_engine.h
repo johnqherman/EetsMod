@@ -217,21 +217,23 @@ inline Color swab(Color c) { return Color(c.b, c.g, c.r, c.a); }
 inline void DrawLine(Vector2 a, Vector2 b, Color c, float width = 1.0f) {
 	void* g = GraphicsEngine_i(); if (!g) return;
 	Color s = swab(c);
-	((void(*)(void*, const Vector2&, const Vector2&, const Color&, float))
+	// Win32 GraphicsEngine::DrawLine is __thiscall and RET 0x10 -> 4 stack args incl. width (callee-cleanup)
+	((void(ECALL*)(void*, const Vector2&, const Vector2&, const Color&, float))
 	 addr::GraphicsEngine_DrawLine)(g, a, b, s, width);
 }
 inline void FillRect(int x, int y, int w, int h, Color c) {
 	void* g = GraphicsEngine_i(); if (!g) return;
 	Color s = swab(c);
 	Vector2 a{(float)x, (float)y}, b{(float)(x + w), (float)(y + h)};
-	((void(*)(void*, const Vector2&, const Vector2&, const Color&))
+	((void(ECALL*)(void*, const Vector2&, const Vector2&, const Color&))
 	 addr::GraphicsEngine_DrawSquare)(g, a, b, s);
 }
 inline void FillCircle(int x, int y, float r, Color c, int segs = 24) {
 	void* g = GraphicsEngine_i(); if (!g) return;
+	if (!addr::GraphicsEngine_DrawCircleFilled) return;  // absent on Win32 (no procedural circle)
 	Color s = swab(c);
 	Vector2 p{(float)x, (float)y};
-	((void(*)(void*, const Vector2&, float, const Color&, int))
+	((void(ECALL*)(void*, const Vector2&, float, const Color&, int))
 	 addr::GraphicsEngine_DrawCircleFilled)(g, p, r, s, segs);
 }
 // built from filled bars - DrawLine ignores width
@@ -271,16 +273,16 @@ inline void* LoadSprite(const char* path, int format = 0) {
 	cache[path] = sprite;
 	return sprite;
 }
-inline int  SpriteWidth(void* s)  { return s ? (int)((unsigned(*)(void*))addr::Sprite_GetWidth)(s)  : 0; }
-inline int  SpriteHeight(void* s) { return s ? (int)((unsigned(*)(void*))addr::Sprite_GetHeight)(s) : 0; }
+inline int  SpriteWidth(void* s)  { return s ? (int)((unsigned(ECALL*)(void*))addr::Sprite_GetWidth)(s)  : 0; }
+inline int  SpriteHeight(void* s) { return s ? (int)((unsigned(ECALL*)(void*))addr::Sprite_GetHeight)(s) : 0; }
 
 inline void DrawSpriteAt(void* sprite, int x, int y, Color tint = Color()) {
 	void* ge = GraphicsEngine_i();
 	if (!ge || !sprite) return;
 	Vector2 uv0{0.0f, 0.0f}, uv1{1.0f, 1.0f};
-	((void(*)(void*, Vector2&, Vector2&))addr::Sprite_GetDiffuseUV)(sprite, uv0, uv1);
+	((void(ECALL*)(void*, Vector2&, Vector2&))addr::Sprite_GetDiffuseUV)(sprite, uv0, uv1);
 	Vector2 pos{(float)x, (float)y};
-	((void(*)(void*, void*, const Vector2&, const Vector2&, const Vector2&, const Color&))
+	((void(ECALL*)(void*, void*, const Vector2&, const Vector2&, const Vector2&, const Color&))
 	 addr::GraphicsEngine_DrawSprite)(ge, sprite, pos, uv0, uv1, tint);
 }
 
