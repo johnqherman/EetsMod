@@ -86,7 +86,7 @@ inline uintptr_t World_ShowSolutionTime             = resolve(0xdc8d0);  // (flo
 inline uintptr_t World_ShowTutorialDialog           = resolve(0xdc900);  // (char const*)
 
 // ===== class methods (__thiscall: first arg is the object) =====
-inline uintptr_t Object_GetPosition                 = resolve(0xaa0e0);  // (Object*) -> Vector2
+inline uintptr_t Object_GetPosition                 = resolve(0xaa0e0);  // (Object*) -> Vector2* in EAX (ptr-return, matches Linux ABI). this+0x38 -> [+0x14] +0xc draw-anchor chain; valid for standard objects, Eets-special for the player object.
 inline uintptr_t Object_GetVelocity                 = resolve(0xaa190);  // (Object*) -> Vector2
 inline uintptr_t Object_GetID                       = resolve(0xaa0b0);  // (Object*) -> unsigned long
 inline uintptr_t Object_GetMotionModel              = resolve(0xed050);  // (Object*) -> MotionModel*
@@ -161,8 +161,8 @@ inline uintptr_t Object_GetFlyingExtension          = resolve(0xe6020);  // (Obj
 inline uintptr_t Object_GetLightingExtension        = resolve(0xe6040);  // (Object*) -> LightingExtension*
 inline uintptr_t Object_GetHoldingExtension         = resolve(0xe6030);  // (Object*) -> HoldingExtension*
 inline uintptr_t Object_GetRollingExtension         = resolve(0xe6060);  // (Object*) -> RollingExtension*
-inline uintptr_t PhysicsExtension_GetAccumulate     = resolve(0);  // (Physics*) -> deque<WorldCollisionReport>& (sets accumulate flag)  // TODO
-inline uintptr_t PhysicsExtension_GetCollisions     = resolve(0);  // (Physics*) const -> deque<WorldCollisionReport>&  // TODO
+inline uintptr_t PhysicsExtension_GetAccumulate     = resolve(0x100410);  // (Physics*) -> deque<WorldCollisionReport>& (sets accumulate flag this+0x2a=1; returns &deque@this+0x5c in EAX)
+inline uintptr_t PhysicsExtension_GetCollisions     = resolve(0x100410);  // (Physics*) const -> deque<WorldCollisionReport>& -- standalone const getter COMDAT-folded; reuse GetAccumulate (same &deque@this+0x5c). flag write is harmless.
 
 // ===== extension methods (thiscall: first arg is the extension pointer) =====
 inline uintptr_t WalkingExtension_SetWalkSpeed      = resolve(0x107170);  // (Walking*, float)
@@ -172,14 +172,14 @@ inline uintptr_t WalkingExtension_StartWalking      = resolve(0x1071b0);  // (Wa
 inline uintptr_t WalkingExtension_StopWalking       = resolve(0x107200);  // (Walking*)
 inline uintptr_t WalkingExtension_KnockDown         = resolve(0x106370);  // (Walking*, Vector2 const&)
 inline uintptr_t WalkingExtension_SetNoWalkFrame    = resolve(0x107030);  // (Walking*, int)
-inline uintptr_t WalkingExtension_ForceReset        = resolve(0);  // (Walking*)  // TODO
+inline uintptr_t WalkingExtension_ForceReset        = resolve(0x106e00);  // (Walking*) -- resets walk-state this+0xe0=2; called by Reset/StopWalking/KnockDown
 inline uintptr_t WalkingExtension_Reset             = resolve(0x105ab0);  // (Walking*)
 inline uintptr_t ThwackerExtension_SetThwackSpeed   = resolve(0x1036b0);  // (Thwacker*, float)
-inline uintptr_t ThwackerExtension_IsThwacking      = resolve(0);  // (Thwacker*) const -> bool  // TODO
-inline uintptr_t ThwackerExtension_GetCentre        = resolve(0);  // (Thwacker*) const -> Vector2  // TODO
+inline uintptr_t ThwackerExtension_IsThwacking      = resolve(0);  // (Thwacker*) const -> bool  // NOT FOUND as standalone (inlined/folded). closest: FUN_00503600 (0x103600) = (state@this+0x30==0) i.e. the INVERSE; thwacking == state!=0
+inline uintptr_t ThwackerExtension_GetCentre        = resolve(0);  // (Thwacker*) const -> Vector2  // NOT FOUND: no Vector2-returning method in Thwacker cluster (0x503000-0x503e00); inlined/folded
 inline uintptr_t EdibleExtension_GetEaten           = resolve(0xfcca0);  // (Edible*) const -> bool
-inline uintptr_t EdibleExtension_GetEater           = resolve(0);  // (Edible*) const -> unsigned int  // TODO
-inline uintptr_t EdibleExtension_IsEatenBy          = resolve(0);  // (Edible*, unsigned int) const -> bool  // TODO
+inline uintptr_t EdibleExtension_GetEater           = resolve(0);  // (Edible*) const -> unsigned int  // NOT FOUND as standalone (inlined/folded). eaters are a std::set<uint>@this+0x8; GetEater would return *begin(). use IsEatenBy(0xfccb0) for membership instead.
+inline uintptr_t EdibleExtension_IsEatenBy          = resolve(0xfccb0);  // (Edible*, unsigned int) const -> bool -- set<uint> membership lookup on eater-set @this+0x8; RET 0x4
 inline uintptr_t LightingExtension_IsLit            = resolve(0xff550);  // (Lighting*) const -> bool
 inline uintptr_t SuckableExtension_WasRecentlySucked = resolve(0x102f50);  // (Suckable*) const -> bool
 inline uintptr_t SuckableExtension_SetSucked        = resolve(0xf8930);  // (Suckable*)
@@ -192,15 +192,15 @@ inline uintptr_t HoldingExtension_IsHolding         = resolve(0xfe900);  // (Hol
 inline uintptr_t HoldingExtension_IsHoldingAny      = resolve(0xfe930);  // (Holding*) const -> bool
 inline uintptr_t HoldingExtension_HoldObject        = resolve(0xfe850);  // (Holding*, Object*)
 inline uintptr_t HoldingExtension_ReleaseAll        = resolve(0xfe940);  // (Holding*)
-inline uintptr_t HoldingExtension_ReleaseObject     = resolve(0);  // (Holding*, Object const*)  // TODO
+inline uintptr_t HoldingExtension_ReleaseObject     = resolve(0);  // (Holding*, Object const*)  // NOT FOUND as standalone (inlined/folded). holding container is vector<Object*>@this+0x8..0xc; only bulk ReleaseAll(0xfe940) survives. single-object erase was inlined at call sites.
 inline uintptr_t HoldingExtension_GetHolds          = resolve(0xd38e0);  // (Holding*) const -> vector<Object*>&
 inline uintptr_t FlyingExtension_SetState           = resolve(0xfe4e0);  // (Flying*, unsigned long FS_*)
 inline uintptr_t FlyingExtension_GetState           = resolve(0xf75e0);  // (Flying*) const -> unsigned long (FS_*)
 inline uintptr_t EmotionExtension_RecentlyChanged   = resolve(0xfda90);  // (Emotion*) const -> bool
-inline uintptr_t EmotionExtension_GetEmotionName    = resolve(0);  // (Emotion*) const -> char const*  // TODO
-inline uintptr_t EmotionExtension_SetEmotionName    = resolve(0);  // (Emotion*, char const*)  // TODO
+inline uintptr_t EmotionExtension_GetEmotionName    = resolve(0xfd940);  // (Emotion*) const -> char const* -- std::string::c_str of emotion-name member @this+0x20
+inline uintptr_t EmotionExtension_SetEmotionName    = resolve(0);  // (Emotion*, char const*)  // NOT FOUND: no standalone char* setter in build (inlined/folded); member is std::string @this+0x20 (use std::string::assign helper FUN_0043fea0)
 inline uintptr_t EmotionPlatformExtension_GetCurrentEmotion = resolve(0xfdd20);  // (EmoPlat*) const -> unsigned int
 inline uintptr_t EmotionPlatformExtension_MatchesCurrentEmotion = resolve(0xfdf40);  // (EmoPlat*) const -> bool
-inline uintptr_t EmotionPlatformExtension_SetEmotion = resolve(0);  // (EmoPlat*, unsigned int)  // TODO
+inline uintptr_t EmotionPlatformExtension_SetEmotion = resolve(0xfdfe0);  // (EmoPlat*, unsigned int) -- stores idx to this+0x14 (field GetCurrentEmotion reads) + fires change notify; RET 0x4
 
 }} // namespace Eets::addr

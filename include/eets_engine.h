@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <new>
 #include <string>
 #include <unordered_map>
 #ifdef _WIN32
@@ -464,17 +465,40 @@ inline void WalkingExtension_ForceReset(WalkingExtension* w) { EC<void(WalkingEx
 inline void WalkingExtension_Reset(WalkingExtension* w) { EC<void(WalkingExtension*)>(addr::WalkingExtension_Reset)(w); }
 
 inline void ThwackerExtension_SetThwackSpeed(ThwackerExtension* t, float s) { EC<void(ThwackerExtension*, float)>(addr::ThwackerExtension_SetThwackSpeed)(t, s); }
-inline bool ThwackerExtension_IsThwacking(ThwackerExtension* t) { return EC<bool(ThwackerExtension*)>(addr::ThwackerExtension_IsThwacking)(t); }
-inline Vector2 ThwackerExtension_GetCentre(ThwackerExtension* t) {
+inline bool ThwackerExtension_IsThwacking(ThwackerExtension* t) {
 #ifdef _WIN32
-	Vector2 r; EC<void(ThwackerExtension*, Vector2*)>(addr::ThwackerExtension_GetCentre)(t, &r); return r;
+	return t ? *(int*)((char*)t + 0x30) != 0 : false;   // standalone getter MSVC-inlined; thwack-state @+0x30 (0 = idle)
 #else
-	return FC<Vector2(ThwackerExtension*)>(addr::ThwackerExtension_GetCentre)(t);
+	return EC<bool(ThwackerExtension*)>(addr::ThwackerExtension_IsThwacking)(t);
 #endif
+}
+inline Vector2 ThwackerExtension_GetCentre(ThwackerExtension* t) {
+	Vector2 r{0.0f, 0.0f};   // default; the Win build computes the centre inline (no standalone fn) - see below
+#ifdef _WIN32
+	(void)t;   // ThwackerExtension::GetCentre is MSVC-inlined; no address and no stored Vector2 field to read.
+#else
+	r = FC<Vector2(ThwackerExtension*)>(addr::ThwackerExtension_GetCentre)(t);
+#endif
+	return r;
 }
 
 inline bool EdibleExtension_GetEaten(EdibleExtension* e) { return EC<bool(EdibleExtension*)>(addr::EdibleExtension_GetEaten)(e); }
-inline unsigned EdibleExtension_GetEater(EdibleExtension* e) { return EC<unsigned(EdibleExtension*)>(addr::EdibleExtension_GetEater)(e); }
+inline unsigned EdibleExtension_GetEater(EdibleExtension* e) {
+#ifdef _WIN32
+	// standalone getter MSVC-inlined; eaters are a std::set<unsigned> @this+0x8. Return the first
+	// (lowest) eater id by walking the MSVC _Tree: set{_Myhead@+0, _Mysize@+4}; begin = _Myhead->_Left;
+	// node{_Left@0,_Parent@4,_Right@8,_Color@0xc,_Isnil@0xd, _Myval@0x10}.
+	if (!e) return 0;
+	char* set = (char*)e + 0x8;
+	if (*(unsigned*)(set + 4) == 0) return 0;          // empty set -> no eater
+	char* head = *(char**)set;
+	if (!head) return 0;
+	char* begin = *(char**)head;                       // _Myhead->_Left = leftmost
+	return begin ? *(unsigned*)(begin + 0x10) : 0;
+#else
+	return EC<unsigned(EdibleExtension*)>(addr::EdibleExtension_GetEater)(e);
+#endif
+}
 inline bool EdibleExtension_IsEatenBy(EdibleExtension* e, unsigned id) { return EC<bool(EdibleExtension*, unsigned)>(addr::EdibleExtension_IsEatenBy)(e, id); }
 
 inline bool LightingExtension_IsLit(LightingExtension* l) { return EC<bool(LightingExtension*)>(addr::LightingExtension_IsLit)(l); }
@@ -510,7 +534,15 @@ inline unsigned long FlyingExtension_GetState(FlyingExtension* f) { return EC<un
 
 inline bool EmotionExtension_RecentlyChanged(EmotionExtension* e) { return EC<bool(EmotionExtension*)>(addr::EmotionExtension_RecentlyChanged)(e); }
 inline const char* EmotionExtension_GetEmotionName(EmotionExtension* e) { return EC<const char*(EmotionExtension*)>(addr::EmotionExtension_GetEmotionName)(e); }
-inline void EmotionExtension_SetEmotionName(EmotionExtension* e, const char* n) { EC<void(EmotionExtension*, const char*)>(addr::EmotionExtension_SetEmotionName)(e, n); }
+inline void EmotionExtension_SetEmotionName(EmotionExtension* e, const char* n) {
+#ifdef _WIN32
+	// standalone setter MSVC-inlined; the name is a std::string @this+0x20. Overwrite it in place
+	// with a fresh MSVC-layout string (SSO for the short emotion names; GetEmotionName reads it back).
+	if (e) new ((char*)e + 0x20) EString(n ? n : "");
+#else
+	EC<void(EmotionExtension*, const char*)>(addr::EmotionExtension_SetEmotionName)(e, n);
+#endif
+}
 
 inline unsigned EmotionPlatformExtension_GetCurrentEmotion(EmotionPlatformExtension* e) { return EC<unsigned(EmotionPlatformExtension*)>(addr::EmotionPlatformExtension_GetCurrentEmotion)(e); }
 inline bool EmotionPlatformExtension_MatchesCurrentEmotion(EmotionPlatformExtension* e) { return EC<bool(EmotionPlatformExtension*)>(addr::EmotionPlatformExtension_MatchesCurrentEmotion)(e); }
