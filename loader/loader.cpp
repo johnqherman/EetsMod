@@ -925,8 +925,9 @@ int SDL_PollEvent(void* event) {
 // On Linux the three functions above (FNA3D_SwapBuffers / SDL_PollEvent /
 // FNA3D_SetViewport) are LD_PRELOAD interposers. On Windows we instead ship as
 // version.dll: Eets.exe loads SDL2.dll, SDL2.dll imports GetFileVersionInfoA /
-// GetFileVersionInfoSizeA / VerQueryValueA from "version" - so our DLL has to
-// satisfy those (we forward them to the real system version.dll), and we redirect
+// GetFileVersionInfoSizeA / VerQueryValueA from "version" - but naming our DLL
+// "version" replaces the system one process-wide, so we forward EVERY version.dll
+// export to the real one (not just SDL2's three), and we redirect
 // the game's calls into FNA3D/SDL by rewriting the matching IAT slots of Eets.exe
 // to point at our functions. The originals stay reachable via dlsym(RTLD_NEXT),
 // shimmed in compat.h to GetModuleHandle+GetProcAddress, so the call-through in
@@ -964,32 +965,100 @@ FARPROC real_version_proc(const char* name) {
 }
 } // namespace
 
-// SDL2.dll imports exactly these three from "version". Signatures match <winver.h>
-// (BOOL/DWORD/LPCSTR/LPVOID/LPDWORD/PUINT) so the IAT sees the expected ABI.
+// Overriding "version" replaces the system DLL process-wide, so EVERY export the
+// real version.dll provides must exist here too - a caller of any unforwarded one
+// (e.g. SDL2 needs GetFileVersionInfoSizeA/VerQueryValueA, but other code may call
+// the W/Ex variants) would otherwise hit a missing function and Wine would abort.
+// We forward the complete export set; signatures are taken verbatim from <winver.h>
+// (pulled in by <windows.h>) so the IAT and the forwarded call share one ABI.
+//
+// VERSION_PROXY(ret, name, params, ptypes, args, fail): define an undecorated
+// (-Wl,--kill-at) WINAPI export that resolves "name" in the real version.dll once,
+// caches it, and calls through - returning `fail` if it could not be resolved.
+//   params : the parameter list, verbatim from winver.h (names included)
+//   ptypes : the same parameters' TYPES only, for the function-pointer cast
+//   args   : the parameter names, forwarded in the call
+#define VERSION_PROXY(ret, name, params, ptypes, args, fail)                 \
+	__declspec(dllexport) ret WINAPI name params {                           \
+		typedef ret (WINAPI *Fn) ptypes;                                     \
+		static Fn fn = (Fn)real_version_proc(#name);                         \
+		return fn ? fn args : (fail);                                        \
+	}
+
 extern "C" {
 
-__declspec(dllexport)
-BOOL WINAPI GetFileVersionInfoA(LPCSTR lptstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData) {
-	typedef BOOL (WINAPI *Fn)(LPCSTR, DWORD, DWORD, LPVOID);
-	static Fn fn = (Fn)real_version_proc("GetFileVersionInfoA");
-	return fn ? fn(lptstrFilename, dwHandle, dwLen, lpData) : FALSE;
-}
+VERSION_PROXY(DWORD, GetFileVersionInfoSizeA,
+	(LPCSTR lptstrFilename, LPDWORD lpdwHandle),
+	(LPCSTR, LPDWORD),
+	(lptstrFilename, lpdwHandle), 0)
+VERSION_PROXY(DWORD, GetFileVersionInfoSizeW,
+	(LPCWSTR lptstrFilename, LPDWORD lpdwHandle),
+	(LPCWSTR, LPDWORD),
+	(lptstrFilename, lpdwHandle), 0)
+VERSION_PROXY(DWORD, GetFileVersionInfoSizeExA,
+	(DWORD dwFlags, LPCSTR lpwstrFilename, LPDWORD lpdwHandle),
+	(DWORD, LPCSTR, LPDWORD),
+	(dwFlags, lpwstrFilename, lpdwHandle), 0)
+VERSION_PROXY(DWORD, GetFileVersionInfoSizeExW,
+	(DWORD dwFlags, LPCWSTR lpwstrFilename, LPDWORD lpdwHandle),
+	(DWORD, LPCWSTR, LPDWORD),
+	(dwFlags, lpwstrFilename, lpdwHandle), 0)
 
-__declspec(dllexport)
-DWORD WINAPI GetFileVersionInfoSizeA(LPCSTR lptstrFilename, LPDWORD lpdwHandle) {
-	typedef DWORD (WINAPI *Fn)(LPCSTR, LPDWORD);
-	static Fn fn = (Fn)real_version_proc("GetFileVersionInfoSizeA");
-	return fn ? fn(lptstrFilename, lpdwHandle) : 0;
-}
+VERSION_PROXY(BOOL, GetFileVersionInfoA,
+	(LPCSTR lptstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData),
+	(LPCSTR, DWORD, DWORD, LPVOID),
+	(lptstrFilename, dwHandle, dwLen, lpData), FALSE)
+VERSION_PROXY(BOOL, GetFileVersionInfoW,
+	(LPCWSTR lptstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData),
+	(LPCWSTR, DWORD, DWORD, LPVOID),
+	(lptstrFilename, dwHandle, dwLen, lpData), FALSE)
+VERSION_PROXY(BOOL, GetFileVersionInfoExA,
+	(DWORD dwFlags, LPCSTR lpwstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData),
+	(DWORD, LPCSTR, DWORD, DWORD, LPVOID),
+	(dwFlags, lpwstrFilename, dwHandle, dwLen, lpData), FALSE)
+VERSION_PROXY(BOOL, GetFileVersionInfoExW,
+	(DWORD dwFlags, LPCWSTR lpwstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData),
+	(DWORD, LPCWSTR, DWORD, DWORD, LPVOID),
+	(dwFlags, lpwstrFilename, dwHandle, dwLen, lpData), FALSE)
 
-__declspec(dllexport)
-BOOL WINAPI VerQueryValueA(LPCVOID pBlock, LPCSTR lpSubBlock, LPVOID* lplpBuffer, PUINT puLen) {
-	typedef BOOL (WINAPI *Fn)(LPCVOID, LPCSTR, LPVOID*, PUINT);
-	static Fn fn = (Fn)real_version_proc("VerQueryValueA");
-	return fn ? fn(pBlock, lpSubBlock, lplpBuffer, puLen) : FALSE;
-}
+VERSION_PROXY(BOOL, VerQueryValueA,
+	(LPCVOID pBlock, LPCSTR lpSubBlock, LPVOID* lplpBuffer, PUINT puLen),
+	(LPCVOID, LPCSTR, LPVOID*, PUINT),
+	(pBlock, lpSubBlock, lplpBuffer, puLen), FALSE)
+VERSION_PROXY(BOOL, VerQueryValueW,
+	(LPCVOID pBlock, LPCWSTR lpSubBlock, LPVOID* lplpBuffer, PUINT puLen),
+	(LPCVOID, LPCWSTR, LPVOID*, PUINT),
+	(pBlock, lpSubBlock, lplpBuffer, puLen), FALSE)
+
+VERSION_PROXY(DWORD, VerLanguageNameA,
+	(DWORD wLang, LPSTR szLang, DWORD nSize),
+	(DWORD, LPSTR, DWORD),
+	(wLang, szLang, nSize), 0)
+VERSION_PROXY(DWORD, VerLanguageNameW,
+	(DWORD wLang, LPWSTR szLang, DWORD nSize),
+	(DWORD, LPWSTR, DWORD),
+	(wLang, szLang, nSize), 0)
+
+VERSION_PROXY(DWORD, VerInstallFileA,
+	(DWORD uFlags, LPSTR szSrcFileName, LPSTR szDestFileName, LPSTR szSrcDir, LPSTR szDestDir, LPSTR szCurDir, LPSTR szTmpFile, PUINT lpuTmpFileLen),
+	(DWORD, LPSTR, LPSTR, LPSTR, LPSTR, LPSTR, LPSTR, PUINT),
+	(uFlags, szSrcFileName, szDestFileName, szSrcDir, szDestDir, szCurDir, szTmpFile, lpuTmpFileLen), 0)
+VERSION_PROXY(DWORD, VerInstallFileW,
+	(DWORD uFlags, LPWSTR szSrcFileName, LPWSTR szDestFileName, LPWSTR szSrcDir, LPWSTR szDestDir, LPWSTR szCurDir, LPWSTR szTmpFile, PUINT lpuTmpFileLen),
+	(DWORD, LPWSTR, LPWSTR, LPWSTR, LPWSTR, LPWSTR, LPWSTR, PUINT),
+	(uFlags, szSrcFileName, szDestFileName, szSrcDir, szDestDir, szCurDir, szTmpFile, lpuTmpFileLen), 0)
+
+VERSION_PROXY(DWORD, VerFindFileA,
+	(DWORD uFlags, LPSTR szFileName, LPSTR szWinDir, LPSTR szAppDir, LPSTR szCurDir, PUINT lpuCurDirLen, LPSTR szDestDir, PUINT lpuDestDirLen),
+	(DWORD, LPSTR, LPSTR, LPSTR, LPSTR, PUINT, LPSTR, PUINT),
+	(uFlags, szFileName, szWinDir, szAppDir, szCurDir, lpuCurDirLen, szDestDir, lpuDestDirLen), 0)
+VERSION_PROXY(DWORD, VerFindFileW,
+	(DWORD uFlags, LPWSTR szFileName, LPWSTR szWinDir, LPWSTR szAppDir, LPWSTR szCurDir, PUINT lpuCurDirLen, LPWSTR szDestDir, PUINT lpuDestDirLen),
+	(DWORD, LPWSTR, LPWSTR, LPWSTR, LPWSTR, PUINT, LPWSTR, PUINT),
+	(uFlags, szFileName, szWinDir, szAppDir, szCurDir, lpuCurDirLen, szDestDir, lpuDestDirLen), 0)
 
 } // extern "C"
+#undef VERSION_PROXY
 
 // ---- 2) IAT hook installer -------------------------------------------------
 namespace {
