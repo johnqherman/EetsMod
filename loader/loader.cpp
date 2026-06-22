@@ -2,11 +2,7 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#include <dlfcn.h>
-#include <dirent.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <link.h>
+#include "compat.h"
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -15,9 +11,6 @@
 #include <vector>
 #include <map>
 #include <algorithm>
-#include <csetjmp>
-#include <csignal>
-#include <ctime>
 #include <exception>
 #include "eets_engine.h"
 #include "hook.h"
@@ -80,11 +73,15 @@ std::string g_selected;
 std::string base() {
 	static std::string b;
 	if (b.empty()) {
+#ifdef _WIN32
+		b = eets_self_dir();
+#else
 		Dl_info info;
 		if (dladdr((void*)&base, &info) && info.dli_fname) {
 			std::string p = info.dli_fname; size_t s = p.find_last_of('/');
 			if (s != std::string::npos) b = p.substr(0, s);
 		}
+#endif
 		if (b.empty()) b = ".";
 	}
 	return b;
@@ -99,10 +96,26 @@ void logline(const char* fmt, ...) {
 }
 
 // crash guard: a faulting mod is disabled, the game survives
+#ifdef _WIN32
+// Windows: a vectored exception handler longjmps back to the guard when a mod faults.
+jmp_buf g_jmp;
+volatile long g_guarding = 0;
+#define EETS_SETJMP() setjmp(g_jmp)
+LONG WINAPI crash_veh(EXCEPTION_POINTERS* ep) {
+	DWORD c = ep->ExceptionRecord->ExceptionCode;
+	bool fatal = c == EXCEPTION_ACCESS_VIOLATION || c == EXCEPTION_ILLEGAL_INSTRUCTION ||
+	             c == EXCEPTION_INT_DIVIDE_BY_ZERO || c == EXCEPTION_FLT_DIVIDE_BY_ZERO ||
+	             c == EXCEPTION_PRIV_INSTRUCTION || c == EXCEPTION_IN_PAGE_ERROR;
+	if (g_guarding && fatal) { g_guarding = 0; longjmp(g_jmp, 1); }
+	return EXCEPTION_CONTINUE_SEARCH;   // not in a mod: let the engine/default handler run
+}
+void install_guards() { AddVectoredExceptionHandler(1, crash_veh); }
+#else
 sigjmp_buf g_jmp;
 volatile sig_atomic_t g_guarding = 0;
 struct sigaction g_old_sa[8];
 const int g_sigs[] = { SIGSEGV, SIGFPE, SIGILL, SIGBUS };
+#define EETS_SETJMP() sigsetjmp(g_jmp, 1)
 
 void crash_handler(int sig, siginfo_t* info, void* uctx) {
 	if (g_guarding) { g_guarding = 0; siglongjmp(g_jmp, sig); }
@@ -123,10 +136,11 @@ void install_guards() {
 	for (size_t i = 0; i < sizeof(g_sigs)/sizeof(g_sigs[0]); i++)
 		sigaction(g_sigs[i], &sa, &g_old_sa[i]);
 }
+#endif
 template <class Fn>
 bool guard(Mod* m, Fn&& fn) {
 	if (m && m->disabled) return false;
-	if (sigsetjmp(g_jmp, 1) == 0) {
+	if (EETS_SETJMP() == 0) {
 		g_guarding = 1;
 		try {
 			fn();
@@ -147,6 +161,9 @@ bool guard(Mod* m, Fn&& fn) {
 	return false;
 }
 
+#ifdef _WIN32
+void check_buildid() { logline("buildid: Windows PE - skipping GNU BuildID check"); }
+#else
 struct BuildIdCtx { char hex[64]; bool found; };
 int buildid_cb(struct dl_phdr_info* info, size_t, void* data) {
 	if (info->dlpi_name && info->dlpi_name[0] != '\0') return 0;  // main exe: empty name
@@ -181,6 +198,7 @@ void check_buildid() {
 		logline("buildid: engine addresses may be wrong - regenerate gen_engine_header.sh");
 	}
 }
+#endif
 
 std::string modsdir() { const char* e = getenv("EETS_MODS"); return e ? e : base() + "/mods"; }
 std::string datadir() { return base() + "/Data"; }
@@ -189,6 +207,9 @@ time_t mtime_of(const std::string& p) { struct stat s; return stat(p.c_str(), &s
 bool   exists(const std::string& p)   { struct stat s; return stat(p.c_str(), &s) == 0; }
 
 std::string loaderdir() {
+#ifdef _WIN32
+	return eets_self_dir();
+#else
 	Dl_info info;
 	if (dladdr((void*)&logline, &info) && info.dli_fname) {
 		std::string p = info.dli_fname;
@@ -196,6 +217,7 @@ std::string loaderdir() {
 		if (slash != std::string::npos) return p.substr(0, slash);
 	}
 	return ".";
+#endif
 }
 std::string includedir() {
 	const char* e = getenv("EETS_INCLUDE");
