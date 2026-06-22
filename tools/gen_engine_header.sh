@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerate the address constants in include/eets_engine.h for a given Eets
+# Regenerate the address constants in include/eets_addr.h for a given Eets
 # binary (addresses are stable per build because the binary is non-PIE).
 #   ./gen_engine_header.sh /path/to/Eets
 set -euo pipefail
@@ -31,4 +31,4 @@ for mangled in "${!SYMS[@]}"; do
 	fi
 done
 echo
-echo "Paste the constexpr lines into include/eets_engine.h (namespace addr)." >&2
+echo "Paste the constexpr lines into include/eets_addr.h (namespace Eets::addr)." >&2
