@@ -321,8 +321,16 @@ inline void* LoadSprite(const char* path, int format = 0) {
 	void* sprite = nullptr;
 	if (sm) {
 		struct { void* sprite; void* ctrl; } holder = { nullptr, nullptr };
+#ifdef _WIN32
+		// __thiscall + struct-return: `this`(sm) in ECX, hidden sret ptr is the first stack arg,
+		// then the name (MSVC std::string via EString) and format.
+		EString p(path);
+		EC<void(void*, void*, const EString&, int)>(addr::SpriteManager_Load)(sm, &holder, p, format);
+#else
+		// SysV sret method: hidden sret ptr first, then `this`, then args.
 		std::string p = path;
 		FC<void(void*, void*, const std::string&, int)>(addr::SpriteManager_Load)(&holder, sm, p, format);
+#endif
 		sprite = holder.sprite;     // keep the ref (cache it; persistent draw)
 	}
 	cache[path] = sprite;
