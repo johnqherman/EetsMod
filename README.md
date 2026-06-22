@@ -16,7 +16,6 @@ Turning on mod support is three steps:
    ```
    LD_PRELOAD=./libeetsmod.so %command%
    ```
-   (a fixed line - nothing to edit.)
 3. **Add mods.** Put `.eetsmod` files in the `mods` folder (next to `libeetsmod.so`;
    it appears after the first launch, or just make it). Press **Play**.
 
