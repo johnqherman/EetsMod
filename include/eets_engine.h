@@ -276,10 +276,20 @@ inline void FillRect(int x, int y, int w, int h, Color c) {
 }
 inline void FillCircle(int x, int y, float r, Color c, int segs = 24) {
 	void* g = GraphicsEngine_i(); if (!g) return;
-	if (!addr::GraphicsEngine_DrawCircleFilled) return;  // absent on Win32 (no procedural circle)
+#ifdef _WIN32
+	// the Win build has no procedural filled-circle primitive (it draws circles as sprites);
+	// reproduce one from horizontal FillRect scanlines so the Eets:: API matches Linux.
+	(void)segs;
+	int ri = (int)(r + 0.5f); if (ri < 1) return;
+	for (int dy = -ri; dy <= ri; ++dy) {
+		int half = (int)(__builtin_sqrtf((float)(ri * ri - dy * dy)) + 0.5f);
+		if (half > 0) FillRect(x - half, y + dy, half * 2, 1, c);
+	}
+#else
 	Color s = swab(c);
 	Vector2 p{(float)x, (float)y};
 	EC<void(void*, const Vector2&, float, const Color&, int)>(addr::GraphicsEngine_DrawCircleFilled)(g, p, r, s, segs);
+#endif
 }
 // built from filled bars - DrawLine ignores width
 inline void DrawRect(int x, int y, int w, int h, Color c, float t = 2.0f) {
