@@ -125,7 +125,7 @@ inline Vector2 Object_GetPosition(Object* o) {
 }
 inline Vector2 Object_GetVelocity(Object* o) {
 #ifdef _WIN32
-	return *((Vector2*(ECALL *)(Object*))addr::Object_GetVelocity)(o);
+	Vector2 r; ((void(ECALL *)(Object*, Vector2*))addr::Object_GetVelocity)(o, &r); return r;   // sret
 #else
 	return ((Vector2(*)(Object*))addr::Object_GetVelocity)(o);
 #endif
@@ -141,7 +141,7 @@ inline void Object_ForcePosition(Object* o, const Vector2& p) { ((void(ECALL *)(
 inline void Object_SetFacing(Object* o, const Vector2& f)     { ((void(ECALL *)(Object*, const Vector2&))addr::Object_SetFacing)(o, f); }
 inline Vector2 Object_GetFacing(Object* o) {
 #ifdef _WIN32
-	return *((Vector2*(ECALL *)(Object*))addr::Object_GetFacing)(o);
+	Vector2 r; ((void(ECALL *)(Object*, Vector2*))addr::Object_GetFacing)(o, &r); return r;   // sret
 #else
 	return ((Vector2(*)(Object*))addr::Object_GetFacing)(o);
 #endif
