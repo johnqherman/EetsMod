@@ -55,8 +55,30 @@ images/sounds/anims, the UI toolkit, object extensions, collisions).
 Eets is a non-PIE C++ ELF that links SDL2/FNA3D dynamically, so a preloaded loader
 interposes `FNA3D_SwapBuffers` (per-frame) and `SDL_PollEvent` (input), `dlopen`s mod
 `.so`s, and calls engine functions at their fixed addresses. Everything is derived by
-reverse-engineering the binary (non-PIE, so addresses are stable per build). Linux only
-today; a Windows port is stubbed but unwired (`include/eets_addr_win.h`) - PRs welcome.
+reverse-engineering the binary (non-PIE, so addresses are stable per build). The Windows
+build is supported too (see below); one mod `.cpp` builds for both platforms.
+
+## Windows / Proton
+
+The Windows build of Eets.exe (PE32 i386) is supported. The loader ships as a `version.dll`
+proxy that injects into the game, IAT-patches the same SDL2/FNA3D entry points, and loads
+native `.dll` mods - same engine API, same mod source. A mod author writes one `.cpp`;
+`eetsmod pack` cross-builds both the Linux `.so` and the Windows `.dll` into one `.eetsmod`.
+
+- Build the loader: `make win` -> `build/version.dll`.
+- Install: drop `version.dll` in the game folder and your mod `.dll` (or `.eetsmod`) in `mods/`.
+- Under **Proton**, set the Steam launch option `WINEDLLOVERRIDES="version=n,b" %command%`
+  so Wine loads our `version.dll` instead of its builtin. (Native Windows needs no option.)
+- Build a mod `.dll` directly (the link recipe avoids a fatal `libwinpthread-1.dll` import):
+  ```
+  i686-w64-mingw32-g++ -O2 -std=c++17 -Iinclude -shared -static-libgcc -static-libstdc++ \
+    -o mymod.dll mymod.cpp -L build -leetsmod \
+    -Wl,-Bstatic,--whole-archive,-l:libwinpthread.a,--no-whole-archive,-Bdynamic
+  ```
+
+Working on Windows: the in-game MODS manager UI, the engine API (draw/text/sprites,
+singletons, object + extension methods), engine event hooks (32-bit inline hooks), and
+in-process `.eetsmod` extraction. See `WINDOWS_PARITY.md` for the full status.
 
 ## Layout
 
