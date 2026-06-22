@@ -25,7 +25,8 @@ $(BUILD)/libeetsmod.so: loader/loader.cpp $(HDRS)
 win: $(BUILD)/version.dll
 $(BUILD)/version.dll: loader/loader.cpp $(WINHDRS)
 	@mkdir -p $(BUILD)
-	$(WINCXX) -O2 -std=c++17 -Wall -Iinclude -shared -static-libgcc -static-libstdc++ -Wl,--kill-at -o $@ loader/loader.cpp
+	$(WINCXX) -O2 -std=c++17 -Wall -Iinclude -DEETSMOD_LOADER -shared -static-libgcc -static-libstdc++ \
+		-Wl,--kill-at,--out-implib,$(BUILD)/libeetsmod.dll.a -o $@ loader/loader.cpp
 
 install: all
 	@test -n "$(GAME)" || { echo "usage: make install GAME=/path/to/Eets"; exit 1; }

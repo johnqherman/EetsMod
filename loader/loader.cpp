@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <exception>
 #include "eets_engine.h"
+#include "eetsmod.h"   // service decls; EETS_API marks them dllexport in the loader (Windows)
 #include "hook.h"
 
 #define EETSMOD_VERSION "0.18.0"
