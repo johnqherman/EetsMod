@@ -1,16 +1,4 @@
 #!/usr/bin/env bash
-# eetsmod - install the framework and build/package mods.
-# Players mostly don't need this: drop a .eetsmod in <game>/mods and manage in-game.
-# It's here for the one-time setup and for mod makers.
-#
-#   eetsmod setup [GAME]              install loader + headers, print the launch option
-#   eetsmod doctor [GAME]            diagnose the install
-#   eetsmod new <name>               scaffold a new mod
-#   eetsmod build <mod.cpp> [-o so]  compile a mod to a redistributable .so
-#   eetsmod pack <dir|mod.cpp> [-o f] bundle .so/.cpp + manifest + assets -> one .eetsmod
-#   eetsmod add <file> [GAME]         install a mod file (.eetsmod, .so, or .cpp)
-#   eetsmod remove <name> [GAME]      uninstall a mod
-#   eetsmod list [GAME]               list installed mods
 set -euo pipefail
 export LC_ALL=C
 

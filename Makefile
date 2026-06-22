@@ -4,12 +4,18 @@
 #   make install-examples GAME=.. -> install example .eetsmod bundles into <game>/mods/
 .PHONY: all loader install install-examples check apidoc bundles release clean
 
-VERSION := $(shell sed -n 's/.*EETSMOD_VERSION "\(.*\)".*/\1/p' loader/loader.cpp)
+VERSION  := $(shell sed -n 's/.*EETSMOD_VERSION "\(.*\)".*/\1/p' loader/loader.cpp)
+CXX      ?= g++
+CXXFLAGS ?= -O2 -fPIC -std=c++17 -Wall -Iinclude
+BUILD    ?= build
+HDRS     := loader/hook.h loader/platform.h include/eetsmod.h include/eets_engine.h include/eets_addr.h
 
 all: loader
+loader: $(BUILD)/libeetsmod.so
 
-loader:
-	$(MAKE) -C loader
+$(BUILD)/libeetsmod.so: loader/loader.cpp $(HDRS)
+	@mkdir -p $(BUILD)
+	$(CXX) $(CXXFLAGS) -shared -fvisibility=default -o $@ loader/loader.cpp -ldl
 
 install: all
 	@test -n "$(GAME)" || { echo "usage: make install GAME=/path/to/Eets"; exit 1; }
@@ -54,5 +60,4 @@ release: all bundles
 	@echo "-> dist/eetsmod-$(VERSION).tar.gz"
 
 clean:
-	$(MAKE) -C loader clean
-	rm -rf build dist
+	rm -rf build dist examples/build
