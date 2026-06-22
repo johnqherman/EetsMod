@@ -62,7 +62,6 @@ compile_so() {  # <src.cpp> <out.so> [game-for-includes]
 	"${CXX:-g++}" $opt -fPIC -std=c++17 -Wall -shared "-I$inc" ${EETSMOD_CXXFLAGS:-} -o "$out" "$src"
 }
 
-# wrap the game binary so the loader auto-injects with no Steam launch option.
 cmd_setup() {
 	local game; game="$(find_game "${1:-}")"
 	local so inc; so="$(loader_so)"; inc="$(includedir)"
@@ -74,7 +73,10 @@ cmd_setup() {
 	echo "  one-time: set this as the Eets Steam launch option"
 	echo "  (right-click Eets in your library > Properties > General > Launch Options):"
 	echo
-	echo "    LD_PRELOAD=$game/libeetsmod.so %command%"
+	echo "    LD_PRELOAD=./libeetsmod.so %command%"
+	echo
+	echo "  (a fixed line - no path to edit, survives moves/reinstalls. if mods don't"
+	echo "   load, use the absolute form: LD_PRELOAD=$game/libeetsmod.so %command%)"
 	echo
 	echo "  then drop a .eetsmod in $game/mods and press Play."
 	echo "  in-game: click MODS (bottom-left of the main menu) to enable/configure."

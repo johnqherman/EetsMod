@@ -54,7 +54,7 @@ release: all bundles
 	cp README.md dist/eetsmod-$(VERSION)/ 2>/dev/null || true
 	cp bin/eetsmod tools/check-mod.sh tools/new-mod.sh tools/add-sound.sh dist/eetsmod-$(VERSION)/ 2>/dev/null || true
 	cp docs/NATIVE_API.md dist/eetsmod-$(VERSION)/ 2>/dev/null || true
-	printf '#!/usr/bin/env bash\nset -e\nG="$${1:-$$HOME/.local/share/Steam/steamapps/common/Eets}"\n[ -x "$$G/Eets" ] || { echo "no Eets at $$G"; exit 1; }\ninstall -m644 libeetsmod.so "$$G/"\nmkdir -p "$$G/eetsmod-include" "$$G/mods"\ninstall -m644 eetsmod-include/*.h "$$G/eetsmod-include/"\nfor m in mods/*.eetsmod; do [ -f "$$m" ] && cp "$$m" "$$G/mods/"; done\necho "installed. Steam launch option: LD_PRELOAD=$$G/libeetsmod.so %%command%%"\n' > dist/eetsmod-$(VERSION)/install.sh
+	printf '#!/usr/bin/env bash\nset -e\nG="$${1:-$$HOME/.local/share/Steam/steamapps/common/Eets}"\n[ -x "$$G/Eets" ] || { echo "no Eets at $$G"; exit 1; }\ninstall -m644 libeetsmod.so "$$G/"\nmkdir -p "$$G/eetsmod-include" "$$G/mods"\ninstall -m644 eetsmod-include/*.h "$$G/eetsmod-include/"\nfor m in mods/*.eetsmod; do [ -f "$$m" ] && cp "$$m" "$$G/mods/"; done\necho "installed. Steam launch option (paste as-is): LD_PRELOAD=./libeetsmod.so %%command%%"\n' > dist/eetsmod-$(VERSION)/install.sh
 	chmod +x dist/eetsmod-$(VERSION)/install.sh
 	cd dist && tar czf eetsmod-$(VERSION).tar.gz eetsmod-$(VERSION)
 	@echo "-> dist/eetsmod-$(VERSION).tar.gz"

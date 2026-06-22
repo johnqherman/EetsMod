@@ -4,21 +4,26 @@ A modding framework for **Eets** (the Klei puzzle game), a native C++ engine.
 Mods are native `.so` plugins, injected by a small `LD_PRELOAD` loader, packaged as
 one self-contained `.eetsmod` file - and managed from inside the game.
 
-## Play with mods
+## Play with mods (no terminal)
 
 A mod is one file: **`mymod.eetsmod`**, with everything inside - code, settings, art.
+Turning on mod support is three drag-drop / copy-paste steps, no terminal:
 
-1. **Turn on mod support once.** In the repo or a release, run `eetsmod setup`, then
-   paste the line it prints into the Eets **Steam launch options** (right-click Eets
-   in your library -> Properties -> General -> Launch Options):
+1. **Open the game folder.** In Steam, right-click **Eets -> Manage -> Browse local
+   files**. Drop **`libeetsmod.so`** (from a [release](../../releases)) into it.
+2. **Set the launch option.** Steam -> right-click **Eets -> Properties -> General ->
+   Launch Options**, paste exactly:
    ```
-   LD_PRELOAD=/path/to/Eets/libeetsmod.so %command%
+   LD_PRELOAD=./libeetsmod.so %command%
    ```
-2. **Add a mod.** Drop the `.eetsmod` file into the game's `mods` folder. That's it -
-   no compiler, no extra tools.
-3. **Play.** On the main menu, click the **MODS** button (bottom-left) to turn mods
-   on/off, change their settings, or open the mods folder to add more. (`F1` also
-   opens it.)
+   (a fixed line - nothing to edit.)
+3. **Add mods.** Put `.eetsmod` files in the `mods` folder (next to `libeetsmod.so`;
+   it appears after the first launch, or just make it). Press **Play**.
+
+In-game: on the main menu, click the **MODS** button (bottom-left) to enable/disable
+mods, change their settings, or open the mods folder. (`F1` also opens it.)
+
+> Prefer a command? `eetsmod setup` does step 1 + prints step 2 for you.
 
 > **Heads up:** mods are native code that runs as part of the game. Only install
 > mods from people you trust. See [`SECURITY.md`](SECURITY.md).
