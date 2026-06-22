@@ -444,9 +444,11 @@ void ECALL det_Complete(void* s, void* p) { orig_Complete(s, p); fire_event("lev
 typedef void (*EmotionFn)(unsigned long, unsigned int);
 EmotionFn orig_Emotion = nullptr;
 void det_Emotion(unsigned long h, unsigned int e) { orig_Emotion(h, e); fire_event("emotion_change", (void*)h, (void*)(unsigned long)e); }
-typedef void (*GoalFn)(void*);
+// World_CheckGoal returns int (the goal-check result the engine acts on) - the detour MUST
+// return it, else EAX leaks whatever the event dispatch left and the engine reads "goal reached".
+typedef int (*GoalFn)(void*);
 GoalFn orig_Goal = nullptr;
-void det_Goal(void* o) { orig_Goal(o); fire_event("goal_check", o, nullptr); }
+int det_Goal(void* o) { int r = orig_Goal(o); fire_event("goal_check", o, nullptr); return r; }
 // note: eets_death prologue isn't relocatable; detect via object_killed of World_GetEets()
 
 void try_hook(const char* name, void* target, void* detour, void** orig) {
