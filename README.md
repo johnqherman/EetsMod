@@ -61,7 +61,7 @@ native/
   include/           mod headers: engine API, addresses, UI toolkit
   examples/          example mods (source + <name>.assets/)
 tools/               check-mod, add-sound, gen-api-ref, decompile helpers
-docs/                INTERNALS, NATIVE_API, WINDOWS (port plan), decompiled/ (RE dump)
+docs/                INTERNALS, NATIVE_API, WINDOWS (port plan)
 ```
 
 ## License
