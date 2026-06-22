@@ -87,6 +87,11 @@ Recovery leads found in the decomp:
 
 Remaining is the per-function identity-mapping RE on top of this dump + a runtime launch per batch.
 
+## Graphics recovery — KEYSTONE DONE (GraphicsEngine_i)
+- **GraphicsEngine_i = global `DAT_00ee3db0` (RVA 0xae3db0)** holding GE* — NOT a function on Win32.
+  Proof: GE ctor `0x48e670` is called `FUN(DAT_00ee3db0,...)` by `0x4c1c30`, which reads `this+0x40/+0x44`
+  (= Linux w@+0x40 h@+0x44). Wired via `GE_instance()` (derefs global on Win32). Builds green; validate with a draw.
+
 ## Graphics recovery — candidates found (NOT yet validated)
 Draw layer = the FNA3D_DrawPrimitives callers (GraphicsEngine methods, `__thiscall`, read device at `this+0x20`):
 - **DrawLine ≈ 0x48d880** (primType 2=LineList, 1 line; sig `this, Vector2*, Vector2*, Color`) — high confidence
