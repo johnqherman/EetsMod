@@ -84,16 +84,20 @@ inline int   pclose_compat(FILE* f) { return _pclose(f); }
 #define popen(c, m) popen_compat((c), (m))
 #define pclose(f)   pclose_compat((f))
 
+// Always route clock_gettime through QueryPerformanceCounter via a macro, so we never link the
+// real symbol (it lives in libwinpthread, which newer mingw declares - defining CLOCK_MONOTONIC -
+// but does not auto-link, giving an "undefined reference to clock_gettime" at link time).
 #ifndef CLOCK_MONOTONIC
 #define CLOCK_MONOTONIC 1
-inline int clock_gettime(int, struct timespec* ts) {
+#endif
+inline int clock_gettime_compat(int, struct timespec* ts) {
     static LARGE_INTEGER freq; static BOOL have = QueryPerformanceFrequency(&freq);
     LARGE_INTEGER c; QueryPerformanceCounter(&c);
     ts->tv_sec  = (time_t)(c.QuadPart / freq.QuadPart);
     ts->tv_nsec = (long)((c.QuadPart % freq.QuadPart) * 1000000000ll / freq.QuadPart);
-    return have ? 0 : 0;
+    (void)have; return 0;
 }
-#endif
+#define clock_gettime(c, t) clock_gettime_compat((c), (t))
 
 // directory this DLL lives in (the game folder) - replaces dladdr on Linux.
 inline std::string eets_self_dir() {

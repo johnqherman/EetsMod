@@ -168,6 +168,7 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   void World_ShowPuzzleAsNew()
   void World_ShowSolutionTime(float a)
   void World_ShowTutorialDialog(const char* a)
+  void* GE_instance()
   void* GraphicsEngine_i()
   void* LoadAnim(const char* path)
   void* LoadSprite(const char* path, int format = 0)
@@ -202,25 +203,25 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
 
 ## Loader services (`eetsmod.h`)
 ```cpp
-  bool Hook(void* target, void* detour, void** original);
-  const char* ConfigGet(const char* mod, const char* key, const char* def);
-  const char* SaveGet(const char* mod, const char* key, const char* def);
-  double DeltaTime();
-  double Time();
-  float ConfigGetFloat(const char* mod, const char* key, float def);
-  float SaveGetFloat(const char* mod, const char* key, float def);
-  int   ConfigGetInt(const char* mod, const char* key, int def);
-  int   SaveGetInt(const char* mod, const char* key, int def);
-  int MouseX();
-  int MouseY();
-  int RenderHeight();
-  int RenderWidth();
-  void  SaveSet(const char* mod, const char* key, const char* val);
-  void  SaveSetFloat(const char* mod, const char* key, float v);
-  void  SaveSetInt(const char* mod, const char* key, int v);
-  void Log(const char* fmt, ...);
-  void StartTextInput();
-  void StopTextInput();
+  EETS_API bool Hook(void* target, void* detour, void** original);
+  EETS_API const char* ConfigGet(const char* mod, const char* key, const char* def);
+  EETS_API const char* SaveGet(const char* mod, const char* key, const char* def);
+  EETS_API double DeltaTime();
+  EETS_API double Time();
+  EETS_API float ConfigGetFloat(const char* mod, const char* key, float def);
+  EETS_API float SaveGetFloat(const char* mod, const char* key, float def);
+  EETS_API int   ConfigGetInt(const char* mod, const char* key, int def);
+  EETS_API int   SaveGetInt(const char* mod, const char* key, int def);
+  EETS_API int MouseX();
+  EETS_API int MouseY();
+  EETS_API int RenderHeight();
+  EETS_API int RenderWidth();
+  EETS_API void  SaveSet(const char* mod, const char* key, const char* val);
+  EETS_API void  SaveSetFloat(const char* mod, const char* key, float v);
+  EETS_API void  SaveSetInt(const char* mod, const char* key, int v);
+  EETS_API void Log(const char* fmt, ...);
+  EETS_API void StartTextInput();
+  EETS_API void StopTextInput();
 ```
 
 ## Mod entry points
