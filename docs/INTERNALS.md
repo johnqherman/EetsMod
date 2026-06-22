@@ -11,21 +11,14 @@ Findings backing the framework. Binary: `Eets`, x86-64 ELF, **not stripped**.
   Register Extensions -> Physics -> Sound -> FX -> World -> Simulator -> default key
   binds -> `dofile(DATA:localexec.lua)`.
 
-## Engine script hook (not used by the framework)
+## Finding an engine function (to add a wrapper)
 
-`localexec.lua` is `dofile`'d at boot, after the full Lua API and all extensions
-register; optional (engine only warns if missing), no binary patch needed. This is
-the engine's built-in Lua entry point - the framework does **not** use it. The loader
-injects via `LD_PRELOAD`, interposing `FNA3D_SwapBuffers` (per-frame) and
-`SDL_PollEvent` (input). The hook is documented here only as an engine fact.
-
-## Lua API recovery
-
-luabind registers Lua names that differ from the C++ static symbol names, so the
-authoritative list comes from dumping live `_G` inside `localexec` (`getfenv(1)`).
-Gotchas: keybind is `Bind` (not `Misc_BindKey`), print is `Print`, resource loader
-is `LoadFile`. Engine-invoked global hooks: `Update()` (per frame, confirmed),
-`OnPause()`, `OnUnpause()`. ~98 globals; class ctors exposed as userdata globals.
+luabind exposes ~98 globals whose Lua names differ from the C++ static symbols, so
+the address table is built by mapping names to symbols. To wrap an unmapped function,
+dump live `_G` (`getfenv(1)`) from the engine's optional `localexec.lua` boot hook to
+recover its name, then locate the symbol and decompile by address. Naming gotchas:
+keybind is `Bind` (not `Misc_BindKey`), print is `Print`, loader is `LoadFile`;
+engine-invoked global hooks are `Update()`, `OnPause()`, `OnUnpause()`.
 
 ## Objects / blueprints
 
@@ -39,16 +32,6 @@ is `LoadFile`. Engine-invoked global hooks: `Update()` (per frame, confirmed),
   are **lazy-loaded by name and cached** -> new objects are pure runtime drop-ins.
 - `AllObjects.lua` is read only by `FillToolbar(Toolbar&)` (level-editor palette),
   iterating `allobjects` -> `Toolbar::AddObject`. Not the blueprint registry.
-
-## Levels (.eet)
-
-- `.eet` = Lua 5.0 precompiled chunk. Header
-  `1b 4c 75 61 50 01 04 04 04 06 08 09 09 08 ...` (ESC"Lua", v5.0). Running the
-  chunk builds the level's global table (`Level`, `Objects`, per-object `Object`,
-  `posx`, `posy`, ...).
-- The engine's own `string.dump(loadstring(src))` produces a **byte-identical
-  header** (verified), so level source compiles to compatible `.eet` in-engine -
-  no external `luac`. `World_SaveLevel` is the C-side writer (CTRL+S in editor).
 
 ## Filepath aliases
 
