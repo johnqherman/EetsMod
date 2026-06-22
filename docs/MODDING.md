@@ -165,8 +165,9 @@ extern "C" void EetsMod_Update() {
 
 ## Engine API
 
-`eets_addr.h` has the **complete address table** for all 76 Lua-binding statics
-plus curated methods/UI; `eets_engine.h` adds typed wrappers and 2D primitives
+`eets_addr.h` has the **complete address table** - the engine's Lua-binding statics
+plus curated methods, singletons, UI, sound, and object extensions; `eets_engine.h`
+adds typed wrappers and 2D primitives
 (`FillRect`/`DrawRect`/`DrawLine`/`FillCircle`, `DrawText`/`DrawTextOutlined`,
 `World_*`, `Object_*`, `MotionModel_*`, `ForEachObject`, `RenderWidth/Height`).
 For any binding without a wrapper, cast `addr::X` to its signature (shown in the
