@@ -1,8 +1,10 @@
-# Eets native (C++) modding
+# Writing Eets mods (C++)
 
-Write a mod by dropping a single `.cpp` file in `<game>/mods/`. The loader
-compiles it on launch, injects it, calls it every frame, forwards input/events,
-and isolates crashes. Mods call engine functions directly.
+A mod is C++ that calls engine functions directly. While developing, drop a loose
+`.cpp` in `<game>/mods/` - the loader compiles it on launch, hot-reloads on save,
+runs it every frame, forwards input/events, and isolates crashes. To ship, `pack` it
+into a one-file `.eetsmod` (prebuilt `.so` + manifest + assets) - see
+[Dev workflow](#dev-workflow).
 
 ## How it works
 
@@ -10,7 +12,7 @@ Eets is a native, **non-PIE** C++ ELF that links SDL2/FNA3D dynamically. The
 preloaded `libeetsmod.so` interposes their PLT calls:
 - `FNA3D_SwapBuffers` -> per-frame tick (compile+load mods on first frame; run
   `EetsMod_Update`; poll for hot-reload; capture the render viewport; draw the
-  banner / F1 manager),
+  MODS button + manager overlay),
 - `SDL_PollEvent` -> keyboard + mouse -> mod callbacks,
 - `FNA3D_SetViewport` -> the true render size (correct in fullscreen).
 
@@ -34,7 +36,7 @@ In-game manager: click the **MODS** button (bottom-left of the main menu) or pre
 
 ## Writing a mod
 
-`tools/new-mod.sh <name>` scaffolds one, or create `<game>/mods/mymod.cpp`:
+`eetsmod new <name>` scaffolds one, or create `mymod.cpp`:
 
 ```cpp
 #include "eetsmod.h"
@@ -66,9 +68,9 @@ Entry points (all optional, `extern "C"`):
 
 Also: `Eets::Time()`/`DeltaTime()` (frame timing), `Eets::PlaySound(name)`,
 `Eets::DrawImage(path,x,y)` (custom images), `Eets::DrawAnim(path,x,y,dt)`
-(animated `.anim`, native rate), `Eets::DrawImageHUD` (screen-locked), the F1
-manager edits each mod's config live (`-`/`+`). Key codes are named: `EKEY_F1`,
-`EKEY_UP`, `EKEY_SPACE`, `'g'`, etc. (see `eetsmod.h`).
+(animated `.anim`, native rate), `Eets::DrawImageHUD` (screen-locked). The in-game
+manager (MODS button / F1) edits each mod's config live (`-`/`+`). Key codes are
+named: `EKEY_F1`, `EKEY_UP`, `EKEY_SPACE`, `'g'`, etc. (see `eetsmod.h`).
 
 ## Dev workflow
 

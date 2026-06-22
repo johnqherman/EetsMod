@@ -11,10 +11,13 @@ Findings backing the framework. Binary: `Eets`, x86-64 ELF, **not stripped**.
   Register Extensions -> Physics -> Sound -> FX -> World -> Simulator -> default key
   binds -> `dofile(DATA:localexec.lua)`.
 
-## Mod entry point
+## Engine script hook (not used by the framework)
 
 `localexec.lua` is `dofile`'d at boot, after the full Lua API and all extensions
-register. It is optional (engine only warns if missing). No binary patch needed.
+register; optional (engine only warns if missing), no binary patch needed. This is
+the engine's built-in Lua entry point - the framework does **not** use it. The loader
+injects via `LD_PRELOAD`, interposing `FNA3D_SwapBuffers` (per-frame) and
+`SDL_PollEvent` (input). The hook is documented here only as an engine fact.
 
 ## Lua API recovery
 
