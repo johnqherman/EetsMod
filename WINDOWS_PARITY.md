@@ -86,3 +86,14 @@ Recovery leads found in the decomp:
 - **Off-by-one** in the class registrars is fixed; `methods_fixed.json` in /tmp has the corrected pairs.
 
 Remaining is the per-function identity-mapping RE on top of this dump + a runtime launch per batch.
+
+## Graphics recovery — candidates found (NOT yet validated)
+Draw layer = the FNA3D_DrawPrimitives callers (GraphicsEngine methods, `__thiscall`, read device at `this+0x20`):
+- **DrawLine ≈ 0x48d880** (primType 2=LineList, 1 line; sig `this, Vector2*, Vector2*, Color`) — high confidence
+- Quad-drawers (primType 0, 2 triangles = filled quad): `0x48dbd0`, `0x48e030`, `0x48bf80` — one is DrawSquare,
+  others DrawSprite/DrawTexture/bg-image; disambiguate by texture binding + arg shape.
+- GE constructor = **0x48e670** (`FNA3D_CreateDevice(this+0x24,...)`).
+- **BLOCKER: GraphicsEngine_i** (the GE singleton accessor) — the ctor is this-based; the singleton is stored
+  by the ctor's *caller* via an indirect write the decompiler hides. Find the caller of 0x48e670 → the global
+  it stores → the tiny accessor returning it. Until then the draws can't be called/validated.
+These are UNCOMMITTED candidates; validating needs GraphicsEngine_i + a runtime launch (loader UI re-enable).
