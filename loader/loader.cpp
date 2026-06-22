@@ -803,13 +803,10 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		g_dt = now - last; last = now; g_time = now - start;
 	}
 	if (g_vp_cur_w > 0) { g_vp_w = g_vp_cur_w; g_vp_h = g_vp_cur_h; }
-#ifndef _WIN32  // ScreenWidth/Height read the unported GraphicsEngine singleton (Phase 0 tail)
 	{ static bool vlog = false; if (!vlog && g_vp_w > 0) { vlog = true; logline("render dims: %dx%d (configured %dx%d)", g_vp_w, g_vp_h, Eets::ScreenWidth(), Eets::ScreenHeight()); } }
-#endif
 	for (auto& m : g_mods) if (m.update && !m.disabled) guard(&m, [&]{ m.update(); });
 	if (++g_frame % RELOAD_POLL_FRAMES == 0) poll_reload();
 
-#ifndef _WIN32  // loader-drawn UI calls graphics internals not yet ported (Phase 0 tail) + ABI (Phase 2)
 	if (g_loaded && Eets::World_IsInMainMenu()) {
 		using namespace Eets;
 		size_t active = 0; for (auto& m : g_mods) if (!m.disabled) active++;
@@ -882,7 +879,6 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		DrawRect(OV_X + 6, y, OV_W - 12, OV_ROWH, Color(0, 0, 0, 255), 2.0f);
 		DrawTextOutlined(OV_X + 14, y + 4, "+ Add a mod (open mods folder)", FONT_SMALL, Color(255, 232, 40, 255));
 	}
-#endif  // loader UI deferred on Windows
 	g_vp_cur_w = g_vp_cur_h = 0;
 	if (real) real(device, src, dst, window);
 }

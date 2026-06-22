@@ -56,6 +56,27 @@ struct CollisionReport {
 	unsigned long id_2;           // +0x20
 };
 
+// Engine string ABI. The engine takes std::string by const-ref (reads only; caller owns).
+// On Linux that's libstdc++ std::string. On Win32 the engine is MSVC: its std::string has a
+// different memory layout, and mingw's std::string is NOT compatible - passing one crashes.
+// EString is compile-time-polymorphic: same call site, the type models the right ABI per platform.
+#ifdef _WIN32
+// MSVC 32-bit std::string (release): union{char buf[16]; char* ptr} @0x00, size @0x10, capacity @0x14.
+// SSO when capacity <= 0xf (data inline); else _Ptr. Passed by const-ref so sizeof is irrelevant -
+// only the field layout the engine reads matters (all confirmed from the decompiled TextPrinter).
+struct EString {
+	union { char buf[16]; const char* ptr; };
+	uint32_t size, cap;
+	EString(const char* s) {
+		size = s ? (uint32_t)std::strlen(s) : 0;
+		if (size < 16) { if (size) std::memcpy(buf, s, size); buf[size] = '\0'; cap = 15; }
+		else { ptr = s; cap = size; }   // SSO overflow: point at the caller's buffer (engine only reads it)
+	}
+};
+#else
+using EString = std::string;
+#endif
+
 // FontPrintSizes enum -> pixel height: 1=13 2=14 3=20 4=28 5=35
 enum FontSize { FONT_TINY = 1, FONT_SMALL = 2, FONT_NORMAL = 3, FONT_BIG = 4, FONT_HUGE = 5 };
 // FontPrintStyles -> typeface. STYLE_GEEK (geekabyte) is the in-game gui font.
@@ -199,9 +220,9 @@ inline void DrawText(int x, int y, const char* text, Color c = Color()) {
 // warning: dir is the baseline DIRECTION not a scale - keep horizontal {1,0} or text rotates; dirx<1 shrinks horizontally.
 inline void DrawTextSized(int x, int y, const char* text, int size,
                           Color c = Color(), int style = STYLE_NORMAL, float dirx = 1.0f) {
-	std::string s = text ? text : "";
+	EString s(text ? text : "");   // std::string on Linux, MSVC-layout on Win32 (same call site)
 	Vector2 pos{(float)x, (float)y}, dir{dirx, 0.0f};
-	((void(*)(const std::string&, int, int, Color, Vector2, bool, const Vector2&))
+	((void(*)(const EString&, int, int, Color, Vector2, bool, const Vector2&))
 	 addr::TextPrinter_DrawString)(s, size, style, c, pos, false, dir);
 }
 inline void DrawTextOutlined(int x, int y, const char* text, int size,

@@ -98,9 +98,11 @@ Remaining is the per-function identity-mapping RE on top of this dump + a runtim
   - **DrawLine `0x8d880`** (FNA3D prim 2; **`RET 0x10` = 4 args incl. `width`** — must pass width or stack corrupts/crashes).
   - **DrawSprite `0x8dbd0`** (prim 0). Sprite deps: `SpriteManager_i 0x89ff0`, `SpriteManager_Load 0x896c0`,
     `Sprite_GetWidth 0x88170`, `Sprite_GetHeight 0x88130`, `Sprite_GetDiffuseUV 0x88100` (sprite path not runtime-validated yet).
-  - **printText `0xb9b30`** (cdecl `(int x,int y,char const*,Color const&)`) — builds the MSVC std::string internally →
-    the **Windows-safe text API**. ⚠️ `TextPrinter_DrawString 0x83a40` takes an **MSVC `std::string` by value** —
-    NOT layout-compatible with mingw `std::string`; calling it from a mingw mod crashes. Route Win32 sized text via printText.
+  - **printText `0xb9b30`** (cdecl `(int x,int y,char const*,Color const&)`) — builds the MSVC std::string internally.
+  - **TextPrinter_DrawString `0x83a40`** (sized/styled text) — takes an MSVC `std::string` **by const-ref** (reads only,
+    caller owns). mingw `std::string` is NOT layout-compatible, so the shared header uses **`EString`** (compile-time
+    polymorphism: `std::string` on Linux, a struct mirroring MSVC's layout — buf[16]\@0, size\@0x10, cap\@0x14, SSO≤0xf —
+    on Win32). One call site, ABI absorbed by the type. ✅ Validated: all FontSizes + styles + the heap `_Ptr` (>15 char) path.
   - **DrawCircleFilled: ABSENT** in the Win build (full GE vtable enumerated; Eets draws circles as whitecircle sprites). FillCircle guards on 0.
 - **Build-recipe fix (all Win mods using std::string/static-locals):** the documented `-Wl,-Bstatic,-lwinpthread,-Bdynamic`
   LEAKS a `libwinpthread-1.dll` import (load-fails: "Module not found"). Use
