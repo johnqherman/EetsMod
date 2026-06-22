@@ -5,7 +5,11 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
-#include "eets_addr.h"
+#ifdef _WIN32
+#include "eets_addr_win.h"   // PE32 i386 RVAs, resolved at runtime
+#else
+#include "eets_addr.h"       // Linux x86-64 absolute addresses
+#endif
 
 namespace Eets {
 
