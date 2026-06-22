@@ -1,7 +1,7 @@
 #pragma once
-// Windows (PE32 i386) RVAs for Eets.exe, resolved at runtime. World/Sound/Misc from the
-// free-function registrar; Object/extension methods from the class registrars (backward-paired
-// funcptr). Struct-returning methods are luabind wrappers - deferred (TODO).
+// Windows (PE32 i386) RVAs for Eets.exe, resolved at runtime. Object/extension methods
+// from the class registrars (backward-paired funcptr). Struct-return methods return a
+// Vector2* (pointer in EAX), deref in the wrapper - NOT sret.
 #include <cstdint>
 #include <windows.h>
 namespace Eets { namespace addr {
@@ -86,14 +86,14 @@ inline uintptr_t World_ShowSolutionTime             = resolve(0xdc8d0);  // (flo
 inline uintptr_t World_ShowTutorialDialog           = resolve(0xdc900);  // (char const*)
 
 // ===== class methods (__thiscall: first arg is the object) =====
-inline uintptr_t Object_GetPosition                 = resolve(0);  // (Object*) -> Vector2  // TODO
-inline uintptr_t Object_GetVelocity                 = resolve(0);  // (Object*) -> Vector2  // TODO
+inline uintptr_t Object_GetPosition                 = resolve(0xaa0e0);  // (Object*) -> Vector2
+inline uintptr_t Object_GetVelocity                 = resolve(0xaa190);  // (Object*) -> Vector2
 inline uintptr_t Object_GetID                       = resolve(0xaa0b0);  // (Object*) -> unsigned long
 inline uintptr_t Object_GetMotionModel              = resolve(0xed050);  // (Object*) -> MotionModel*
 inline uintptr_t Object_SetPosition                 = resolve(0xab170);  // (Object*, Vector2 const&)
 inline uintptr_t Object_ForcePosition               = resolve(0xaa040);  // (Object*, Vector2 const&)
 inline uintptr_t Object_SetFacing                   = resolve(0xab0a0);  // (Object*, Vector2 const&)
-inline uintptr_t Object_GetFacing                   = resolve(0);  // (Object*) -> Vector2  // TODO
+inline uintptr_t Object_GetFacing                   = resolve(0xaa0f0);  // (Object*) -> Vector2
 inline uintptr_t Object_SetFlipped                  = resolve(0xee1b0);  // (Object*, bool)
 inline uintptr_t Object_GetFlipped                  = resolve(0xed040);  // (Object*) -> bool
 inline uintptr_t Object_KillMe                      = resolve(0xaa2a0);  // (Object*)
