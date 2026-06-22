@@ -52,20 +52,28 @@ Target binary: **Eets.exe, PE32 i386, ImageBase 0x400000, ASLR on** (preserved a
 - **Runtime validation loop:** build a tiny `.dll` canary that calls the target on `World_GetEets()`,
   log before each call, drop in `<game>/mods/`, `CTRL+<key>` in a level, read `Log/native_mods.log`.
 
-## ⏳ Remaining for 100% parity (the long tail; everything above is done + validated)
-1. **Asset pipeline RVAs (TODO in eets_addr_win.h):** Texture_Load/UploadTexture, IGraphicsEngine_DrawTexture,
-   Animation_* (8), TextureManager_LoadTexture, AnimExt_LoadAnimation, Anim_Get/SetCurrentFrameIndex.
-   (Anchor: TextureManager cache `FUN_004925d0` "Unable to find texture %s"; GE vtable 0x564668.)
-2. **Object_GetPosition value** — Win RVA `0xaa0e0` returns garbage on the Eets object (`this+0x38→+0x14+0xc`
-   is Eets-special); find the general getter (sret vs EAX-ptr — match GetVelocity/GetFacing which are sret).
-3. **Extension const-methods** — ThwackerExtension_IsThwacking/GetCentre, EdibleExtension_GetEater/IsEatenBy,
-   HoldingExtension_ReleaseObject, EmotionExtension_Get/SetEmotionName, EmotionPlatformExtension_SetEmotion,
-   WalkingExtension_ForceReset, PhysicsExtension_GetAccumulate/GetCollisions — different luabind thunk path.
-4. **The 6 remaining `hook_*` targets** (ObjectMgr::CreateObject, Simulator::LoadWinCondition/ResetSimulation,
-   LevelManager::CompleteLevel, Object::KillMe, Creator::StartEetsDeadDialog) — RVA recovery; path is proven.
-5. **PhysicsExtension collisions on Win32** — needs the win32 Object→physics slot offset + an MSVC-`std::deque`
-   walker (`CollisionReport.unsigned long` is 4 bytes on Win32 vs 8 on Linux). Currently guarded to no-op.
-6. **DrawCircleFilled** — absent in the Win build (no procedural circle; whitecircle sprites). FillCircle guards on 0.
+## ✅ Also done + validated since
+- **Asset pipeline wired:** Texture_Load/UploadTexture, IGraphicsEngine_DrawTexture, all Animation_* (Animation is
+  0x54 bytes on Win, ctor __thiscall), TextureManager_LoadTexture, AnimExt_LoadAnimation, Anim_Get/SetCurrentFrameIndex.
+  Sprite load+draw runtime-validated (SpriteManager_Load is __thiscall+sret+MSVC-string, confirmed vs disasm).
+- **All extension accessors fixed:** they are **cdecl luabind free fns** (Object* on the stack), not __thiscall - the
+  wrappers used EC and crashed; switched the 11 to FC. Validated: walk/emotion/position/holding all resolve + read.
+- **5 engine hooks live + validated** (CreateObject/LoadWin/Reset/Complete/KillMe). Detours carry ECALL (the targets
+  are __thiscall members; cdecl detours corrupted the stack -> splash crash). emotion/goal already worked (cdecl).
+- **Object_GetPosition** `0xaa0e0` is ABI-correct (Vector2* in EAX, identical to Linux). Its garbage-on-Eets is an
+  engine weakness shared with the Linux build, not a port bug - no separate general getter exists.
+
+## ⏳ Genuinely remaining (irreducible niche tail)
+1. **Functions MSVC inlined/COMDAT-folded out of existence** (no standalone address in the Win binary). Reimplemented
+   in the wrappers via raw struct access so the Eets:: API still matches: ThwackerExtension_IsThwacking (state@+0x30),
+   EdibleExtension_GetEater (MSVC set walk), EmotionExtension_SetEmotionName (in-place EString), DrawCircleFilled
+   (FillRect scanlines). **Two could not be faithfully faked:** ThwackerExtension_GetCentre (computed inline from the
+   held object, no field) → returns {0,0}; HoldingExtension_ReleaseObject (single-erase semantics inlined; only bulk
+   ReleaseAll survives) → no-op.
+2. **hook_Creator_OnEndEetsDeadDialog** — the dead-dialog-end event; not recovered. (StartEetsDeadDialog is a generic
+   name-based opener, so the eets_death hook is deferred; derive from object_killed of World_GetEets() meanwhile.)
+3. **PhysicsExtension collision deque on Win32** — GetAccumulate/GetCollisions resolve, but ForEachCollision needs an
+   MSVC-`std::deque` walker (`CollisionReport.unsigned long` is 4 bytes on Win vs 8 on Linux). Guarded to no-op.
 
 ## Branch
 `windows-parity` (pushed). Publish-prep on `main`. Graphics+UI, singletons, 32-bit hooks, and dual-binary
