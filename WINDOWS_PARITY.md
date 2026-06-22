@@ -13,6 +13,15 @@ Target binary: **Eets.exe, PE32 i386, ImageBase 0x400000, ASLR on** (preserved a
   `Save`/`Config` cross the boundary via the import lib `build/libeetsmod.dll.a`.
 - **Engine API:** free functions (gravity ✓), scalar member methods (GetFlipped/IsWalker/
   GetID/IsPhysicsEnabled ✓), struct-return members (GetFacing ✓), all via the right ABI.
+- **Graphics ✓ (validated in-game):** GraphicsEngine_i + FillRect/DrawRect/DrawLine/sprites +
+  sized & styled text (`EString` MSVC-string ABI shim). The **in-game MODS manager UI** renders + works.
+- **Singletons ✓:** ObjectMgr/Simulator/StringPool/TextureManager/(I)GraphicsEngine resolve; ForEachObject
+  walks 42 objs (ptr-size-correct vector). MotionModel_* + Localize + Misc_BindKey validated.
+- **Engine event hooks ✓ (Phase 3):** 32-bit E9 inline-hook path; World_ChangeEmotion/World_CheckGoal hook +
+  dispatch `goal_check`/`emotion_change` to mods, game stable. (6 more hook targets pending RVA recovery.)
+- **Bundles ✓ (Phase 4):** dual-binary `.eetsmod` (one bundle carries `.so`+`.dll`); fully in-process untar +
+  asset install (no tar/rm/cp/find shell-out, no inflate dep). Validated: lowgrav.eetsmod extracted + loaded.
+- **Build/CI:** mingw link recipe (`--whole-archive libwinpthread`) + a `build-windows` CI job. README Windows section.
 
 ## Hard-won facts (don't relearn these)
 - **Proton requires** Steam launch option `WINEDLLOVERRIDES="version=n,b" %command%` —
@@ -43,27 +52,24 @@ Target binary: **Eets.exe, PE32 i386, ImageBase 0x400000, ASLR on** (preserved a
 - **Runtime validation loop:** build a tiny `.dll` canary that calls the target on `World_GetEets()`,
   log before each call, drop in `<game>/mods/`, `CTRL+<key>` in a level, read `Log/native_mods.log`.
 
-## ⏳ Remaining for 100% parity (~55 internals + 2 phases)
-1. **Non-luabind engine internals (55, TODO in eets_addr_win.h)** — graphics (GraphicsEngine_i,
-   DrawSquare/DrawLine/DrawCircleFilled/DrawSprite, printText, TextPrinter_DrawString), singletons
-   (ObjectMgr_i/Simulator_i/SpriteManager_i/…), StringPool, Texture/Sprite/Animation/TextureManager,
-   MotionModel_* (3), the 6 `hook_*` targets, Anim_*, Misc_BindKey, PhysicsExtension_*.
-   **Method:** MSVC **RTTI is present** (`.?AVGraphicsEngine@@` @0x5abca4 → TypeDescriptor @0x5abc9c →
-   COL @0x58b63c → vtable) so classes are identifiable; draw primitives are clustered **non-virtual**
-   methods (Linux `0x54a0*`) needing behavioral ID; text setup anchored by `GEEKABYTE.TTF` @0x564448
-   → `FUN_004842f0`. The graphics ones re-enable the in-game MODS **UI** (currently `#ifdef`'d off on
-   Windows in loader.cpp — search `loader-drawn UI` / `engine event hooks: deferred`).
-2. **Object_GetPosition value** — `0x4aa0e0` returns garbage on the Eets object (its
-   `this+0x38→+0x14+0xc` chain looks Eets-special); find the general getter.
-3. **Extension const-methods (~23)** + ThwackerExtension_GetCentre — registered via a different
-   luabind path (member-fn-ptr thunks) the backward parse didn't capture.
-4. **Phase 3:** 32-bit inline-hook path in hook.h (E9 rel32, no REX) → the 8 engine event hooks
-   (`install_engine_event_hooks`, currently skipped on Windows).
-5. **Phase 4:** dual-binary `.eetsmod` (pack builds `.so`+`.dll`) + **in-process untar** (extract_bundles
-   shells out to tar/cp — skipped on Windows now) + README Windows/Proton section + CI mingw cross-build.
+## ⏳ Remaining for 100% parity (the long tail; everything above is done + validated)
+1. **Asset pipeline RVAs (TODO in eets_addr_win.h):** Texture_Load/UploadTexture, IGraphicsEngine_DrawTexture,
+   Animation_* (8), TextureManager_LoadTexture, AnimExt_LoadAnimation, Anim_Get/SetCurrentFrameIndex.
+   (Anchor: TextureManager cache `FUN_004925d0` "Unable to find texture %s"; GE vtable 0x564668.)
+2. **Object_GetPosition value** — Win RVA `0xaa0e0` returns garbage on the Eets object (`this+0x38→+0x14+0xc`
+   is Eets-special); find the general getter (sret vs EAX-ptr — match GetVelocity/GetFacing which are sret).
+3. **Extension const-methods** — ThwackerExtension_IsThwacking/GetCentre, EdibleExtension_GetEater/IsEatenBy,
+   HoldingExtension_ReleaseObject, EmotionExtension_Get/SetEmotionName, EmotionPlatformExtension_SetEmotion,
+   WalkingExtension_ForceReset, PhysicsExtension_GetAccumulate/GetCollisions — different luabind thunk path.
+4. **The 6 remaining `hook_*` targets** (ObjectMgr::CreateObject, Simulator::LoadWinCondition/ResetSimulation,
+   LevelManager::CompleteLevel, Object::KillMe, Creator::StartEetsDeadDialog) — RVA recovery; path is proven.
+5. **PhysicsExtension collisions on Win32** — needs the win32 Object→physics slot offset + an MSVC-`std::deque`
+   walker (`CollisionReport.unsigned long` is 4 bytes on Win32 vs 8 on Linux). Currently guarded to no-op.
+6. **DrawCircleFilled** — absent in the Win build (no procedural circle; whitecircle sprites). FillCircle guards on 0.
 
 ## Branch
-`windows-parity` (pushed). Publish-prep on `main`. ~18 commits; Linux build/examples green throughout.
+`windows-parity` (pushed). Publish-prep on `main`. Graphics+UI, singletons, 32-bit hooks, and dual-binary
+`.eetsmod`/in-process untar all landed + validated under Proton; Linux build/examples green throughout.
 
 ## Bulk recovery pipeline (for the 55 internals)
 Per-function MCP calls are too slow. Use the headless decompile dump:
