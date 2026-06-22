@@ -17,6 +17,13 @@
 
 #define EETSMOD_VERSION "0.18.0"
 
+// a mod's native binary: .dll on Windows, .so on Linux. .eetsmod bundles carry both.
+#ifdef _WIN32
+#define MOD_EXT ".dll"
+#else
+#define MOD_EXT ".so"
+#endif
+
 namespace {
 
 typedef void (*InitFn)();
@@ -481,7 +488,7 @@ void extract_bundles() {
 // build a Mod from an extracted bundle staging dir; false if it has no .so/.cpp
 bool make_bundle_mod(const std::string& name, Mod& m) {
 	std::string sdir = bundle_dir(name);
-	std::string so = sdir + "/" + name + ".so", cpp = sdir + "/" + name + ".cpp", cfg = sdir + "/" + name + ".cfg";
+	std::string so = sdir + "/" + name + MOD_EXT, cpp = sdir + "/" + name + ".cpp", cfg = sdir + "/" + name + ".cfg";
 	m.name = name;
 	if (exists(so)) m.so = so;
 	else if (exists(cpp)) { m.src = cpp; m.so = cachedir() + "/" + name + ".so"; }
@@ -543,7 +550,7 @@ void load_all() {
 		std::vector<std::string> files;
 		while ((ent = readdir(d)) != nullptr) {
 			std::string n = ent->d_name;
-			if (ends_with(n, ".eetsmod") || ends_with(n, ".cpp") || ends_with(n, ".so")) files.push_back(n);
+			if (ends_with(n, ".eetsmod") || ends_with(n, ".cpp") || ends_with(n, MOD_EXT)) files.push_back(n);
 		}
 		closedir(d);
 		std::sort(files.begin(), files.end(), [](const std::string& a, const std::string& b) {
@@ -555,7 +562,7 @@ void load_all() {
 			if (dup) { logline("loader: ignoring %s (mod '%s' already provided)", n.c_str(), name.c_str()); continue; }
 			Mod m; m.name = name;
 			if (ends_with(n, ".eetsmod")) { if (!make_bundle_mod(name, m)) continue; }
-			else if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + name + ".so"; }
+			else if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + name + MOD_EXT; }
 			else { m.so = dir + "/" + n; }
 			read_manifest(m);
 			names.push_back(name);
@@ -623,12 +630,12 @@ void poll_reload() {
 	while ((ent = readdir(d)) != nullptr) {
 		std::string n = ent->d_name;
 		std::string st = stem(n);
-		if (!ends_with(n, ".cpp") && !ends_with(n, ".so") && !ends_with(n, ".eetsmod")) continue;
+		if (!ends_with(n, ".cpp") && !ends_with(n, MOD_EXT) && !ends_with(n, ".eetsmod")) continue;
 		bool known = false; for (auto& m : g_mods) if (m.name == st) { known = true; break; }
 		if (known) continue;
 		Mod m; m.name = st;
 		if (ends_with(n, ".eetsmod")) { if (!make_bundle_mod(st, m)) continue; }
-		else if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + st + ".so"; }
+		else if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + st + MOD_EXT; }
 		else { m.so = dir + "/" + n; }
 		read_manifest(m);
 		if (open_mod(m)) { g_mods.push_back(m); logline("reload: new mod %s", st.c_str());
