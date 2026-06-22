@@ -66,6 +66,114 @@ inline void make_exec(void* a, size_t l)     { prot(a, l, PROT_READ | PROT_EXEC)
 
 inline int modrm_len(const uint8_t* p);
 
+#ifdef _WIN32
+// ===== 32-bit (i386) length decoder + E9 rel32 hook (Win32/Proton) =====
+// 32-bit has no REX and no RIP-relative addressing: ModRM mod0/rm5 is an ABSOLUTE disp32,
+// so such instructions relocate verbatim (the address doesn't move when we copy the prologue).
+constexpr int JMP_SIZE = 5;   // E9 rel32
+
+inline void write_jmp(uint8_t* at, void* target) {
+	at[0] = 0xE9;
+	*(int32_t*)(at + 1) = (int32_t)((uint8_t*)target - (at + 5));
+}
+inline int prefix_len(const uint8_t* ins) {   // legacy prefixes only (0x40-0x4F are INC/DEC, not REX)
+	int i = 0;
+	while (ins[i] == 0x66 || ins[i] == 0x67 || ins[i] == 0xF0 || ins[i] == 0xF2 || ins[i] == 0xF3 ||
+	       ins[i] == 0x2E || ins[i] == 0x36 || ins[i] == 0x3E || ins[i] == 0x26 ||
+	       ins[i] == 0x64 || ins[i] == 0x65) i++;
+	return i;
+}
+inline int modrm_len(const uint8_t* p) {
+	uint8_t modrm = p[0];
+	int mod = modrm >> 6, rm = modrm & 7;
+	int n = 1;
+	if (mod == 3) return n;                                   // register direct
+	if (rm == 4) {                                            // SIB
+		uint8_t sib = p[1]; n++;
+		int base = sib & 7;
+		if (mod == 0 && base == 5) n += 4;                   // disp32
+	} else if (mod == 0 && rm == 5) {
+		return n + 4;                                        // ABSOLUTE disp32 (not RIP-rel): relocatable verbatim
+	}
+	if (mod == 1) n += 1;                                     // disp8
+	else if (mod == 2) n += 4;                               // disp32
+	return n;
+}
+inline int insn_len(const uint8_t* p) {
+	int len = 0; bool op66 = false;
+	for (;;) {
+		uint8_t b = p[len];
+		if (b == 0x66) { op66 = true; len++; continue; }
+		if (b == 0x67 || b == 0xF0 || b == 0xF2 || b == 0xF3 ||
+		    b == 0x2E || b == 0x36 || b == 0x3E || b == 0x26 || b == 0x64 || b == 0x65) { len++; continue; }
+		break;
+	}
+	uint8_t op = p[len++];
+	if (op == 0x0F) {                                         // two-byte opcodes
+		uint8_t op2 = p[len++];
+		if (op2 >= 0x80 && op2 <= 0x8F) return len + 4;      // jcc rel32 (relocated in trampoline)
+		if (op2 == 0x1F) goto modrm;                         // multi-byte NOP
+		if (op2 == 0xB6 || op2 == 0xB7 || op2 == 0xBE || op2 == 0xBF ||  // movzx/movsx
+		    op2 == 0xAF ||                                   // imul r,r/m
+		    (op2 >= 0x90 && op2 <= 0x9F) ||                  // setcc r/m8
+		    (op2 >= 0x40 && op2 <= 0x4F) ||                  // cmovcc
+		    op2 == 0x10 || op2 == 0x11 || op2 == 0x28 || op2 == 0x29 ||  // movups/movaps
+		    op2 == 0x6E || op2 == 0x7E || op2 == 0xD6 || op2 == 0x57 || op2 == 0xEF) goto modrm;
+		return 0;                                            // unknown 2-byte op: refuse
+	}
+	switch (op) {
+		case 0x50: case 0x51: case 0x52: case 0x53: case 0x54: case 0x55: case 0x56: case 0x57:  // push r32
+		case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D: case 0x5E: case 0x5F:  // pop r32
+		case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x46: case 0x47:  // inc r32
+		case 0x48: case 0x49: case 0x4A: case 0x4B: case 0x4C: case 0x4D: case 0x4E: case 0x4F:  // dec r32
+		case 0x90: case 0xC3: case 0xC9: case 0xCC: case 0xF8: case 0xF9: case 0xFC: case 0xFD:  // nop/ret/leave/int3/clc..std
+			return len;
+		case 0xC2: return len + 2;                           // ret imm16
+		case 0x00: case 0x01: case 0x02: case 0x03: case 0x08: case 0x09: case 0x0A: case 0x0B:  // add/or
+		case 0x10: case 0x11: case 0x12: case 0x13: case 0x18: case 0x19: case 0x1A: case 0x1B:  // adc/sbb
+		case 0x20: case 0x21: case 0x22: case 0x23: case 0x28: case 0x29: case 0x2A: case 0x2B:  // and/sub
+		case 0x30: case 0x31: case 0x32: case 0x33: case 0x38: case 0x39: case 0x3A: case 0x3B:  // xor/cmp
+		case 0x84: case 0x85: case 0x86: case 0x87:          // test/xchg
+		case 0x88: case 0x89: case 0x8A: case 0x8B:          // mov r/m<->r
+		case 0x8D: case 0x63: case 0xFF:                     // lea / arpl / grp5 (call/jmp/push r/m)
+			goto modrm;
+		case 0x80: case 0x83: case 0xC0: case 0xC1: case 0xC6:  // grp1/grp2 imm8, mov r/m imm8
+			{ int r = modrm_len(p + len); if (!r) return 0; len += r + 1; return len; }
+		case 0x81: case 0xC7:                                // grp1 imm32, mov r/m imm32
+			{ int r = modrm_len(p + len); if (!r) return 0; len += r + (op66 ? 2 : 4); return len; }
+		case 0x69:                                           // imul r,r/m,imm32
+			{ int r = modrm_len(p + len); if (!r) return 0; len += r + (op66 ? 2 : 4); return len; }
+		case 0x6B:                                           // imul r,r/m,imm8
+			{ int r = modrm_len(p + len); if (!r) return 0; len += r + 1; return len; }
+		case 0xF6:                                           // grp3 byte: test has imm8
+			{ int r = modrm_len(p + len); if (!r) return 0; int reg = (p[len] >> 3) & 7; len += r; if (reg <= 1) len += 1; return len; }
+		case 0xF7:                                           // grp3: test has imm16/32
+			{ int r = modrm_len(p + len); if (!r) return 0; int reg = (p[len] >> 3) & 7; len += r; if (reg <= 1) len += (op66 ? 2 : 4); return len; }
+		case 0xB0: case 0xB1: case 0xB2: case 0xB3: case 0xB4: case 0xB5: case 0xB6: case 0xB7:  // mov r8,imm8
+		case 0x04: case 0x0C: case 0x14: case 0x1C: case 0x24: case 0x2C: case 0x34: case 0x3C:  // alu al,imm8
+		case 0xA8:                                           // test al,imm8
+			return len + 1;
+		case 0xB8: case 0xB9: case 0xBA: case 0xBB: case 0xBC: case 0xBD: case 0xBE: case 0xBF:  // mov r32,imm
+		case 0x05: case 0x0D: case 0x15: case 0x1D: case 0x25: case 0x2D: case 0x35: case 0x3D:  // alu eax,imm
+		case 0xA9:                                           // test eax,imm
+			return len + (op66 ? 2 : 4);
+		case 0xA0: case 0xA1: case 0xA2: case 0xA3:          // mov al/eax <-> moffs32
+			return len + 4;
+		case 0x68: return len + 4;                           // push imm32
+		case 0x6A: return len + 1;                           // push imm8
+		case 0xE8: case 0xE9: return len + 4;                // call/jmp rel32 (relocated)
+		case 0xEB: return len + 1;                           // short jmp rel8 (re-encoded)
+		case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x76: case 0x77:  // short jcc rel8
+		case 0x78: case 0x79: case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7E: case 0x7F:
+			return len + 1;
+		default:
+			return 0;                                        // unknown encoding: refuse
+	}
+modrm:
+	{ int r = modrm_len(p + len); if (!r) return 0; len += r; return len; }
+}
+#else
+// ===== 64-bit (x86-64) length decoder + FF25 abs64 hook (Linux) =====
 // returns instruction length, or 0 if it can't be safely relocated
 inline int insn_len(const uint8_t* p) {
 	int len = 0;
@@ -170,7 +278,7 @@ inline int modrm_len(const uint8_t* p) {
 
 constexpr int JMP_SIZE = 14;   // FF 25 00000000 + abs64
 
-inline void write_abs_jmp(uint8_t* at, void* target) {
+inline void write_jmp(uint8_t* at, void* target) {
 	at[0] = 0xFF; at[1] = 0x25;
 	*(uint32_t*)(at + 2) = 0;
 	*(uint64_t*)(at + 6) = (uint64_t)target;
@@ -184,6 +292,8 @@ inline int prefix_len(const uint8_t* ins) {   // legacy prefixes + REX
 	if ((ins[i] & 0xF0) == 0x40) i++;
 	return i;
 }
+#endif  // _WIN32 (32-bit) vs 64-bit decoder + jmp
+
 inline bool emit_rel(uint8_t* tramp, int& tp, const uint8_t* op, int opbytes, uint8_t* target) {
 	for (int k = 0; k < opbytes; k++) tramp[tp++] = op[k];
 	int64_t rel = (int64_t)target - (int64_t)(tramp + tp + 4);
@@ -194,6 +304,7 @@ inline bool emit_rel(uint8_t* tramp, int& tp, const uint8_t* op, int opbytes, ui
 
 // re-encodes rel8/rel32 branches in the copied prologue so they still reach.
 inline bool install(void* target, void* detour, void** original) {
+	if (!target) return false;   // unresolved address (e.g. a not-yet-recovered RVA): skip, don't deref null
 	uint8_t* t = (uint8_t*)target;
 	int copied = 0;
 	while (copied < JMP_SIZE) {
@@ -233,10 +344,10 @@ inline bool install(void* target, void* detour, void** original) {
 		if (!ok) return false;
 		o += l;
 	}
-	write_abs_jmp(tramp + tp, t + copied);
+	write_jmp(tramp + tp, t + copied);
 
 	if (!make_writable(t, JMP_SIZE)) return false;
-	write_abs_jmp(t, detour);
+	write_jmp(t, detour);
 	make_exec(t, JMP_SIZE);
 
 	if (original) *original = tramp;

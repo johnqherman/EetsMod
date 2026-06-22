@@ -2,11 +2,7 @@
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
-#include <dlfcn.h>
-#include <dirent.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <link.h>
+#include "compat.h"
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -15,14 +11,19 @@
 #include <vector>
 #include <map>
 #include <algorithm>
-#include <csetjmp>
-#include <csignal>
-#include <ctime>
 #include <exception>
 #include "eets_engine.h"
+#include "eetsmod.h"   // service decls; EETS_API marks them dllexport in the loader (Windows)
 #include "hook.h"
 
 #define EETSMOD_VERSION "0.18.0"
+
+// a mod's native binary: .dll on Windows, .so on Linux. .eetsmod bundles carry both.
+#ifdef _WIN32
+#define MOD_EXT ".dll"
+#else
+#define MOD_EXT ".so"
+#endif
 
 namespace {
 
@@ -80,11 +81,15 @@ std::string g_selected;
 std::string base() {
 	static std::string b;
 	if (b.empty()) {
+#ifdef _WIN32
+		b = eets_self_dir();
+#else
 		Dl_info info;
 		if (dladdr((void*)&base, &info) && info.dli_fname) {
 			std::string p = info.dli_fname; size_t s = p.find_last_of('/');
 			if (s != std::string::npos) b = p.substr(0, s);
 		}
+#endif
 		if (b.empty()) b = ".";
 	}
 	return b;
@@ -99,10 +104,26 @@ void logline(const char* fmt, ...) {
 }
 
 // crash guard: a faulting mod is disabled, the game survives
+#ifdef _WIN32
+// Windows: a vectored exception handler longjmps back to the guard when a mod faults.
+jmp_buf g_jmp;
+volatile long g_guarding = 0;
+#define EETS_SETJMP() setjmp(g_jmp)
+LONG WINAPI crash_veh(EXCEPTION_POINTERS* ep) {
+	DWORD c = ep->ExceptionRecord->ExceptionCode;
+	bool fatal = c == EXCEPTION_ACCESS_VIOLATION || c == EXCEPTION_ILLEGAL_INSTRUCTION ||
+	             c == EXCEPTION_INT_DIVIDE_BY_ZERO || c == EXCEPTION_FLT_DIVIDE_BY_ZERO ||
+	             c == EXCEPTION_PRIV_INSTRUCTION || c == EXCEPTION_IN_PAGE_ERROR;
+	if (g_guarding && fatal) { g_guarding = 0; longjmp(g_jmp, 1); }
+	return EXCEPTION_CONTINUE_SEARCH;   // not in a mod: let the engine/default handler run
+}
+void install_guards() { AddVectoredExceptionHandler(1, crash_veh); }
+#else
 sigjmp_buf g_jmp;
 volatile sig_atomic_t g_guarding = 0;
 struct sigaction g_old_sa[8];
 const int g_sigs[] = { SIGSEGV, SIGFPE, SIGILL, SIGBUS };
+#define EETS_SETJMP() sigsetjmp(g_jmp, 1)
 
 void crash_handler(int sig, siginfo_t* info, void* uctx) {
 	if (g_guarding) { g_guarding = 0; siglongjmp(g_jmp, sig); }
@@ -123,10 +144,11 @@ void install_guards() {
 	for (size_t i = 0; i < sizeof(g_sigs)/sizeof(g_sigs[0]); i++)
 		sigaction(g_sigs[i], &sa, &g_old_sa[i]);
 }
+#endif
 template <class Fn>
 bool guard(Mod* m, Fn&& fn) {
 	if (m && m->disabled) return false;
-	if (sigsetjmp(g_jmp, 1) == 0) {
+	if (EETS_SETJMP() == 0) {
 		g_guarding = 1;
 		try {
 			fn();
@@ -147,6 +169,9 @@ bool guard(Mod* m, Fn&& fn) {
 	return false;
 }
 
+#ifdef _WIN32
+void check_buildid() { logline("buildid: Windows PE - skipping GNU BuildID check"); }
+#else
 struct BuildIdCtx { char hex[64]; bool found; };
 int buildid_cb(struct dl_phdr_info* info, size_t, void* data) {
 	if (info->dlpi_name && info->dlpi_name[0] != '\0') return 0;  // main exe: empty name
@@ -181,6 +206,7 @@ void check_buildid() {
 		logline("buildid: engine addresses may be wrong - regenerate gen_engine_header.sh");
 	}
 }
+#endif
 
 std::string modsdir() { const char* e = getenv("EETS_MODS"); return e ? e : base() + "/mods"; }
 std::string datadir() { return base() + "/Data"; }
@@ -189,6 +215,9 @@ time_t mtime_of(const std::string& p) { struct stat s; return stat(p.c_str(), &s
 bool   exists(const std::string& p)   { struct stat s; return stat(p.c_str(), &s) == 0; }
 
 std::string loaderdir() {
+#ifdef _WIN32
+	return eets_self_dir();
+#else
 	Dl_info info;
 	if (dladdr((void*)&logline, &info) && info.dli_fname) {
 		std::string p = info.dli_fname;
@@ -196,6 +225,7 @@ std::string loaderdir() {
 		if (slash != std::string::npos) return p.substr(0, slash);
 	}
 	return ".";
+#endif
 }
 std::string includedir() {
 	const char* e = getenv("EETS_INCLUDE");
@@ -389,28 +419,36 @@ void fire_event(const char* name, void* a, void* b) {
 		guard(&m, [&]{ m.onevent(name, a, b); });
 }
 
-typedef void* (*CreateObjectFn)(void*, const char*, unsigned);
+// These targets are __thiscall C++ member methods (this in ECX on Win32), so the detours and
+// trampoline pointers must carry ECALL too - else `this` is read off the stack and the
+// callee/caller stack cleanup disagrees, corrupting the stack. (emotion/goal below are cdecl
+// luabind free functions, so they stay plain.) ECALL is empty on Linux (SysV), unchanged there.
+typedef void* (ECALL *CreateObjectFn)(void*, const char*, unsigned);
 CreateObjectFn orig_CreateObject = nullptr;
-void* det_CreateObject(void* self, const char* name, unsigned layer) {
+void* ECALL det_CreateObject(void* self, const char* name, unsigned layer) {
 	void* o = orig_CreateObject(self, name, layer);
 	fire_event("object_spawn", o, (void*)name);
 	return o;
 }
-typedef void (*ThisFn)(void*);
+typedef void (ECALL *ThisFn)(void*);
 ThisFn orig_LoadWin = nullptr, orig_Reset = nullptr, orig_KillMe = nullptr, orig_EetsDead = nullptr;
-typedef void (*ThisArgFn)(void*, void*);
+typedef void (ECALL *ThisArgFn)(void*, void*);
 ThisArgFn orig_Complete = nullptr;
-void det_LoadWin(void* s)  { orig_LoadWin(s);  fire_event("level_load", s, nullptr); }
-void det_Reset(void* s)    { orig_Reset(s);    fire_event("level_reset", s, nullptr); }
-void det_KillMe(void* s)   { fire_event("object_killed", s, nullptr); orig_KillMe(s); }
-void det_EetsDead(void* s) { orig_EetsDead(s); fire_event("eets_death", s, nullptr); }
-void det_Complete(void* s, void* p) { orig_Complete(s, p); fire_event("level_complete", s, p); }
+void ECALL det_LoadWin(void* s)  { orig_LoadWin(s);  fire_event("level_load", s, nullptr); }
+void ECALL det_Reset(void* s)    { orig_Reset(s);    fire_event("level_reset", s, nullptr); }
+void ECALL det_KillMe(void* s)   { fire_event("object_killed", s, nullptr); orig_KillMe(s); }
+typedef void (ECALL *ThisIntFn)(void*, int);
+ThisIntFn orig_EetsDead2 = nullptr;
+void ECALL det_EetsDead(void* s, int arg) { orig_EetsDead2(s, arg); fire_event("eets_death", s, (void*)(intptr_t)arg); }
+void ECALL det_Complete(void* s, void* p) { orig_Complete(s, p); fire_event("level_complete", s, p); }
 typedef void (*EmotionFn)(unsigned long, unsigned int);
 EmotionFn orig_Emotion = nullptr;
 void det_Emotion(unsigned long h, unsigned int e) { orig_Emotion(h, e); fire_event("emotion_change", (void*)h, (void*)(unsigned long)e); }
-typedef void (*GoalFn)(void*);
+// World_CheckGoal returns int (the goal-check result the engine acts on) - the detour MUST
+// return it, else EAX leaks whatever the event dispatch left and the engine reads "goal reached".
+typedef int (*GoalFn)(void*);
 GoalFn orig_Goal = nullptr;
-void det_Goal(void* o) { orig_Goal(o); fire_event("goal_check", o, nullptr); }
+int det_Goal(void* o) { int r = orig_Goal(o); fire_event("goal_check", o, nullptr); return r; }
 // note: eets_death prologue isn't relocatable; detect via object_killed of World_GetEets()
 
 void try_hook(const char* name, void* target, void* detour, void** orig) {
@@ -425,13 +463,96 @@ void install_engine_event_hooks() {
 	try_hook("object_killed (Object::KillMe)",          (void*)Eets::addr::hook_Object_KillMe,              (void*)det_KillMe,       (void**)&orig_KillMe);
 	try_hook("emotion_change (World_ChangeEmotion)",    (void*)Eets::addr::hook_World_ChangeEmotion,        (void*)det_Emotion,      (void**)&orig_Emotion);
 	try_hook("goal_check (World_CheckGoal)",            (void*)Eets::addr::hook_World_CheckGoal,            (void*)det_Goal,         (void**)&orig_Goal);
-	try_hook("eets_death (Creator::StartEetsDeadDialog)",(void*)Eets::addr::hook_Creator_StartEetsDeadDialog,(void*)det_EetsDead,    (void**)&orig_EetsDead);
+	// eets_death: hook Creator::OnEndEetsDeadDialog (the dialog-close handler, __thiscall(Creator*, int)),
+	// not the generic StartEetsDeadDialog opener. Fires once when the death dialog ends.
+	try_hook("eets_death (Creator::OnEndEetsDeadDialog)", (void*)Eets::addr::hook_Creator_OnEndEetsDeadDialog,(void*)det_EetsDead, (void**)&orig_EetsDead2);
+	(void)orig_EetsDead;
 }
 
-// a mod is one self-contained .eetsmod file (gzipped tar: <name>.so/.cpp + <name>.cfg
-// + assets/). extract each into a hidden per-bundle staging dir so the mods folder
-// keeps only the .eetsmod; (re)extract only when the bundle is newer than its stamp.
+// a mod is one self-contained .eetsmod file (a STORED ustar tar: <name>.so + <name>.dll
+// + <name>.cpp + <name>.cfg + assets/). extract each into a hidden per-bundle staging dir
+// so the mods folder keeps only the .eetsmod; (re)extract only when newer than its stamp.
+// Extraction is fully in-process (no tar/rm/cp shell-out) so it works identically on
+// Linux and under Wine. Uncompressed so no inflate dependency in the 32-bit loader.
 std::string bundle_dir(const std::string& name) { return cachedir() + "/" + name + ".d"; }
+
+void mkdir_p(const std::string& path) {
+	std::string cur;
+	for (size_t i = 0; i < path.size(); ++i) {
+		cur += path[i];
+		if (path[i] == '/' && cur.size() > 1) mkdir(cur.c_str(), 0755);
+	}
+	mkdir(path.c_str(), 0755);
+}
+void rm_tree(const std::string& path) {
+	DIR* d = opendir(path.c_str());
+	if (d) {
+		struct dirent* e;
+		while ((e = readdir(d)) != nullptr) {
+			std::string n = e->d_name;
+			if (n == "." || n == "..") continue;
+			std::string p = path + "/" + n;
+			struct stat st;
+			if (stat(p.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) rm_tree(p);
+			else remove(p.c_str());
+		}
+		closedir(d);
+	}
+	rmdir(path.c_str());
+}
+void copy_tree(const std::string& src, const std::string& dst) {
+	mkdir_p(dst);
+	DIR* d = opendir(src.c_str()); if (!d) return;
+	struct dirent* e;
+	while ((e = readdir(d)) != nullptr) {
+		std::string n = e->d_name;
+		if (n == "." || n == "..") continue;
+		std::string s = src + "/" + n, t = dst + "/" + n;
+		struct stat st;
+		if (stat(s.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) { copy_tree(s, t); continue; }
+		FILE* in = fopen(s.c_str(), "rb"); if (!in) continue;
+		FILE* out = fopen(t.c_str(), "wb");
+		if (out) { char b[8192]; size_t r; while ((r = fread(b, 1, sizeof(b), in)) > 0) fwrite(b, 1, r, out); fclose(out); }
+		fclose(in);
+	}
+	closedir(d);
+}
+// extract a STORED (uncompressed) ustar archive into dest. returns false on a bad/compressed archive.
+bool untar(const std::string& archive, const std::string& dest) {
+	FILE* f = fopen(archive.c_str(), "rb"); if (!f) return false;
+	unsigned char hdr[512];
+	if (fread(hdr, 1, 512, f) != 512) { fclose(f); return false; }
+	if (hdr[0] == 0x1f && hdr[1] == 0x8b) { fclose(f); return false; }   // gzipped: needs re-pack with current eetsmod
+	bool ok = true;
+	do {
+		if (hdr[0] == '\0') break;                                       // end-of-archive zero block
+		std::string name((char*)hdr, strnlen((char*)hdr, 100));
+		if (hdr[345] != '\0') name = std::string((char*)hdr + 345, strnlen((char*)hdr + 345, 155)) + "/" + name;
+		unsigned long size = strtoul(std::string((char*)hdr + 124, 12).c_str(), nullptr, 8);
+		char type = hdr[156];
+		std::string out = dest + "/" + name;
+		if (type == '5') {                                              // directory
+			mkdir_p(out);
+		} else if (type == '0' || type == '\0') {                       // regular file
+			size_t slash = out.find_last_of('/');
+			if (slash != std::string::npos) mkdir_p(out.substr(0, slash));
+			FILE* of = fopen(out.c_str(), "wb");
+			unsigned long rem = size; char buf[4096];
+			while (rem > 0) {
+				size_t chunk = rem < sizeof(buf) ? (size_t)rem : sizeof(buf);
+				size_t r = fread(buf, 1, chunk, f);
+				if (r == 0) { ok = false; break; }
+				if (of) fwrite(buf, 1, r, of);
+				rem -= r;
+			}
+			if (of) fclose(of);
+			unsigned long pad = (512 - (size % 512)) % 512;
+			if (pad) fseek(f, pad, SEEK_CUR);
+		}
+	} while (fread(hdr, 1, 512, f) == 512);
+	fclose(f);
+	return ok;
+}
 
 void extract_bundles() {
 	std::string dir = modsdir();
@@ -443,13 +564,12 @@ void extract_bundles() {
 		std::string name = stem(n), bundle = dir + "/" + n, sdir = bundle_dir(name);
 		std::string stamp = sdir + "/.stamp";
 		if (exists(stamp) && mtime_of(stamp) >= mtime_of(bundle)) continue;
-		std::string cmd = "rm -rf \"" + sdir + "\" && mkdir -p \"" + sdir + "\" && "
-		                  "tar xzf \"" + bundle + "\" -C \"" + sdir + "\" 2>>\"" + base() + "/Log/native_mods.log\"";
-		if (system(cmd.c_str()) != 0) { logline("bundle: extract FAILED %s (need tar)", n.c_str()); continue; }
+		rm_tree(sdir);
+		mkdir_p(sdir);
+		if (!untar(bundle, sdir)) { logline("bundle: extract FAILED %s (bad/compressed archive - re-pack with eetsmod)", n.c_str()); continue; }
 		// a bundle's assets/ tree mirrors Data/ and is installed on extract
 		std::string adir = sdir + "/assets";
-		if (exists(adir))
-			system(("cp -r --no-preserve=mode \"" + adir + "\"/. \"" + datadir() + "\"/ 2>>\"" + base() + "/Log/native_mods.log\"").c_str());
+		if (exists(adir)) copy_tree(adir, datadir());
 		FILE* f = fopen(stamp.c_str(), "w"); if (f) fclose(f);
 		logline("bundle: installed %s", n.c_str());
 	}
@@ -459,7 +579,7 @@ void extract_bundles() {
 // build a Mod from an extracted bundle staging dir; false if it has no .so/.cpp
 bool make_bundle_mod(const std::string& name, Mod& m) {
 	std::string sdir = bundle_dir(name);
-	std::string so = sdir + "/" + name + ".so", cpp = sdir + "/" + name + ".cpp", cfg = sdir + "/" + name + ".cfg";
+	std::string so = sdir + "/" + name + MOD_EXT, cpp = sdir + "/" + name + ".cpp", cfg = sdir + "/" + name + ".cfg";
 	m.name = name;
 	if (exists(so)) m.so = so;
 	else if (exists(cpp)) { m.src = cpp; m.so = cachedir() + "/" + name + ".so"; }
@@ -468,22 +588,22 @@ bool make_bundle_mod(const std::string& name, Mod& m) {
 	return true;
 }
 
-// overwrites matching files under Data/ (intentional override)
+// overwrites matching files under Data/ (intentional override). in-process recursive copy
+// (no find/cp shell-out) so it works identically on Linux and under Wine.
 void install_assets() {
 	std::string adir = modsdir() + "/assets";
 	if (!exists(adir)) return;
-	int n = 0;
-	FILE* p = popen(("find \"" + adir + "\" -type f 2>/dev/null | wc -l").c_str(), "r");
-	if (p) { char b[32]; if (fgets(b, sizeof(b), p)) n = atoi(b); pclose(p); }
-	if (n <= 0) return;
-	if (system(("cp -r --no-preserve=mode \"" + adir + "\"/. \"" + datadir() + "\"/ 2>>\"" + base() + "/Log/native_mods.log\"").c_str()) == 0)
-		logline("assets: installed %d file(s) from mods/assets/ into Data/", n);
-	else logline("assets: install failed");
+	copy_tree(adir, datadir());
+	logline("assets: installed mods/assets/ into Data/");
 }
 
-// runs at LD_PRELOAD load, before the engine scans Data/ at boot - so a bundle's
-// custom assets (sounds/textures) are in place for that first scan, not one launch late.
+// runs at load, before the engine scans Data/ at boot - so a bundle's custom assets
+// (sounds/textures) are in place for that first scan, not one launch late. On Linux the
+// constructor attribute drives it at LD_PRELOAD time; on Windows DllMain calls it instead
+// (so it must NOT also be a constructor there, or it would double-init).
+#ifndef _WIN32
 __attribute__((constructor))
+#endif
 void eetsmod_preboot() {
 	// LD_PRELOAD is inherited by children; our extract/compile steps shell out via
 	// system(), and those children would re-load this .so and re-run this constructor -
@@ -517,7 +637,7 @@ void load_all() {
 		std::vector<std::string> files;
 		while ((ent = readdir(d)) != nullptr) {
 			std::string n = ent->d_name;
-			if (ends_with(n, ".eetsmod") || ends_with(n, ".cpp") || ends_with(n, ".so")) files.push_back(n);
+			if (ends_with(n, ".eetsmod") || ends_with(n, ".cpp") || ends_with(n, MOD_EXT)) files.push_back(n);
 		}
 		closedir(d);
 		std::sort(files.begin(), files.end(), [](const std::string& a, const std::string& b) {
@@ -529,7 +649,7 @@ void load_all() {
 			if (dup) { logline("loader: ignoring %s (mod '%s' already provided)", n.c_str(), name.c_str()); continue; }
 			Mod m; m.name = name;
 			if (ends_with(n, ".eetsmod")) { if (!make_bundle_mod(name, m)) continue; }
-			else if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + name + ".so"; }
+			else if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + name + MOD_EXT; }
 			else { m.so = dir + "/" + n; }
 			read_manifest(m);
 			names.push_back(name);
@@ -565,7 +685,7 @@ void load_all() {
 		}
 	}
 
-	install_engine_event_hooks();
+	install_engine_event_hooks();   // 32-bit E9 hook path (hook.h) on Win; unresolved hook RVAs null-guard in install()
 	for (auto& m : g_mods) if (m.init && !m.disabled) guard(&m, [&]{ m.init(); });
 	int active = 0; for (auto& m : g_mods) if (!m.disabled) active++;
 	logline("loader: %d/%zu mod(s) active", active, g_mods.size());
@@ -597,12 +717,12 @@ void poll_reload() {
 	while ((ent = readdir(d)) != nullptr) {
 		std::string n = ent->d_name;
 		std::string st = stem(n);
-		if (!ends_with(n, ".cpp") && !ends_with(n, ".so") && !ends_with(n, ".eetsmod")) continue;
+		if (!ends_with(n, ".cpp") && !ends_with(n, MOD_EXT) && !ends_with(n, ".eetsmod")) continue;
 		bool known = false; for (auto& m : g_mods) if (m.name == st) { known = true; break; }
 		if (known) continue;
 		Mod m; m.name = st;
 		if (ends_with(n, ".eetsmod")) { if (!make_bundle_mod(st, m)) continue; }
-		else if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + st + ".so"; }
+		else if (ends_with(n, ".cpp")) { m.src = dir + "/" + n; m.so = cachedir() + "/" + st + MOD_EXT; }
 		else { m.so = dir + "/" + n; }
 		read_manifest(m);
 		if (open_mod(m)) { g_mods.push_back(m); logline("reload: new mod %s", st.c_str());
@@ -766,11 +886,11 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		g_modbtn_x = 10; g_modbtn_w = 150; g_modbtn_h = 38; g_modbtn_y = h - g_modbtn_h - 10;
 		bool hot = g_mouse_x >= g_modbtn_x && g_mouse_x < g_modbtn_x + g_modbtn_w &&
 		           g_mouse_y >= g_modbtn_y && g_mouse_y < g_modbtn_y + g_modbtn_h;
-		FillRect(g_modbtn_x + 3, g_modbtn_y + 3, g_modbtn_w, g_modbtn_h, Colour(0, 0, 0, 110));
-		FillRect(g_modbtn_x, g_modbtn_y, g_modbtn_w, g_modbtn_h, hot ? Colour(235, 70, 60, 255) : Colour(205, 40, 35, 255));
-		DrawRect(g_modbtn_x, g_modbtn_y, g_modbtn_w, g_modbtn_h, Colour(0, 0, 0, 255), 3.0f);
+		FillRect(g_modbtn_x + 3, g_modbtn_y + 3, g_modbtn_w, g_modbtn_h, Color(0, 0, 0, 110));
+		FillRect(g_modbtn_x, g_modbtn_y, g_modbtn_w, g_modbtn_h, hot ? Color(235, 70, 60, 255) : Color(205, 40, 35, 255));
+		DrawRect(g_modbtn_x, g_modbtn_y, g_modbtn_w, g_modbtn_h, Color(0, 0, 0, 255), 3.0f);
 		char btn[64]; snprintf(btn, sizeof(btn), "MODS (%zu)", active);
-		DrawTextOutlined(g_modbtn_x + 12, g_modbtn_y + 8, btn, FONT_BIG, Colour(255, 232, 40, 255));
+		DrawTextOutlined(g_modbtn_x + 12, g_modbtn_y + 8, btn, FONT_BIG, Color(255, 232, 40, 255));
 		static bool once = false;
 		if (!once) { once = true; logline("menu MODS button at %d,%d (screen h=%d)", g_modbtn_x, g_modbtn_y, h); }
 	} else { g_modbtn_w = 0; }
@@ -778,7 +898,7 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 	if (g_loaded && !g_toast.empty() && g_time < g_toast_until) {
 		using namespace Eets;
 		DrawTextOutlined(10, 10, g_toast.c_str(), FONT_NORMAL,
-		                 g_toast_fail ? Colour(255, 90, 80, 255) : Colour(120, 255, 120, 255));
+		                 g_toast_fail ? Color(255, 90, 80, 255) : Color(120, 255, 120, 255));
 	}
 
 	if (g_loaded && g_overlay) {
@@ -787,38 +907,38 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		int cfgRows = 0;
 		if (!g_selected.empty()) cfgRows = (int)g_cfg[g_selected].size() + 1;   // +1 header
 		int H = OV_TITLE + nMods * OV_ROWH + cfgRows * OV_ROWH + OV_ROWH + 18;  // +1 row for the folder button
-		FillRect(OV_X + 5, OV_Y + 6, OV_W, H, Colour(0, 0, 0, 110));
-		FillRect(OV_X, OV_Y, OV_W, H, Colour(205, 40, 35, 255));
-		DrawRect(OV_X, OV_Y, OV_W, H, Colour(0, 0, 0, 255), 4.0f);
-		FillRect(OV_X + 4, OV_Y + 4, OV_W - 8, OV_TITLE - 6, Colour(165, 22, 20, 255));
+		FillRect(OV_X + 5, OV_Y + 6, OV_W, H, Color(0, 0, 0, 110));
+		FillRect(OV_X, OV_Y, OV_W, H, Color(205, 40, 35, 255));
+		DrawRect(OV_X, OV_Y, OV_W, H, Color(0, 0, 0, 255), 4.0f);
+		FillRect(OV_X + 4, OV_Y + 4, OV_W - 8, OV_TITLE - 6, Color(165, 22, 20, 255));
 		char line[160];
 		snprintf(line, sizeof(line), "MODS v%s", EETSMOD_VERSION);
-		DrawTextOutlined(OV_X + 10, OV_Y + 8, line, FONT_BIG, Colour(255, 232, 40, 255));
-		FillRect(OV_X + OV_W - 32, OV_Y + 7, 26, 26, Colour(165, 22, 20, 255));
-		DrawRect(OV_X + OV_W - 32, OV_Y + 7, 26, 26, Colour(0, 0, 0, 255), 2.0f);
-		DrawTextOutlined(OV_X + OV_W - 26, OV_Y + 8, "x", FONT_BIG, Colour(255, 232, 40, 255));
+		DrawTextOutlined(OV_X + 10, OV_Y + 8, line, FONT_BIG, Color(255, 232, 40, 255));
+		FillRect(OV_X + OV_W - 32, OV_Y + 7, 26, 26, Color(165, 22, 20, 255));
+		DrawRect(OV_X + OV_W - 32, OV_Y + 7, 26, 26, Color(0, 0, 0, 255), 2.0f);
+		DrawTextOutlined(OV_X + OV_W - 26, OV_Y + 8, "x", FONT_BIG, Color(255, 232, 40, 255));
 		int y = OV_Y + OV_TITLE;
 		for (auto& m : g_mods) {
 			bool sel = (g_selected == m.name);
-			if (sel) FillRect(OV_X + 4, y, OV_W - 8, OV_ROWH, Colour(255, 120, 55, 160));
+			if (sel) FillRect(OV_X + 4, y, OV_W - 8, OV_ROWH, Color(255, 120, 55, 160));
 			DrawTextOutlined(OV_X + 10, y + 4, m.disabled ? "OFF" : "ON",
-			                 FONT_NORMAL, m.disabled ? Colour(255, 90, 80, 255) : Colour(255, 210, 40, 255));
+			                 FONT_NORMAL, m.disabled ? Color(255, 90, 80, 255) : Color(255, 210, 40, 255));
 			snprintf(line, sizeof(line), "%s%s", m.name.c_str(), m.version.empty() ? "" : (" v" + m.version).c_str());
-			DrawTextOutlined(OV_X + 64, y + 4, line, FONT_NORMAL, Colour(255, 255, 255, 255));
+			DrawTextOutlined(OV_X + 64, y + 4, line, FONT_NORMAL, Color(255, 255, 255, 255));
 			y += OV_ROWH;
 		}
 		if (!g_selected.empty()) {
-			DrawTextOutlined(OV_X + 10, y + 4, ("config: " + g_selected).c_str(), FONT_SMALL, Colour(255, 232, 40, 255));
+			DrawTextOutlined(OV_X + 10, y + 4, ("config: " + g_selected).c_str(), FONT_SMALL, Color(255, 232, 40, 255));
 			y += OV_ROWH;
 			for (auto& kv : g_cfg[g_selected]) {
 				snprintf(line, sizeof(line), "%s = %s", kv.first.c_str(), kv.second.c_str());
-				DrawTextOutlined(OV_X + 14, y + 4, line, FONT_SMALL, Colour(255, 255, 255, 255));
-				FillRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Colour(70, 50, 60, 255));
-				DrawRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Colour(0, 0, 0, 255), 2.0f);
-				DrawTextOutlined(OV_X + OV_W - 63, y + 4, "-", FONT_NORMAL, Colour(255, 255, 255, 255));
-				FillRect(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, Colour(70, 50, 60, 255));
-				DrawRect(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, Colour(0, 0, 0, 255), 2.0f);
-				DrawTextOutlined(OV_X + OV_W - 28, y + 4, "+", FONT_NORMAL, Colour(255, 255, 255, 255));
+				DrawTextOutlined(OV_X + 14, y + 4, line, FONT_SMALL, Color(255, 255, 255, 255));
+				FillRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Color(70, 50, 60, 255));
+				DrawRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Color(0, 0, 0, 255), 2.0f);
+				DrawTextOutlined(OV_X + OV_W - 63, y + 4, "-", FONT_NORMAL, Color(255, 255, 255, 255));
+				FillRect(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, Color(70, 50, 60, 255));
+				DrawRect(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, Color(0, 0, 0, 255), 2.0f);
+				DrawTextOutlined(OV_X + OV_W - 28, y + 4, "+", FONT_NORMAL, Color(255, 255, 255, 255));
 				y += OV_ROWH;
 			}
 		}
@@ -826,9 +946,9 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		y += 6; g_folder_btn_y = y;
 		bool fhot = g_mouse_x >= OV_X + 6 && g_mouse_x < OV_X + OV_W - 6 &&
 		            g_mouse_y >= y && g_mouse_y < y + OV_ROWH;
-		FillRect(OV_X + 6, y, OV_W - 12, OV_ROWH, fhot ? Colour(235, 70, 60, 255) : Colour(165, 22, 20, 255));
-		DrawRect(OV_X + 6, y, OV_W - 12, OV_ROWH, Colour(0, 0, 0, 255), 2.0f);
-		DrawTextOutlined(OV_X + 14, y + 4, "+ Add a mod (open mods folder)", FONT_SMALL, Colour(255, 232, 40, 255));
+		FillRect(OV_X + 6, y, OV_W - 12, OV_ROWH, fhot ? Color(235, 70, 60, 255) : Color(165, 22, 20, 255));
+		DrawRect(OV_X + 6, y, OV_W - 12, OV_ROWH, Color(0, 0, 0, 255), 2.0f);
+		DrawTextOutlined(OV_X + 14, y + 4, "+ Add a mod (open mods folder)", FONT_SMALL, Color(255, 232, 40, 255));
 	}
 	g_vp_cur_w = g_vp_cur_h = 0;
 	if (real) real(device, src, dst, window);
@@ -883,3 +1003,236 @@ int SDL_PollEvent(void* event) {
 }
 
 } // extern "C"
+
+#ifdef _WIN32
+// ============================================================================
+// Windows entry path: version.dll proxy exports + IAT hooks + DllMain.
+//
+// On Linux the three functions above (FNA3D_SwapBuffers / SDL_PollEvent /
+// FNA3D_SetViewport) are LD_PRELOAD interposers. On Windows we instead ship as
+// version.dll: Eets.exe loads SDL2.dll, SDL2.dll imports GetFileVersionInfoA /
+// GetFileVersionInfoSizeA / VerQueryValueA from "version" - but naming our DLL
+// "version" replaces the system one process-wide, so we forward EVERY version.dll
+// export to the real one (not just SDL2's three), and we redirect
+// the game's calls into FNA3D/SDL by rewriting the matching IAT slots of Eets.exe
+// to point at our functions. The originals stay reachable via dlsym(RTLD_NEXT),
+// shimmed in compat.h to GetModuleHandle+GetProcAddress, so the call-through in
+// each function above already works unchanged.
+// ============================================================================
+
+// logline() and eetsmod_preboot() are defined above in the file's anonymous
+// namespace, so they are already visible unqualified from here in the same TU.
+
+// ---- 1) version.dll export proxy -------------------------------------------
+// Load the real system version.dll once (System32\version.dll) and cache its
+// HMODULE; each export is then resolved + cached on first call.
+namespace {
+HMODULE real_version_dll() {
+	static HMODULE h = []() -> HMODULE {
+		char dir[MAX_PATH] = {0};
+		UINT n = GetSystemDirectoryA(dir, MAX_PATH);            // e.g. C:\Windows\System32
+		std::string path = (n && n < MAX_PATH) ? std::string(dir) : std::string("C:\\Windows\\System32");
+		path += "\\version.dll";
+		HMODULE m = LoadLibraryA(path.c_str());
+		// Under a Wine "version=n,b" override the name request can resolve back to THIS
+		// proxy; forwarding to ourselves would recurse forever. Detect and refuse.
+		HMODULE self = nullptr;
+		GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		                   (LPCSTR)&real_version_dll, &self);
+		if (m == self) { logline("version-proxy: real version.dll resolved to self - refusing (would recurse)"); m = nullptr; }
+		else logline("version-proxy: real version.dll %s (%s)", m ? "loaded" : "FAILED to load", path.c_str());
+		return m;
+	}();
+	return h;
+}
+FARPROC real_version_proc(const char* name) {
+	HMODULE h = real_version_dll();
+	return h ? GetProcAddress(h, name) : nullptr;
+}
+} // namespace
+
+// Overriding "version" replaces the system DLL process-wide, so EVERY export the
+// real version.dll provides must exist here too - a caller of any unforwarded one
+// (e.g. SDL2 needs GetFileVersionInfoSizeA/VerQueryValueA, but other code may call
+// the W/Ex variants) would otherwise hit a missing function and Wine would abort.
+// We forward the complete export set; signatures are taken verbatim from <winver.h>
+// (pulled in by <windows.h>) so the IAT and the forwarded call share one ABI.
+//
+// VERSION_PROXY(ret, name, params, ptypes, args, fail): define an undecorated
+// (-Wl,--kill-at) WINAPI export that resolves "name" in the real version.dll once,
+// caches it, and calls through - returning `fail` if it could not be resolved.
+//   params : the parameter list, verbatim from winver.h (names included)
+//   ptypes : the same parameters' TYPES only, for the function-pointer cast
+//   args   : the parameter names, forwarded in the call
+#define VERSION_PROXY(ret, name, params, ptypes, args, fail)                 \
+	__declspec(dllexport) ret WINAPI name params {                           \
+		typedef ret (WINAPI *Fn) ptypes;                                     \
+		static Fn fn = (Fn)real_version_proc(#name);                         \
+		return fn ? fn args : (fail);                                        \
+	}
+
+extern "C" {
+
+VERSION_PROXY(DWORD, GetFileVersionInfoSizeA,
+	(LPCSTR lptstrFilename, LPDWORD lpdwHandle),
+	(LPCSTR, LPDWORD),
+	(lptstrFilename, lpdwHandle), 0)
+VERSION_PROXY(DWORD, GetFileVersionInfoSizeW,
+	(LPCWSTR lptstrFilename, LPDWORD lpdwHandle),
+	(LPCWSTR, LPDWORD),
+	(lptstrFilename, lpdwHandle), 0)
+VERSION_PROXY(DWORD, GetFileVersionInfoSizeExA,
+	(DWORD dwFlags, LPCSTR lpwstrFilename, LPDWORD lpdwHandle),
+	(DWORD, LPCSTR, LPDWORD),
+	(dwFlags, lpwstrFilename, lpdwHandle), 0)
+VERSION_PROXY(DWORD, GetFileVersionInfoSizeExW,
+	(DWORD dwFlags, LPCWSTR lpwstrFilename, LPDWORD lpdwHandle),
+	(DWORD, LPCWSTR, LPDWORD),
+	(dwFlags, lpwstrFilename, lpdwHandle), 0)
+
+VERSION_PROXY(BOOL, GetFileVersionInfoA,
+	(LPCSTR lptstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData),
+	(LPCSTR, DWORD, DWORD, LPVOID),
+	(lptstrFilename, dwHandle, dwLen, lpData), FALSE)
+VERSION_PROXY(BOOL, GetFileVersionInfoW,
+	(LPCWSTR lptstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData),
+	(LPCWSTR, DWORD, DWORD, LPVOID),
+	(lptstrFilename, dwHandle, dwLen, lpData), FALSE)
+VERSION_PROXY(BOOL, GetFileVersionInfoExA,
+	(DWORD dwFlags, LPCSTR lpwstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData),
+	(DWORD, LPCSTR, DWORD, DWORD, LPVOID),
+	(dwFlags, lpwstrFilename, dwHandle, dwLen, lpData), FALSE)
+VERSION_PROXY(BOOL, GetFileVersionInfoExW,
+	(DWORD dwFlags, LPCWSTR lpwstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData),
+	(DWORD, LPCWSTR, DWORD, DWORD, LPVOID),
+	(dwFlags, lpwstrFilename, dwHandle, dwLen, lpData), FALSE)
+
+VERSION_PROXY(BOOL, VerQueryValueA,
+	(LPCVOID pBlock, LPCSTR lpSubBlock, LPVOID* lplpBuffer, PUINT puLen),
+	(LPCVOID, LPCSTR, LPVOID*, PUINT),
+	(pBlock, lpSubBlock, lplpBuffer, puLen), FALSE)
+VERSION_PROXY(BOOL, VerQueryValueW,
+	(LPCVOID pBlock, LPCWSTR lpSubBlock, LPVOID* lplpBuffer, PUINT puLen),
+	(LPCVOID, LPCWSTR, LPVOID*, PUINT),
+	(pBlock, lpSubBlock, lplpBuffer, puLen), FALSE)
+
+VERSION_PROXY(DWORD, VerLanguageNameA,
+	(DWORD wLang, LPSTR szLang, DWORD nSize),
+	(DWORD, LPSTR, DWORD),
+	(wLang, szLang, nSize), 0)
+VERSION_PROXY(DWORD, VerLanguageNameW,
+	(DWORD wLang, LPWSTR szLang, DWORD nSize),
+	(DWORD, LPWSTR, DWORD),
+	(wLang, szLang, nSize), 0)
+
+VERSION_PROXY(DWORD, VerInstallFileA,
+	(DWORD uFlags, LPSTR szSrcFileName, LPSTR szDestFileName, LPSTR szSrcDir, LPSTR szDestDir, LPSTR szCurDir, LPSTR szTmpFile, PUINT lpuTmpFileLen),
+	(DWORD, LPSTR, LPSTR, LPSTR, LPSTR, LPSTR, LPSTR, PUINT),
+	(uFlags, szSrcFileName, szDestFileName, szSrcDir, szDestDir, szCurDir, szTmpFile, lpuTmpFileLen), 0)
+VERSION_PROXY(DWORD, VerInstallFileW,
+	(DWORD uFlags, LPWSTR szSrcFileName, LPWSTR szDestFileName, LPWSTR szSrcDir, LPWSTR szDestDir, LPWSTR szCurDir, LPWSTR szTmpFile, PUINT lpuTmpFileLen),
+	(DWORD, LPWSTR, LPWSTR, LPWSTR, LPWSTR, LPWSTR, LPWSTR, PUINT),
+	(uFlags, szSrcFileName, szDestFileName, szSrcDir, szDestDir, szCurDir, szTmpFile, lpuTmpFileLen), 0)
+
+VERSION_PROXY(DWORD, VerFindFileA,
+	(DWORD uFlags, LPSTR szFileName, LPSTR szWinDir, LPSTR szAppDir, LPSTR szCurDir, PUINT lpuCurDirLen, LPSTR szDestDir, PUINT lpuDestDirLen),
+	(DWORD, LPSTR, LPSTR, LPSTR, LPSTR, PUINT, LPSTR, PUINT),
+	(uFlags, szFileName, szWinDir, szAppDir, szCurDir, lpuCurDirLen, szDestDir, lpuDestDirLen), 0)
+VERSION_PROXY(DWORD, VerFindFileW,
+	(DWORD uFlags, LPWSTR szFileName, LPWSTR szWinDir, LPWSTR szAppDir, LPWSTR szCurDir, PUINT lpuCurDirLen, LPWSTR szDestDir, PUINT lpuDestDirLen),
+	(DWORD, LPWSTR, LPWSTR, LPWSTR, LPWSTR, PUINT, LPWSTR, PUINT),
+	(uFlags, szFileName, szWinDir, szAppDir, szCurDir, lpuCurDirLen, szDestDir, lpuDestDirLen), 0)
+
+} // extern "C"
+#undef VERSION_PROXY
+
+// ---- 2) IAT hook installer -------------------------------------------------
+namespace {
+
+// Overwrite one IAT slot (*slot = target), flipping the page writable around the
+// store and restoring its protection. False only if VirtualProtect refuses.
+bool patch_iat_slot(void** slot, void* target) {
+	DWORD old = 0;
+	if (!VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old)) return false;
+	*slot = target;
+	DWORD tmp = 0;
+	VirtualProtect(slot, sizeof(void*), old, &tmp);
+	return true;
+}
+
+// Walk the host EXE's import directory; for every imported function whose name
+// matches one of ours, repoint its IAT slot at our detour. We match on the INT
+// (OriginalFirstThunk) name array while writing the parallel IAT (FirstThunk)
+// slot. Imports by ordinal (no name) are skipped; a name we don't find is not an
+// error - e.g. FNA3D_SetViewport may not be imported by every build.
+void install_iat_hooks() {
+	struct Target { const char* name; void* detour; bool found; };
+	Target targets[] = {
+		{ "FNA3D_SwapBuffers", (void*)&FNA3D_SwapBuffers, false },
+		{ "SDL_PollEvent",     (void*)&SDL_PollEvent,     false },
+		{ "FNA3D_SetViewport", (void*)&FNA3D_SetViewport, false },
+	};
+
+	BYTE* base = (BYTE*)GetModuleHandleA(NULL);
+	if (!base) { logline("iat: GetModuleHandleA(NULL) failed - no hooks installed"); return; }
+
+	IMAGE_DOS_HEADER* dos = (IMAGE_DOS_HEADER*)base;
+	if (dos->e_magic != IMAGE_DOS_SIGNATURE) { logline("iat: bad DOS header - no hooks"); return; }
+	IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
+	if (nt->Signature != IMAGE_NT_SIGNATURE) { logline("iat: bad NT header - no hooks"); return; }
+
+	IMAGE_DATA_DIRECTORY& impDir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+	if (!impDir.VirtualAddress || !impDir.Size) { logline("iat: no import directory - no hooks"); return; }
+
+	// The import-descriptor array (one entry per imported DLL) is NUL-terminated.
+	for (IMAGE_IMPORT_DESCRIPTOR* imp = (IMAGE_IMPORT_DESCRIPTOR*)(base + impDir.VirtualAddress);
+	     imp->Name; ++imp) {
+		// INT (names) and IAT (live pointers) advance in lockstep. OriginalFirstThunk
+		// can be 0 on some linkers; fall back to FirstThunk for the name array.
+		IMAGE_THUNK_DATA* nameThunk = (IMAGE_THUNK_DATA*)(base + (imp->OriginalFirstThunk ? imp->OriginalFirstThunk : imp->FirstThunk));
+		IMAGE_THUNK_DATA* iatThunk  = (IMAGE_THUNK_DATA*)(base + imp->FirstThunk);
+		for (; nameThunk->u1.AddressOfData; ++nameThunk, ++iatThunk) {
+			if (nameThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG) continue;   // imported by ordinal: no name
+			IMAGE_IMPORT_BY_NAME* byName = (IMAGE_IMPORT_BY_NAME*)(base + nameThunk->u1.AddressOfData);
+			for (Target& t : targets) {
+				if (t.found || strcmp((const char*)byName->Name, t.name) != 0) continue;
+				if (patch_iat_slot((void**)&iatThunk->u1.Function, t.detour)) {
+					t.found = true;
+					logline("iat: hooked %s", t.name);
+				} else {
+					logline("iat: VirtualProtect failed for %s - left unhooked", t.name);
+				}
+			}
+		}
+	}
+
+	for (Target& t : targets)
+		if (!t.found) logline("iat: %s not imported by host - skipped", t.name);
+}
+
+} // namespace
+
+// ---- 3) DllMain ------------------------------------------------------------
+// We must do almost nothing in DllMain: eetsmod_preboot() shells out via
+// system()/popen(), and spawning a process (or waiting on other DLLs) while the
+// loader lock is held deadlocks - especially under Wine. So DllMain only starts a
+// worker thread, which runs AFTER the loader lock is released. The thread waits
+// for the game's render/input DLLs to be mapped (so their IAT slots are bound),
+// then stages assets and installs the hooks.
+DWORD WINAPI eets_init_thread(LPVOID) {
+	for (int i = 0; i < 400; i++) {            // up to ~20s for FNA3D + SDL2 to load
+		if (GetModuleHandleA("FNA3D.dll") && GetModuleHandleA("SDL2.dll")) break;
+		Sleep(50);
+	}
+	eetsmod_preboot();
+	install_iat_hooks();
+	return 0;
+}
+BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
+	if (reason == DLL_PROCESS_ATTACH) {
+		DisableThreadLibraryCalls(hinst);
+		CreateThread(nullptr, 0, eets_init_thread, nullptr, 0, nullptr);
+	}
+	return TRUE;
+}
+#endif // _WIN32

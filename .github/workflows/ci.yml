@@ -28,3 +28,30 @@ jobs:
         with:
           name: libeetsmod.so
           path: build/libeetsmod.so
+
+  build-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install 32-bit mingw toolchain
+        run: sudo apt-get update && sudo apt-get install -y g++-mingw-w64-i686
+      - name: Cross-build the Windows loader (version.dll)
+        run: make win && test -f build/version.dll && test -f build/libeetsmod.dll.a
+      - name: Cross-build a sample mod to .dll the validated way
+        run: |
+          i686-w64-mingw32-g++ -O2 -std=c++17 -Iinclude -shared -static-libgcc -static-libstdc++ \
+            -o /tmp/lowgrav.dll examples/lowgrav.cpp -L build -leetsmod \
+            -Wl,-Bstatic,--whole-archive,-l:libwinpthread.a,--no-whole-archive,-Bdynamic
+          # the load-killer is a stray libwinpthread import - fail if it leaks back in
+          if i686-w64-mingw32-objdump -p /tmp/lowgrav.dll | grep -qi libwinpthread; then
+            echo "ERROR: libwinpthread-1.dll import leaked (mod would fail to load under Wine)"; exit 1; fi
+      - name: Pack a dual-binary .eetsmod (carries both .so and .dll)
+        run: |
+          ./bin/eetsmod pack examples/lowgrav.cpp -o /tmp/lowgrav.eetsmod
+          tar -tf /tmp/lowgrav.eetsmod | grep -q lowgrav.dll
+          tar -tf /tmp/lowgrav.eetsmod | grep -q lowgrav.so
+      - name: Upload Windows loader artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: version.dll
+          path: build/version.dll

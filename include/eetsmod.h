@@ -1,6 +1,18 @@
 #pragma once
 #include "eets_engine.h"
 
+// The loader provides these services; a mod calls them across the binary boundary.
+// On Linux that resolves at dlopen (global symbols). On Windows a DLL must bind every
+// symbol at link time, so the loader dllexports them and a mod dllimports + links the
+// import library (libeetsmod.dll.a). No-op on Linux.
+#if defined(_WIN32) && defined(EETSMOD_LOADER)
+#  define EETS_API __declspec(dllexport)
+#elif defined(_WIN32)
+#  define EETS_API __declspec(dllimport)
+#else
+#  define EETS_API
+#endif
+
 extern "C" {
 
 void EetsMod_Init();
@@ -22,34 +34,34 @@ void EetsMod_Shutdown();
 } // extern "C"
 
 namespace Eets {
-	void Log(const char* fmt, ...);
+	EETS_API void Log(const char* fmt, ...);
 
-	const char* ConfigGet(const char* mod, const char* key, const char* def);
-	int   ConfigGetInt(const char* mod, const char* key, int def);
-	float ConfigGetFloat(const char* mod, const char* key, float def);
+	EETS_API const char* ConfigGet(const char* mod, const char* key, const char* def);
+	EETS_API int   ConfigGetInt(const char* mod, const char* key, int def);
+	EETS_API float ConfigGetFloat(const char* mod, const char* key, float def);
 
-	bool Hook(void* target, void* detour, void** original);
+	EETS_API bool Hook(void* target, void* detour, void** original);
 
 	// last mouse position in render space (correct in fullscreen)
-	int MouseX();
-	int MouseY();
+	EETS_API int MouseX();
+	EETS_API int MouseY();
 
 	// render backbuffer size; use for HUD instead of ScreenWidth/Height (configured res)
-	int RenderWidth();
-	int RenderHeight();
+	EETS_API int RenderWidth();
+	EETS_API int RenderHeight();
 
-	const char* SaveGet(const char* mod, const char* key, const char* def);
-	void  SaveSet(const char* mod, const char* key, const char* val);
-	int   SaveGetInt(const char* mod, const char* key, int def);
-	void  SaveSetInt(const char* mod, const char* key, int v);
-	float SaveGetFloat(const char* mod, const char* key, float def);
-	void  SaveSetFloat(const char* mod, const char* key, float v);
+	EETS_API const char* SaveGet(const char* mod, const char* key, const char* def);
+	EETS_API void  SaveSet(const char* mod, const char* key, const char* val);
+	EETS_API int   SaveGetInt(const char* mod, const char* key, int def);
+	EETS_API void  SaveSetInt(const char* mod, const char* key, int v);
+	EETS_API float SaveGetFloat(const char* mod, const char* key, float def);
+	EETS_API void  SaveSetFloat(const char* mod, const char* key, float v);
 
-	double Time();
-	double DeltaTime();
+	EETS_API double Time();
+	EETS_API double DeltaTime();
 
-	void StartTextInput();
-	void StopTextInput();
+	EETS_API void StartTextInput();
+	EETS_API void StopTextInput();
 }
 
 // minimal SDL keycode / modifier constants (so mods don't need SDL headers).

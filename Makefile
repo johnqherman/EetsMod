@@ -2,13 +2,15 @@
 #   make                       -> build/libeetsmod.so
 #   make install GAME=..        -> loader + headers (no mods)
 #   make install-examples GAME=.. -> install example .eetsmod bundles into <game>/mods/
-.PHONY: all loader install install-examples check apidoc bundles release clean
+.PHONY: all loader win install install-examples check apidoc bundles release clean
 
 VERSION  := $(shell sed -n 's/.*EETSMOD_VERSION "\(.*\)".*/\1/p' loader/loader.cpp)
 CXX      ?= g++
+WINCXX   ?= i686-w64-mingw32-g++
 CXXFLAGS ?= -O2 -fPIC -std=c++17 -Wall -Iinclude
 BUILD    ?= build
-HDRS     := loader/hook.h loader/platform.h include/eetsmod.h include/eets_engine.h include/eets_addr.h
+HDRS     := loader/hook.h loader/platform.h loader/compat.h include/eetsmod.h include/eets_engine.h include/eets_addr.h
+WINHDRS  := loader/hook.h loader/platform.h loader/compat.h include/eetsmod.h include/eets_engine.h include/eets_addr_win.h
 
 all: loader
 loader: $(BUILD)/libeetsmod.so
@@ -16,6 +18,15 @@ loader: $(BUILD)/libeetsmod.so
 $(BUILD)/libeetsmod.so: loader/loader.cpp $(HDRS)
 	@mkdir -p $(BUILD)
 	$(CXX) $(CXXFLAGS) -shared -fvisibility=default -o $@ loader/loader.cpp -ldl
+
+# 32-bit Windows loader: a version.dll proxy injected into the (i386) game.
+# --kill-at strips MinGW's stdcall @N decoration from our exports, so the proxy
+# exports the plain names (GetFileVersionInfoA, ...) that SDL2.dll imports by name.
+win: $(BUILD)/version.dll
+$(BUILD)/version.dll: loader/loader.cpp $(WINHDRS)
+	@mkdir -p $(BUILD)
+	$(WINCXX) -O2 -std=c++17 -Wall -Iinclude -DEETSMOD_LOADER -shared -static \
+		-Wl,--kill-at,--out-implib,$(BUILD)/libeetsmod.dll.a -o $@ loader/loader.cpp
 
 install: all
 	@test -n "$(GAME)" || { echo "usage: make install GAME=/path/to/Eets"; exit 1; }
