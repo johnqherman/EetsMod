@@ -419,22 +419,26 @@ void fire_event(const char* name, void* a, void* b) {
 		guard(&m, [&]{ m.onevent(name, a, b); });
 }
 
-typedef void* (*CreateObjectFn)(void*, const char*, unsigned);
+// These targets are __thiscall C++ member methods (this in ECX on Win32), so the detours and
+// trampoline pointers must carry ECALL too - else `this` is read off the stack and the
+// callee/caller stack cleanup disagrees, corrupting the stack. (emotion/goal below are cdecl
+// luabind free functions, so they stay plain.) ECALL is empty on Linux (SysV), unchanged there.
+typedef void* (ECALL *CreateObjectFn)(void*, const char*, unsigned);
 CreateObjectFn orig_CreateObject = nullptr;
-void* det_CreateObject(void* self, const char* name, unsigned layer) {
+void* ECALL det_CreateObject(void* self, const char* name, unsigned layer) {
 	void* o = orig_CreateObject(self, name, layer);
 	fire_event("object_spawn", o, (void*)name);
 	return o;
 }
-typedef void (*ThisFn)(void*);
+typedef void (ECALL *ThisFn)(void*);
 ThisFn orig_LoadWin = nullptr, orig_Reset = nullptr, orig_KillMe = nullptr, orig_EetsDead = nullptr;
-typedef void (*ThisArgFn)(void*, void*);
+typedef void (ECALL *ThisArgFn)(void*, void*);
 ThisArgFn orig_Complete = nullptr;
-void det_LoadWin(void* s)  { orig_LoadWin(s);  fire_event("level_load", s, nullptr); }
-void det_Reset(void* s)    { orig_Reset(s);    fire_event("level_reset", s, nullptr); }
-void det_KillMe(void* s)   { fire_event("object_killed", s, nullptr); orig_KillMe(s); }
-void det_EetsDead(void* s) { orig_EetsDead(s); fire_event("eets_death", s, nullptr); }
-void det_Complete(void* s, void* p) { orig_Complete(s, p); fire_event("level_complete", s, p); }
+void ECALL det_LoadWin(void* s)  { orig_LoadWin(s);  fire_event("level_load", s, nullptr); }
+void ECALL det_Reset(void* s)    { orig_Reset(s);    fire_event("level_reset", s, nullptr); }
+void ECALL det_KillMe(void* s)   { fire_event("object_killed", s, nullptr); orig_KillMe(s); }
+void ECALL det_EetsDead(void* s) { orig_EetsDead(s); fire_event("eets_death", s, nullptr); }
+void ECALL det_Complete(void* s, void* p) { orig_Complete(s, p); fire_event("level_complete", s, p); }
 typedef void (*EmotionFn)(unsigned long, unsigned int);
 EmotionFn orig_Emotion = nullptr;
 void det_Emotion(unsigned long h, unsigned int e) { orig_Emotion(h, e); fire_event("emotion_change", (void*)h, (void*)(unsigned long)e); }
@@ -455,7 +459,10 @@ void install_engine_event_hooks() {
 	try_hook("object_killed (Object::KillMe)",          (void*)Eets::addr::hook_Object_KillMe,              (void*)det_KillMe,       (void**)&orig_KillMe);
 	try_hook("emotion_change (World_ChangeEmotion)",    (void*)Eets::addr::hook_World_ChangeEmotion,        (void*)det_Emotion,      (void**)&orig_Emotion);
 	try_hook("goal_check (World_CheckGoal)",            (void*)Eets::addr::hook_World_CheckGoal,            (void*)det_Goal,         (void**)&orig_Goal);
-	try_hook("eets_death (Creator::StartEetsDeadDialog)",(void*)Eets::addr::hook_Creator_StartEetsDeadDialog,(void*)det_EetsDead,    (void**)&orig_EetsDead);
+	// eets_death: StartEetsDeadDialog (0x12b5d0) is a GENERIC name-based modal opener (fires for every
+	// dialog, and takes a stack name arg this detour's arity doesn't match) - not hooked. The eets-death
+	// event is better derived from object_killed of World_GetEets(); revisit with the right signature/filter.
+	(void)det_EetsDead; (void)orig_EetsDead;
 }
 
 // a mod is one self-contained .eetsmod file (a STORED ustar tar: <name>.so + <name>.dll

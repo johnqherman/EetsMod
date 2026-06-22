@@ -8,8 +8,8 @@ namespace Eets { namespace addr {
 inline uintptr_t resolve(uintptr_t rva){ return rva?(uintptr_t)GetModuleHandleA(nullptr)+rva:0; }
 
 // ===== Lua-binding statics (all 76) =====
-inline uintptr_t Anim_GetCurrentFrameIndex          = resolve(0);  // (Anim::Animation*)  // TODO
-inline uintptr_t Anim_SetCurrentFrameIndex          = resolve(0);  // (Anim::Animation*, unsigned int)  // TODO
+inline uintptr_t Anim_GetCurrentFrameIndex          = resolve(0x53a70);  // (Anim::Animation*) -> [this+0x30]+1 (1-based)
+inline uintptr_t Anim_SetCurrentFrameIndex          = resolve(0x50880);  // (Anim::Animation*, unsigned) same setter as Animation_SetCurrentFrame
 inline uintptr_t Creator_Undo                       = resolve(0xd9c30);  // ()
 inline uintptr_t Misc_BindKey                       = resolve(0xd9d60);  // (char const*, char const*) Misc luabind table; wraps FUN_00498650
 inline uintptr_t Misc_PauseProfile                  = resolve(0xd9d80);  // ()
@@ -99,12 +99,12 @@ inline uintptr_t Object_GetFlipped                  = resolve(0xed040);  // (Obj
 inline uintptr_t Object_KillMe                      = resolve(0xaa2a0);  // (Object*)
 
 // ===== event hook targets (detoured by the loader to fire EetsMod_OnEvent) =====
-inline uintptr_t hook_Simulator_LoadWinCondition    = resolve(0);  // -> "level_load"  // TODO
-inline uintptr_t hook_Simulator_ResetSimulation     = resolve(0);  // -> "level_reset"  // TODO
-inline uintptr_t hook_LevelManager_CompleteLevel    = resolve(0);  // -> "level_complete"  // TODO
-inline uintptr_t hook_Creator_StartEetsDeadDialog   = resolve(0);  // -> "eets_death"  // TODO
-inline uintptr_t hook_Object_KillMe                 = resolve(0);  // -> "object_killed"  // TODO
-inline uintptr_t hook_ObjectMgr_CreateObject        = resolve(0);  // -> "object_spawn"  // TODO
+inline uintptr_t hook_Simulator_LoadWinCondition    = resolve(0x1378c0);  // Simulator::LoadWinCondition (level_load)
+inline uintptr_t hook_Simulator_ResetSimulation     = resolve(0x136090);  // Simulator::ResetSimulation (level_reset)
+inline uintptr_t hook_LevelManager_CompleteLevel    = resolve(0xc98f0);  // LevelManager::CompleteLevel (level_complete); sets complete byte, unlock, save
+inline uintptr_t hook_Creator_StartEetsDeadDialog   = resolve(0x12b5d0);  // Creator name-based modal opener; filter name=='EetsDeadDialog'
+inline uintptr_t hook_Object_KillMe                 = resolve(0xaa2a0);  // Object::KillMe (object_killed); sets death flag this+0x30=0x100, fires OnDestroy
+inline uintptr_t hook_ObjectMgr_CreateObject        = resolve(0xac560);  // ObjectMgr::CreateObject (object_spawn); hashes name, allocs Object, pushes to vector
 inline uintptr_t hook_World_ChangeEmotion           = resolve(0xdb8f0);  // -> "emotion_change" (ulong hash, uint emotion)
 inline uintptr_t hook_World_CheckGoal               = resolve(0xdb910);  // -> "goal_check" (Object*)
 inline uintptr_t hook_Creator_OnEndEetsDeadDialog   = resolve(0);  // -> "eets_death" (Creator*, int)  // TODO
@@ -128,20 +128,20 @@ inline uintptr_t StringPool_Resolve                 = resolve(0xba5f0);  // (Str
 inline uintptr_t StringPool_LoadFile                = resolve(0xba0e0);  // (StringPool* this, char const* path) thiscall; fopen+parse id->string
 
 // ===== assets (ADVANCED/experimental: ABI not wrapper-validated) =====
-inline uintptr_t Texture_Load                       = resolve(0);  // (Texture* this, char const* path)  // TODO
-inline uintptr_t Texture_UploadTexture              = resolve(0);  // (Texture* this, int)  // TODO
+inline uintptr_t Texture_Load                       = resolve(0x90210);  // (char const* path) SDL_RWFromFile->FNA3D_Image_Load->alloc 0x10 Texture
+inline uintptr_t Texture_UploadTexture              = resolve(0x8cb30);  // (Texture* this, int src) FNA3D_CreateTexture2D+SetTextureData2D
 inline uintptr_t IGraphicsEngine_i                  = resolve(0x81c80);  // () -> IGraphicsEngine* = same accessor as GraphicsEngine_i (offset-0 base; MOV EAX,[0xaae51c])
-inline uintptr_t IGraphicsEngine_DrawTexture        = resolve(0);  // (IGE*, Texture const*, Vector2 const&)  // TODO
-inline uintptr_t AnimExt_LoadAnimation              = resolve(0);  // (char const* path) -> anim  // TODO
-inline uintptr_t Animation_operator_new             = resolve(0);  // (0x78) -> Animation*  // TODO
-inline uintptr_t Animation_ctor                     = resolve(0);  // (Animation* this[0x78], char const* path, bool)  // TODO
-inline uintptr_t Animation_Update                   = resolve(0);  // (Animation*, float dt)  // TODO
-inline uintptr_t Animation_GetCurrentFrame          = resolve(0);  // (Animation*) -> Sprite*  // TODO
-inline uintptr_t Animation_FrameCount               = resolve(0);  // (Animation*) -> unsigned  // TODO
-inline uintptr_t Animation_SetCurrentFrame          = resolve(0);  // (Animation*, unsigned idx)  // TODO
-inline uintptr_t Animation_Restart                  = resolve(0);  // (Animation*)  // TODO
+inline uintptr_t IGraphicsEngine_DrawTexture        = resolve(0x8df10);  // GE vtable slot0 (Texture const*, Vector2 const&)
+inline uintptr_t AnimExt_LoadAnimation              = resolve(0x4e540);  // (this, char const* path) FNV cache + LoadVersion2Anim
+inline uintptr_t Animation_operator_new             = resolve(0x4dea0);  // (size) heap alloc; Animation is 0x54 bytes on Win (not 0x78)
+inline uintptr_t Animation_ctor                     = resolve(0x4d8b0);  // (Animation* this[0x54], char const* path, bool) loop@0x1c, path SSO@0x50
+inline uintptr_t Animation_Update                   = resolve(0x508b0);  // (Animation*, float dt) time@0x34 vs dur@0x18, index@0x30, done@0x38
+inline uintptr_t Animation_GetCurrentFrame          = resolve(0x4e530);  // (Animation*) -> Sprite* (base@0 + index@0x30*8)
+inline uintptr_t Animation_FrameCount               = resolve(0x4e520);  // (Animation*) -> unsigned ((end-begin)>>3)
+inline uintptr_t Animation_SetCurrentFrame          = resolve(0x50880);  // (Animation*, unsigned) writes index@0x30
+inline uintptr_t Animation_Restart                  = resolve(0x50860);  // (Animation*) zero index/time/done
 inline uintptr_t TextureManager_instance            = resolve(0xadf090);  // TextureManager* global DAT_00edf090 (cache map<string,tex*> at +0)
-inline uintptr_t TextureManager_LoadTexture         = resolve(0);  // (TM*, string const&, ImageFormat, bool) load+cache  // TODO
+inline uintptr_t TextureManager_LoadTexture         = resolve(0x91f80);  // (TM*, string const&, int fmt, bool) cache+decode+upload
 inline uintptr_t SpriteManager_i                    = resolve(0x89ff0);  // () -> SpriteManager* (mov eax,[0xe7ef38]; ret)
 inline uintptr_t SpriteManager_Load                 = resolve(0x896c0);  // (sret{Sprite*,ctrl}, SM* this, string const&, ImageFormat) thiscall, RET 0xc; caches in hashmap
 inline uintptr_t GraphicsEngine_DrawSprite          = resolve(0x8dbd0);  // (GE*, Sprite*, Vector2 pos, Vector2 uv0, Vector2 uv1, Color) FNA3D prim 0 (TriList,2)

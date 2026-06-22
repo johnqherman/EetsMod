@@ -444,17 +444,17 @@ inline void World_ShowTutorialDialog(const char* a) { FC<void(const char*)>(addr
 
 // ===== object extensions =====
 // each accessor returns null if the object lacks that extension; always null-check.
-inline PositionExtension* Object_GetPositionExtension(Object* o) { return EC<PositionExtension*(Object*)>(addr::Object_GetPositionExtension)(o); }
-inline SuckableExtension* Object_GetSuckableExtension(Object* o) { return EC<SuckableExtension*(Object*)>(addr::Object_GetSuckableExtension)(o); }
-inline WalkingExtension* Object_GetWalkingExtension(Object* o) { return EC<WalkingExtension*(Object*)>(addr::Object_GetWalkingExtension)(o); }
-inline ThwackerExtension* Object_GetThwackerExtension(Object* o) { return EC<ThwackerExtension*(Object*)>(addr::Object_GetThwackerExtension)(o); }
-inline EmotionPlatformExtension* Object_GetEmotionPlatformExtension(Object* o) { return EC<EmotionPlatformExtension*(Object*)>(addr::Object_GetEmotionPlatformExtension)(o); }
-inline EdibleExtension* Object_GetEdibleExtension(Object* o) { return EC<EdibleExtension*(Object*)>(addr::Object_GetEdibleExtension)(o); }
-inline EmotionExtension* Object_GetEmotionExtension(Object* o) { return EC<EmotionExtension*(Object*)>(addr::Object_GetEmotionExtension)(o); }
-inline FlyingExtension* Object_GetFlyingExtension(Object* o) { return EC<FlyingExtension*(Object*)>(addr::Object_GetFlyingExtension)(o); }
-inline LightingExtension* Object_GetLightingExtension(Object* o) { return EC<LightingExtension*(Object*)>(addr::Object_GetLightingExtension)(o); }
-inline HoldingExtension* Object_GetHoldingExtension(Object* o) { return EC<HoldingExtension*(Object*)>(addr::Object_GetHoldingExtension)(o); }
-inline RollingExtension* Object_GetRollingExtension(Object* o) { return EC<RollingExtension*(Object*)>(addr::Object_GetRollingExtension)(o); }
+inline PositionExtension* Object_GetPositionExtension(Object* o) { return FC<PositionExtension*(Object*)>(addr::Object_GetPositionExtension)(o); }
+inline SuckableExtension* Object_GetSuckableExtension(Object* o) { return FC<SuckableExtension*(Object*)>(addr::Object_GetSuckableExtension)(o); }
+inline WalkingExtension* Object_GetWalkingExtension(Object* o) { return FC<WalkingExtension*(Object*)>(addr::Object_GetWalkingExtension)(o); }
+inline ThwackerExtension* Object_GetThwackerExtension(Object* o) { return FC<ThwackerExtension*(Object*)>(addr::Object_GetThwackerExtension)(o); }
+inline EmotionPlatformExtension* Object_GetEmotionPlatformExtension(Object* o) { return FC<EmotionPlatformExtension*(Object*)>(addr::Object_GetEmotionPlatformExtension)(o); }
+inline EdibleExtension* Object_GetEdibleExtension(Object* o) { return FC<EdibleExtension*(Object*)>(addr::Object_GetEdibleExtension)(o); }
+inline EmotionExtension* Object_GetEmotionExtension(Object* o) { return FC<EmotionExtension*(Object*)>(addr::Object_GetEmotionExtension)(o); }
+inline FlyingExtension* Object_GetFlyingExtension(Object* o) { return FC<FlyingExtension*(Object*)>(addr::Object_GetFlyingExtension)(o); }
+inline LightingExtension* Object_GetLightingExtension(Object* o) { return FC<LightingExtension*(Object*)>(addr::Object_GetLightingExtension)(o); }
+inline HoldingExtension* Object_GetHoldingExtension(Object* o) { return FC<HoldingExtension*(Object*)>(addr::Object_GetHoldingExtension)(o); }
+inline RollingExtension* Object_GetRollingExtension(Object* o) { return FC<RollingExtension*(Object*)>(addr::Object_GetRollingExtension)(o); }
 // physics has no templated getter; it sits at a fixed Object slot
 inline PhysicsExtension* Object_GetPhysicsExtension(Object* o) {
 #ifdef _WIN32
