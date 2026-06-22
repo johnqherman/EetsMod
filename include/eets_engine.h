@@ -52,7 +52,13 @@ enum FontSize { FONT_TINY = 1, FONT_SMALL = 2, FONT_NORMAL = 3, FONT_BIG = 4, FO
 enum FontStyle { STYLE_KOMIKA = 1, STYLE_GEEK = 2, STYLE_NORMAL = 3, STYLE_BRADY = 4 };
 
 inline Vector2 World_GetGravity() {
+#ifdef _WIN32
+	// 32-bit MSVC returns an 8-byte struct via a hidden first pointer arg (sret);
+	// the engine's real signature is void World_GetGravity(Vector2* out).
+	Vector2 v; ((void(*)(Vector2*))addr::World_GetGravity)(&v); return v;
+#else
 	return ((Vector2(*)())addr::World_GetGravity)();
+#endif
 }
 inline void World_SetGravity(Vector2 g, int mode = 0) {
 	((void(*)(Vector2, int))addr::World_SetGravity)(g, mode);
