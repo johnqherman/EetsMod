@@ -194,6 +194,7 @@ inline bool emit_rel(uint8_t* tramp, int& tp, const uint8_t* op, int opbytes, ui
 
 // re-encodes rel8/rel32 branches in the copied prologue so they still reach.
 inline bool install(void* target, void* detour, void** original) {
+	if (!target) return false;   // unresolved address (e.g. a not-yet-recovered RVA): skip, don't deref null
 	uint8_t* t = (uint8_t*)target;
 	int copied = 0;
 	while (copied < JMP_SIZE) {
