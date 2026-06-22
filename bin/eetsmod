@@ -8,10 +8,9 @@ die()  { echo "eetsmod: $*" >&2; exit 1; }
 info() { echo "eetsmod: $*"; }
 usage() {
 	cat <<'EOF'
-eetsmod - set up Eets mod support and build/manage mods.
+eetsmod - build, pack, and manage Eets mods.
 Players mostly don't need this: drop a .eetsmod in <game>/mods and manage in-game.
 
-  eetsmod setup [GAME]                    install loader + headers, print launch option
   eetsmod uninstall [GAME]                remove the loader
   eetsmod doctor [GAME]                   diagnose the install
   eetsmod new <name>                      scaffold a new mod
@@ -62,26 +61,6 @@ compile_so() {  # <src.cpp> <out.so> [game-for-includes]
 	"${CXX:-g++}" $opt -fPIC -std=c++17 -Wall -shared "-I$inc" ${EETSMOD_CXXFLAGS:-} -o "$out" "$src"
 }
 
-cmd_setup() {
-	local game; game="$(find_game "${1:-}")"
-	local so inc; so="$(loader_so)"; inc="$(includedir)"
-	install -m644 "$so" "$game/libeetsmod.so"
-	mkdir -p "$game/eetsmod-include" "$game/mods"
-	install -m644 "$inc"/*.h "$game/eetsmod-include/"
-	info "installed loader + headers to $game"
-	echo
-	echo "  one-time: set this as the Eets Steam launch option"
-	echo "  (right-click Eets in your library > Properties > General > Launch Options):"
-	echo
-	echo "    LD_PRELOAD=./libeetsmod.so %command%"
-	echo
-	echo "  (a fixed line - no path to edit, survives moves/reinstalls. if mods don't"
-	echo "   load, use the absolute form: LD_PRELOAD=$game/libeetsmod.so %command%)"
-	echo
-	echo "  then drop a .eetsmod in $game/mods and press Play."
-	echo "  in-game: click MODS (bottom-left of the main menu) to enable/configure."
-}
-
 cmd_uninstall() {
 	local game; game="$(find_game "${1:-}")"
 	rm -f "$game/libeetsmod.so"
@@ -93,7 +72,7 @@ cmd_doctor() {
 	local game; game="$(find_game "${1:-}" 2>/dev/null || true)"
 	echo "game dir   : ${game:-NOT FOUND}"
 	[[ -n "$game" ]] || return 0
-	echo "loader     : $([[ -f "$game/libeetsmod.so" ]] && echo present || echo 'MISSING (run: eetsmod setup)')"
+	echo "loader     : $([[ -f "$game/libeetsmod.so" ]] && echo present || echo 'MISSING (drop libeetsmod.so in the game folder)')"
 	echo "headers    : $([[ -f "$game/eetsmod-include/eetsmod.h" ]] && echo present || echo missing)"
 	echo "mods dir   : $game/mods ($(ls "$game/mods"/*.so "$game/mods"/*.cpp 2>/dev/null | wc -l) mod file(s))"
 	echo "compiler   : $(command -v "${CXX:-g++}" >/dev/null && "${CXX:-g++}" --version | head -1 || echo 'none (prebuilt .so mods still work)')"
@@ -243,7 +222,6 @@ fetch() {  # <url> <out>
 main() {
 	local cmd="${1:-}"; shift || true
 	case "$cmd" in
-		setup)   cmd_setup   "$@";;
 		uninstall) cmd_uninstall "$@";;
 		doctor)  cmd_doctor  "$@";;
 		new)     cmd_new     "$@";;

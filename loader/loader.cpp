@@ -766,11 +766,11 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		g_modbtn_x = 10; g_modbtn_w = 150; g_modbtn_h = 38; g_modbtn_y = h - g_modbtn_h - 10;
 		bool hot = g_mouse_x >= g_modbtn_x && g_mouse_x < g_modbtn_x + g_modbtn_w &&
 		           g_mouse_y >= g_modbtn_y && g_mouse_y < g_modbtn_y + g_modbtn_h;
-		FillRect(g_modbtn_x + 3, g_modbtn_y + 3, g_modbtn_w, g_modbtn_h, Colour(0, 0, 0, 110));
-		FillRect(g_modbtn_x, g_modbtn_y, g_modbtn_w, g_modbtn_h, hot ? Colour(235, 70, 60, 255) : Colour(205, 40, 35, 255));
-		DrawRect(g_modbtn_x, g_modbtn_y, g_modbtn_w, g_modbtn_h, Colour(0, 0, 0, 255), 3.0f);
+		FillRect(g_modbtn_x + 3, g_modbtn_y + 3, g_modbtn_w, g_modbtn_h, Color(0, 0, 0, 110));
+		FillRect(g_modbtn_x, g_modbtn_y, g_modbtn_w, g_modbtn_h, hot ? Color(235, 70, 60, 255) : Color(205, 40, 35, 255));
+		DrawRect(g_modbtn_x, g_modbtn_y, g_modbtn_w, g_modbtn_h, Color(0, 0, 0, 255), 3.0f);
 		char btn[64]; snprintf(btn, sizeof(btn), "MODS (%zu)", active);
-		DrawTextOutlined(g_modbtn_x + 12, g_modbtn_y + 8, btn, FONT_BIG, Colour(255, 232, 40, 255));
+		DrawTextOutlined(g_modbtn_x + 12, g_modbtn_y + 8, btn, FONT_BIG, Color(255, 232, 40, 255));
 		static bool once = false;
 		if (!once) { once = true; logline("menu MODS button at %d,%d (screen h=%d)", g_modbtn_x, g_modbtn_y, h); }
 	} else { g_modbtn_w = 0; }
@@ -778,7 +778,7 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 	if (g_loaded && !g_toast.empty() && g_time < g_toast_until) {
 		using namespace Eets;
 		DrawTextOutlined(10, 10, g_toast.c_str(), FONT_NORMAL,
-		                 g_toast_fail ? Colour(255, 90, 80, 255) : Colour(120, 255, 120, 255));
+		                 g_toast_fail ? Color(255, 90, 80, 255) : Color(120, 255, 120, 255));
 	}
 
 	if (g_loaded && g_overlay) {
@@ -787,38 +787,38 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		int cfgRows = 0;
 		if (!g_selected.empty()) cfgRows = (int)g_cfg[g_selected].size() + 1;   // +1 header
 		int H = OV_TITLE + nMods * OV_ROWH + cfgRows * OV_ROWH + OV_ROWH + 18;  // +1 row for the folder button
-		FillRect(OV_X + 5, OV_Y + 6, OV_W, H, Colour(0, 0, 0, 110));
-		FillRect(OV_X, OV_Y, OV_W, H, Colour(205, 40, 35, 255));
-		DrawRect(OV_X, OV_Y, OV_W, H, Colour(0, 0, 0, 255), 4.0f);
-		FillRect(OV_X + 4, OV_Y + 4, OV_W - 8, OV_TITLE - 6, Colour(165, 22, 20, 255));
+		FillRect(OV_X + 5, OV_Y + 6, OV_W, H, Color(0, 0, 0, 110));
+		FillRect(OV_X, OV_Y, OV_W, H, Color(205, 40, 35, 255));
+		DrawRect(OV_X, OV_Y, OV_W, H, Color(0, 0, 0, 255), 4.0f);
+		FillRect(OV_X + 4, OV_Y + 4, OV_W - 8, OV_TITLE - 6, Color(165, 22, 20, 255));
 		char line[160];
 		snprintf(line, sizeof(line), "MODS v%s", EETSMOD_VERSION);
-		DrawTextOutlined(OV_X + 10, OV_Y + 8, line, FONT_BIG, Colour(255, 232, 40, 255));
-		FillRect(OV_X + OV_W - 32, OV_Y + 7, 26, 26, Colour(165, 22, 20, 255));
-		DrawRect(OV_X + OV_W - 32, OV_Y + 7, 26, 26, Colour(0, 0, 0, 255), 2.0f);
-		DrawTextOutlined(OV_X + OV_W - 26, OV_Y + 8, "x", FONT_BIG, Colour(255, 232, 40, 255));
+		DrawTextOutlined(OV_X + 10, OV_Y + 8, line, FONT_BIG, Color(255, 232, 40, 255));
+		FillRect(OV_X + OV_W - 32, OV_Y + 7, 26, 26, Color(165, 22, 20, 255));
+		DrawRect(OV_X + OV_W - 32, OV_Y + 7, 26, 26, Color(0, 0, 0, 255), 2.0f);
+		DrawTextOutlined(OV_X + OV_W - 26, OV_Y + 8, "x", FONT_BIG, Color(255, 232, 40, 255));
 		int y = OV_Y + OV_TITLE;
 		for (auto& m : g_mods) {
 			bool sel = (g_selected == m.name);
-			if (sel) FillRect(OV_X + 4, y, OV_W - 8, OV_ROWH, Colour(255, 120, 55, 160));
+			if (sel) FillRect(OV_X + 4, y, OV_W - 8, OV_ROWH, Color(255, 120, 55, 160));
 			DrawTextOutlined(OV_X + 10, y + 4, m.disabled ? "OFF" : "ON",
-			                 FONT_NORMAL, m.disabled ? Colour(255, 90, 80, 255) : Colour(255, 210, 40, 255));
+			                 FONT_NORMAL, m.disabled ? Color(255, 90, 80, 255) : Color(255, 210, 40, 255));
 			snprintf(line, sizeof(line), "%s%s", m.name.c_str(), m.version.empty() ? "" : (" v" + m.version).c_str());
-			DrawTextOutlined(OV_X + 64, y + 4, line, FONT_NORMAL, Colour(255, 255, 255, 255));
+			DrawTextOutlined(OV_X + 64, y + 4, line, FONT_NORMAL, Color(255, 255, 255, 255));
 			y += OV_ROWH;
 		}
 		if (!g_selected.empty()) {
-			DrawTextOutlined(OV_X + 10, y + 4, ("config: " + g_selected).c_str(), FONT_SMALL, Colour(255, 232, 40, 255));
+			DrawTextOutlined(OV_X + 10, y + 4, ("config: " + g_selected).c_str(), FONT_SMALL, Color(255, 232, 40, 255));
 			y += OV_ROWH;
 			for (auto& kv : g_cfg[g_selected]) {
 				snprintf(line, sizeof(line), "%s = %s", kv.first.c_str(), kv.second.c_str());
-				DrawTextOutlined(OV_X + 14, y + 4, line, FONT_SMALL, Colour(255, 255, 255, 255));
-				FillRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Colour(70, 50, 60, 255));
-				DrawRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Colour(0, 0, 0, 255), 2.0f);
-				DrawTextOutlined(OV_X + OV_W - 63, y + 4, "-", FONT_NORMAL, Colour(255, 255, 255, 255));
-				FillRect(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, Colour(70, 50, 60, 255));
-				DrawRect(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, Colour(0, 0, 0, 255), 2.0f);
-				DrawTextOutlined(OV_X + OV_W - 28, y + 4, "+", FONT_NORMAL, Colour(255, 255, 255, 255));
+				DrawTextOutlined(OV_X + 14, y + 4, line, FONT_SMALL, Color(255, 255, 255, 255));
+				FillRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Color(70, 50, 60, 255));
+				DrawRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Color(0, 0, 0, 255), 2.0f);
+				DrawTextOutlined(OV_X + OV_W - 63, y + 4, "-", FONT_NORMAL, Color(255, 255, 255, 255));
+				FillRect(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, Color(70, 50, 60, 255));
+				DrawRect(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, Color(0, 0, 0, 255), 2.0f);
+				DrawTextOutlined(OV_X + OV_W - 28, y + 4, "+", FONT_NORMAL, Color(255, 255, 255, 255));
 				y += OV_ROWH;
 			}
 		}
@@ -826,9 +826,9 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		y += 6; g_folder_btn_y = y;
 		bool fhot = g_mouse_x >= OV_X + 6 && g_mouse_x < OV_X + OV_W - 6 &&
 		            g_mouse_y >= y && g_mouse_y < y + OV_ROWH;
-		FillRect(OV_X + 6, y, OV_W - 12, OV_ROWH, fhot ? Colour(235, 70, 60, 255) : Colour(165, 22, 20, 255));
-		DrawRect(OV_X + 6, y, OV_W - 12, OV_ROWH, Colour(0, 0, 0, 255), 2.0f);
-		DrawTextOutlined(OV_X + 14, y + 4, "+ Add a mod (open mods folder)", FONT_SMALL, Colour(255, 232, 40, 255));
+		FillRect(OV_X + 6, y, OV_W - 12, OV_ROWH, fhot ? Color(235, 70, 60, 255) : Color(165, 22, 20, 255));
+		DrawRect(OV_X + 6, y, OV_W - 12, OV_ROWH, Color(0, 0, 0, 255), 2.0f);
+		DrawTextOutlined(OV_X + 14, y + 4, "+ Add a mod (open mods folder)", FONT_SMALL, Color(255, 232, 40, 255));
 	}
 	g_vp_cur_w = g_vp_cur_h = 0;
 	if (real) real(device, src, dst, window);

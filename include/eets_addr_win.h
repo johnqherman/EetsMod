@@ -4,7 +4,11 @@
 
 namespace Eets { namespace addr {
 
-// RVAs (offsets from the PE image base) - PLACEHOLDERS, regenerate per build.
+// Windows is not wired up yet - HELP WANTED. To port: regenerate these RVAs (offsets
+// from the PE image base) for a Windows Eets build using the same symbol set as
+// tools/gen_engine_header.sh, fill out the full mirror of eets_addr.h below, and finish
+// the Win32 branch in loader/platform.h. A Windows Eets binary is needed to extract the
+// offsets. PRs welcome.
 namespace rva {
 	constexpr uintptr_t World_GetGravity   = 0x0;  // TODO
 	constexpr uintptr_t World_SetGravity   = 0x0;  // TODO

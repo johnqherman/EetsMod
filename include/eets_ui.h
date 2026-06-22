@@ -4,19 +4,19 @@
 namespace Eets { namespace UI {
 
 namespace col {
-	inline Colour black()     { return Colour(0, 0, 0, 255); }
-	inline Colour shadow()    { return Colour(0, 0, 0, 110); }
-	inline Colour panel()     { return Colour(205, 40, 35, 255); }
-	inline Colour titlebar()  { return Colour(165, 22, 20, 255); }
-	inline Colour title()     { return Colour(255, 232, 40, 255); }
-	inline Colour btn()       { return Colour(230, 58, 48, 255); }
-	inline Colour btnHover()  { return Colour(255, 120, 55, 255); }
-	inline Colour textC()     { return Colour(255, 255, 255, 255); }
-	inline Colour textHover() { return Colour(255, 232, 40, 255); }
-	inline Colour label()     { return Colour(255, 255, 255, 255); }
-	inline Colour cream()     { return Colour(255, 224, 193, 255); }
-	inline Colour on()        { return Colour(255, 210, 40, 255); }
-	inline Colour off()       { return Colour(120, 20, 18, 255); }
+	inline Color black()     { return Color(0, 0, 0, 255); }
+	inline Color shadow()    { return Color(0, 0, 0, 110); }
+	inline Color panel()     { return Color(205, 40, 35, 255); }
+	inline Color titlebar()  { return Color(165, 22, 20, 255); }
+	inline Color title()     { return Color(255, 232, 40, 255); }
+	inline Color btn()       { return Color(230, 58, 48, 255); }
+	inline Color btnHover()  { return Color(255, 120, 55, 255); }
+	inline Color textC()     { return Color(255, 255, 255, 255); }
+	inline Color textHover() { return Color(255, 232, 40, 255); }
+	inline Color label()     { return Color(255, 255, 255, 255); }
+	inline Color cream()     { return Color(255, 224, 193, 255); }
+	inline Color on()        { return Color(255, 210, 40, 255); }
+	inline Color off()       { return Color(120, 20, 18, 255); }
 }
 
 struct State {

@@ -13,15 +13,15 @@ namespace Eets {
 constexpr const char* EXPECTED_BUILDID = "e81cc5504d3ef03324805df3e9fc508c1bf8c628";
 
 struct Vector2 { float x, y; };
-struct Colour { unsigned char r, g, b, a;          // 4-byte packed (engine abi)
-	Colour(unsigned char R=255, unsigned char G=255, unsigned char B=255, unsigned char A=255)
+struct Color { unsigned char r, g, b, a;          // 4-byte packed (engine abi)
+	Color(unsigned char R=255, unsigned char G=255, unsigned char B=255, unsigned char A=255)
 		: r(R), g(G), b(B), a(A) {}
 };
 struct Object;        // opaque engine type
 struct MotionModel;   // opaque
 struct ObjectMgr;     // opaque
 
-// extension types: object behaviour components, fetched from an Object (see Get*Extension below)
+// extension types: object behavior components, fetched from an Object (see Get*Extension below)
 struct PositionExtension; struct SuckableExtension; struct WalkingExtension;
 struct ThwackerExtension; struct EmotionPlatformExtension; struct EdibleExtension;
 struct EmotionExtension; struct FlyingExtension; struct LightingExtension;
@@ -150,19 +150,19 @@ inline int ScreenHeight() {
 	char* g = (char*)((void*(*)())addr::GraphicsEngine_i)();
 	return g ? *(int*)(g + 0x44) : 0;
 }
-inline void DrawText(int x, int y, const char* text, Colour c = Colour()) {
-	((void(*)(int, int, const char*, const Colour&))addr::printText)(x, y, text, c);
+inline void DrawText(int x, int y, const char* text, Color c = Color()) {
+	((void(*)(int, int, const char*, const Color&))addr::printText)(x, y, text, c);
 }
 // warning: dir is the baseline DIRECTION not a scale - keep horizontal {1,0} or text rotates; dirx<1 shrinks horizontally.
 inline void DrawTextSized(int x, int y, const char* text, int size,
-                          Colour c = Colour(), int style = STYLE_NORMAL, float dirx = 1.0f) {
+                          Color c = Color(), int style = STYLE_NORMAL, float dirx = 1.0f) {
 	std::string s = text ? text : "";
 	Vector2 pos{(float)x, (float)y}, dir{dirx, 0.0f};
-	((void(*)(const std::string&, int, int, Colour, Vector2, bool, const Vector2&))
+	((void(*)(const std::string&, int, int, Color, Vector2, bool, const Vector2&))
 	 addr::TextPrinter_DrawString)(s, size, style, c, pos, false, dir);
 }
 inline void DrawTextOutlined(int x, int y, const char* text, int size,
-                             Colour c = Colour(), Colour shadow = Colour(0, 0, 0, 200),
+                             Color c = Color(), Color shadow = Color(0, 0, 0, 200),
                              int style = STYLE_NORMAL) {
 	DrawTextSized(x + 2, y + 2, text, size, shadow, style);
 	DrawTextSized(x, y, text, size, c, style);
@@ -170,29 +170,29 @@ inline void DrawTextOutlined(int x, int y, const char* text, int size,
 
 inline void* GraphicsEngine_i() { return ((void*(*)())addr::GraphicsEngine_i)(); }
 // GraphicsEngine geometry funcs swap R<->B internally; pre-swap so our RGBA shows correctly.
-inline Colour swab(Colour c) { return Colour(c.b, c.g, c.r, c.a); }
-inline void DrawLine(Vector2 a, Vector2 b, Colour c, float width = 1.0f) {
+inline Color swab(Color c) { return Color(c.b, c.g, c.r, c.a); }
+inline void DrawLine(Vector2 a, Vector2 b, Color c, float width = 1.0f) {
 	void* g = GraphicsEngine_i(); if (!g) return;
-	Colour s = swab(c);
-	((void(*)(void*, const Vector2&, const Vector2&, const Colour&, float))
+	Color s = swab(c);
+	((void(*)(void*, const Vector2&, const Vector2&, const Color&, float))
 	 addr::GraphicsEngine_DrawLine)(g, a, b, s, width);
 }
-inline void FillRect(int x, int y, int w, int h, Colour c) {
+inline void FillRect(int x, int y, int w, int h, Color c) {
 	void* g = GraphicsEngine_i(); if (!g) return;
-	Colour s = swab(c);
+	Color s = swab(c);
 	Vector2 a{(float)x, (float)y}, b{(float)(x + w), (float)(y + h)};
-	((void(*)(void*, const Vector2&, const Vector2&, const Colour&))
+	((void(*)(void*, const Vector2&, const Vector2&, const Color&))
 	 addr::GraphicsEngine_DrawSquare)(g, a, b, s);
 }
-inline void FillCircle(int x, int y, float r, Colour c, int segs = 24) {
+inline void FillCircle(int x, int y, float r, Color c, int segs = 24) {
 	void* g = GraphicsEngine_i(); if (!g) return;
-	Colour s = swab(c);
+	Color s = swab(c);
 	Vector2 p{(float)x, (float)y};
-	((void(*)(void*, const Vector2&, float, const Colour&, int))
+	((void(*)(void*, const Vector2&, float, const Color&, int))
 	 addr::GraphicsEngine_DrawCircleFilled)(g, p, r, s, segs);
 }
 // built from filled bars - DrawLine ignores width
-inline void DrawRect(int x, int y, int w, int h, Colour c, float t = 2.0f) {
+inline void DrawRect(int x, int y, int w, int h, Color c, float t = 2.0f) {
 	int ti = (int)t; if (ti < 1) ti = 1;
 	FillRect(x, y, w, ti, c);
 	FillRect(x, y + h - ti, w, ti, c);
@@ -231,23 +231,23 @@ inline void* LoadSprite(const char* path, int format = 0) {
 inline int  SpriteWidth(void* s)  { return s ? (int)((unsigned(*)(void*))addr::Sprite_GetWidth)(s)  : 0; }
 inline int  SpriteHeight(void* s) { return s ? (int)((unsigned(*)(void*))addr::Sprite_GetHeight)(s) : 0; }
 
-inline void DrawSpriteAt(void* sprite, int x, int y, Colour tint = Colour()) {
+inline void DrawSpriteAt(void* sprite, int x, int y, Color tint = Color()) {
 	void* ge = GraphicsEngine_i();
 	if (!ge || !sprite) return;
 	Vector2 uv0{0.0f, 0.0f}, uv1{1.0f, 1.0f};
 	((void(*)(void*, Vector2&, Vector2&))addr::Sprite_GetDiffuseUV)(sprite, uv0, uv1);
 	Vector2 pos{(float)x, (float)y};
-	((void(*)(void*, void*, const Vector2&, const Vector2&, const Vector2&, const Colour&))
+	((void(*)(void*, void*, const Vector2&, const Vector2&, const Vector2&, const Color&))
 	 addr::GraphicsEngine_DrawSprite)(ge, sprite, pos, uv0, uv1, tint);
 }
 
-inline bool DrawImage(const char* path, int x, int y, Colour tint = Colour()) {
+inline bool DrawImage(const char* path, int x, int y, Color tint = Color()) {
 	void* sprite = LoadSprite(path);
 	if (!sprite) return false;
 	DrawSpriteAt(sprite, x, y, tint);
 	return true;
 }
-inline bool DrawImageHUD(const char* path, int x, int y, Colour tint = Colour()) {
+inline bool DrawImageHUD(const char* path, int x, int y, Color tint = Color()) {
 	if (((bool(*)())addr::World_IsSimulating)()) {
 		Vector2 z{0.0f, 0.0f};
 		((void(*)(const Vector2&, const Vector2&))addr::World_SetGFXViewOffset)(z, z);
@@ -267,7 +267,7 @@ inline void* LoadAnim(const char* path) {
 inline float AnimFrameDuration(void* a) { return a ? *(float*)((char*)a + 0x30) : 0.0f; }
 inline int AnimFrameCount(void* a) { return a ? (int)((unsigned(*)(void*))addr::Animation_FrameCount)(a) : 0; }
 
-inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Colour tint = Colour()) {
+inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color()) {
 	void* a = LoadAnim(path);
 	if (!a) return false;
 	unsigned frames = (unsigned)AnimFrameCount(a);
@@ -310,13 +310,13 @@ inline bool Object_IsRolling(Object* a) { return ((bool(*)(Object*))addr::Object
 inline bool Object_IsWalker(Object* a) { return ((bool(*)(Object*))addr::Object_IsWalker)(a); }
 inline void Object_ReleaseAll(Object* a) { ((void(*)(Object*))addr::Object_ReleaseAll)(a); }
 inline void Object_SetAltCollision(Object* a, const char* b) { ((void(*)(Object*, const char*))addr::Object_SetAltCollision)(a, b); }
-inline void World_AddBackgroundImage(const char* a, const Vector2& b, const Vector2& c, float d, const Colour& e, float f) { ((void(*)(const char*, const Vector2&, const Vector2&, float, const Colour&, float))addr::World_AddBackgroundImage)(a, b, c, d, e, f); }
-inline void World_AddForegroundImage(const char* a, const Vector2& b, const Vector2& c, float d, const Colour& e, float f) { ((void(*)(const char*, const Vector2&, const Vector2&, float, const Colour&, float))addr::World_AddForegroundImage)(a, b, c, d, e, f); }
+inline void World_AddBackgroundImage(const char* a, const Vector2& b, const Vector2& c, float d, const Color& e, float f) { ((void(*)(const char*, const Vector2&, const Vector2&, float, const Color&, float))addr::World_AddBackgroundImage)(a, b, c, d, e, f); }
+inline void World_AddForegroundImage(const char* a, const Vector2& b, const Vector2& c, float d, const Color& e, float f) { ((void(*)(const char*, const Vector2&, const Vector2&, float, const Color&, float))addr::World_AddForegroundImage)(a, b, c, d, e, f); }
 inline void World_Alert(const Vector2& a, float b) { ((void(*)(const Vector2&, float))addr::World_Alert)(a, b); }
 inline bool World_AnimationsEqual(void* a, void* b) { return ((bool(*)(void*, void*))addr::World_AnimationsEqual)(a, b); }
 inline void World_CheckGoal(Object* a) { ((void(*)(Object*))addr::World_CheckGoal)(a); }
 inline void World_CopyItem() { ((void(*)())addr::World_CopyItem)(); }
-inline void World_CreateLight(const Vector2& a, const Colour& b, float c, float d) { ((void(*)(const Vector2&, const Colour&, float, float))addr::World_CreateLight)(a, b, c, d); }
+inline void World_CreateLight(const Vector2& a, const Color& b, float c, float d) { ((void(*)(const Vector2&, const Color&, float, float))addr::World_CreateLight)(a, b, c, d); }
 inline double World_GetDeterministicDouble() { return ((double(*)())addr::World_GetDeterministicDouble)(); }
 inline int World_GetDeterministicIntRange(int a, int b) { return ((int(*)(int, int))addr::World_GetDeterministicIntRange)(a, b); }
 inline void World_IncrementStat(const char* a) { ((void(*)(const char*))addr::World_IncrementStat)(a); }
@@ -331,8 +331,8 @@ inline Object* World_ScanForClosestEdible(Object* a, const Vector2& b, float c, 
 inline void World_SelectAll() { ((void(*)())addr::World_SelectAll)(); }
 inline void World_SetFPS(int a) { ((void(*)(int))addr::World_SetFPS)(a); }
 inline void World_SetGFXViewOffset(const Vector2& a, const Vector2& b) { ((void(*)(const Vector2&, const Vector2&))addr::World_SetGFXViewOffset)(a, b); }
-inline void World_SetGlobalAmbient(const Colour& a) { ((void(*)(const Colour&))addr::World_SetGlobalAmbient)(a); }
-inline void World_SetLevelModulate(const Colour& a) { ((void(*)(const Colour&))addr::World_SetLevelModulate)(a); }
+inline void World_SetGlobalAmbient(const Color& a) { ((void(*)(const Color&))addr::World_SetGlobalAmbient)(a); }
+inline void World_SetLevelModulate(const Color& a) { ((void(*)(const Color&))addr::World_SetLevelModulate)(a); }
 inline void World_SetLightAttenuation(unsigned short a, float b, float c, float d) { ((void(*)(unsigned short, float, float, float))addr::World_SetLightAttenuation)(a, b, c, d); }
 inline void World_SetTextHint(const char* a, const Vector2& b) { ((void(*)(const char*, const Vector2&))addr::World_SetTextHint)(a, b); }
 inline void World_SetWinFlag() { ((void(*)())addr::World_SetWinFlag)(); }

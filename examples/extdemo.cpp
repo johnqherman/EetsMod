@@ -1,4 +1,4 @@
-// extdemo - read Eets' behaviour extensions and live collisions. F3 toggles the readout.
+// extdemo - read Eets' behavior extensions and live collisions. F3 toggles the readout.
 #include "eetsmod.h"
 #include <cstdio>
 using namespace Eets;
@@ -33,25 +33,25 @@ extern "C" void EetsMod_Update() {
 
 	if (WalkingExtension* w = Object_GetWalkingExtension(eets)) {
 		snprintf(buf, sizeof(buf), "walk: %s", walk_state_name(WalkingExtension_GetState(w)));
-		DrawTextOutlined(20, y, buf, FONT_NORMAL, Colour(255, 255, 0, 255)); y += 26;
+		DrawTextOutlined(20, y, buf, FONT_NORMAL, Color(255, 255, 0, 255)); y += 26;
 	}
 	if (EmotionExtension* e = Object_GetEmotionExtension(eets)) {
 		const char* name = EmotionExtension_GetEmotionName(e);
 		snprintf(buf, sizeof(buf), "emotion: %s%s", name ? name : "?",
 		         EmotionExtension_RecentlyChanged(e) ? " (changed)" : "");
-		DrawTextOutlined(20, y, buf, FONT_NORMAL, Colour(255, 255, 0, 255)); y += 26;
+		DrawTextOutlined(20, y, buf, FONT_NORMAL, Color(255, 255, 0, 255)); y += 26;
 	}
 	if (HoldingExtension* h = Object_GetHoldingExtension(eets)) {
 		int held = 0;
 		ForEachHeld(h, [&](Object*) { held++; });
 		snprintf(buf, sizeof(buf), "holding: %d", held);
-		DrawTextOutlined(20, y, buf, FONT_NORMAL, Colour(255, 255, 0, 255)); y += 26;
+		DrawTextOutlined(20, y, buf, FONT_NORMAL, Color(255, 255, 0, 255)); y += 26;
 	}
 
 	int contacts = 0;
 	ForEachCollision(eets, [&](const CollisionReport&) { contacts++; });
 	if (contacts) {
 		snprintf(buf, sizeof(buf), "collisions: %d", contacts);
-		DrawTextOutlined(20, y, buf, FONT_NORMAL, Colour(255, 128, 128, 255));
+		DrawTextOutlined(20, y, buf, FONT_NORMAL, Color(255, 128, 128, 255));
 	}
 }

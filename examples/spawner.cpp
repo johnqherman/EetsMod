@@ -56,5 +56,5 @@ extern "C" void EetsMod_Update() {
 	if (!g_label || !in_game() || g_blueprints.empty()) return;
 	char buf[96];
 	snprintf(buf, sizeof(buf), "spawn: %s  (%d total)", g_blueprints[g_sel].c_str(), g_spawned);
-	DrawTextOutlined(MouseX() + 16, MouseY(), buf, FONT_NORMAL, Colour(255, 255, 0, 255));
+	DrawTextOutlined(MouseX() + 16, MouseY(), buf, FONT_NORMAL, Color(255, 255, 0, 255));
 }
