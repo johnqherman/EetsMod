@@ -24,8 +24,8 @@ mods, change their settings, or open the mods folder. (`F1` also opens it.)
 
 > Prefer a command? `eetsmod setup` does step 1 + prints step 2 for you.
 
-> **Heads up:** mods are native code that runs as part of the game. Only install
-> mods from people you trust. See [`SECURITY.md`](SECURITY.md).
+> **Heads up:** mods are native code that runs as part of the game (no sandbox).
+> Only install mods from people you trust.
 
 ## Make mods
 
@@ -45,16 +45,17 @@ extern "C" void EetsMod_OnKey(int key, int mods, int down) {
 }
 ```
 
-Full guide, the engine API, custom images/sounds/anims, the in-game UI toolkit, and
-build details: **[`docs/MODDING.md`](docs/MODDING.md)**. API reference:
-[`docs/NATIVE_API.md`](docs/NATIVE_API.md). Example mods: [`examples/`](examples).
+`eetsmod new` scaffolds a mod; `eetsmod pack` bundles it; the in-game **MODS** button
+manages it. The engine API is in [`docs/NATIVE_API.md`](docs/NATIVE_API.md) and the
+`include/` headers; learn by example in [`examples/`](examples) (gravity, custom
+images/sounds/anims, the UI toolkit, object extensions, collisions).
 
 ## How it works
 
 Eets is a non-PIE C++ ELF that links SDL2/FNA3D dynamically, so a preloaded loader
 interposes `FNA3D_SwapBuffers` (per-frame) and `SDL_PollEvent` (input), `dlopen`s mod
 `.so`s, and calls engine functions at their fixed addresses. Everything is derived by
-reverse-engineering the binary; see [`docs/INTERNALS.md`](docs/INTERNALS.md).
+reverse-engineering the binary (non-PIE, so addresses are stable per build).
 
 ## Layout
 
@@ -64,7 +65,7 @@ loader/        the LD_PRELOAD loader (hooks, crash isolation, .eetsmod staging)
 include/       mod headers: engine API, addresses, UI toolkit
 examples/      example mods (source + <name>.assets/)
 tools/         check-mod, add-sound, gen-api-ref, new-mod
-docs/          MODDING guide, NATIVE_API, INTERNALS, WINDOWS (port plan)
+docs/          NATIVE_API.md (generated API reference)
 Makefile       build / check / bundles / apidoc / release
 ```
 
