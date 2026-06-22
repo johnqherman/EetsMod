@@ -503,9 +503,13 @@ void install_assets() {
 	else logline("assets: install failed");
 }
 
-// runs at LD_PRELOAD load, before the engine scans Data/ at boot - so a bundle's
-// custom assets (sounds/textures) are in place for that first scan, not one launch late.
+// runs at load, before the engine scans Data/ at boot - so a bundle's custom assets
+// (sounds/textures) are in place for that first scan, not one launch late. On Linux the
+// constructor attribute drives it at LD_PRELOAD time; on Windows DllMain calls it instead
+// (so it must NOT also be a constructor there, or it would double-init).
+#ifndef _WIN32
 __attribute__((constructor))
+#endif
 void eetsmod_preboot() {
 	// LD_PRELOAD is inherited by children; our extract/compile steps shell out via
 	// system(), and those children would re-load this .so and re-run this constructor -
@@ -905,3 +909,151 @@ int SDL_PollEvent(void* event) {
 }
 
 } // extern "C"
+
+#ifdef _WIN32
+// ============================================================================
+// Windows entry path: version.dll proxy exports + IAT hooks + DllMain.
+//
+// On Linux the three functions above (FNA3D_SwapBuffers / SDL_PollEvent /
+// FNA3D_SetViewport) are LD_PRELOAD interposers. On Windows we instead ship as
+// version.dll: Eets.exe loads SDL2.dll, SDL2.dll imports GetFileVersionInfoA /
+// GetFileVersionInfoSizeA / VerQueryValueA from "version" - so our DLL has to
+// satisfy those (we forward them to the real system version.dll), and we redirect
+// the game's calls into FNA3D/SDL by rewriting the matching IAT slots of Eets.exe
+// to point at our functions. The originals stay reachable via dlsym(RTLD_NEXT),
+// shimmed in compat.h to GetModuleHandle+GetProcAddress, so the call-through in
+// each function above already works unchanged.
+// ============================================================================
+
+// logline() and eetsmod_preboot() are defined above in the file's anonymous
+// namespace, so they are already visible unqualified from here in the same TU.
+
+// ---- 1) version.dll export proxy -------------------------------------------
+// Load the real system version.dll once (System32\version.dll) and cache its
+// HMODULE; each export is then resolved + cached on first call.
+namespace {
+HMODULE real_version_dll() {
+	static HMODULE h = []() -> HMODULE {
+		char dir[MAX_PATH] = {0};
+		UINT n = GetSystemDirectoryA(dir, MAX_PATH);            // e.g. C:\Windows\System32
+		std::string path = (n && n < MAX_PATH) ? std::string(dir) : std::string("C:\\Windows\\System32");
+		path += "\\version.dll";
+		HMODULE m = LoadLibraryA(path.c_str());
+		logline("version-proxy: real version.dll %s (%s)", m ? "loaded" : "FAILED to load", path.c_str());
+		return m;
+	}();
+	return h;
+}
+FARPROC real_version_proc(const char* name) {
+	HMODULE h = real_version_dll();
+	return h ? GetProcAddress(h, name) : nullptr;
+}
+} // namespace
+
+// SDL2.dll imports exactly these three from "version". Signatures match <winver.h>
+// (BOOL/DWORD/LPCSTR/LPVOID/LPDWORD/PUINT) so the IAT sees the expected ABI.
+extern "C" {
+
+__declspec(dllexport)
+BOOL WINAPI GetFileVersionInfoA(LPCSTR lptstrFilename, DWORD dwHandle, DWORD dwLen, LPVOID lpData) {
+	typedef BOOL (WINAPI *Fn)(LPCSTR, DWORD, DWORD, LPVOID);
+	static Fn fn = (Fn)real_version_proc("GetFileVersionInfoA");
+	return fn ? fn(lptstrFilename, dwHandle, dwLen, lpData) : FALSE;
+}
+
+__declspec(dllexport)
+DWORD WINAPI GetFileVersionInfoSizeA(LPCSTR lptstrFilename, LPDWORD lpdwHandle) {
+	typedef DWORD (WINAPI *Fn)(LPCSTR, LPDWORD);
+	static Fn fn = (Fn)real_version_proc("GetFileVersionInfoSizeA");
+	return fn ? fn(lptstrFilename, lpdwHandle) : 0;
+}
+
+__declspec(dllexport)
+BOOL WINAPI VerQueryValueA(LPCVOID pBlock, LPCSTR lpSubBlock, LPVOID* lplpBuffer, PUINT puLen) {
+	typedef BOOL (WINAPI *Fn)(LPCVOID, LPCSTR, LPVOID*, PUINT);
+	static Fn fn = (Fn)real_version_proc("VerQueryValueA");
+	return fn ? fn(pBlock, lpSubBlock, lplpBuffer, puLen) : FALSE;
+}
+
+} // extern "C"
+
+// ---- 2) IAT hook installer -------------------------------------------------
+namespace {
+
+// Overwrite one IAT slot (*slot = target), flipping the page writable around the
+// store and restoring its protection. False only if VirtualProtect refuses.
+bool patch_iat_slot(void** slot, void* target) {
+	DWORD old = 0;
+	if (!VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old)) return false;
+	*slot = target;
+	DWORD tmp = 0;
+	VirtualProtect(slot, sizeof(void*), old, &tmp);
+	return true;
+}
+
+// Walk the host EXE's import directory; for every imported function whose name
+// matches one of ours, repoint its IAT slot at our detour. We match on the INT
+// (OriginalFirstThunk) name array while writing the parallel IAT (FirstThunk)
+// slot. Imports by ordinal (no name) are skipped; a name we don't find is not an
+// error - e.g. FNA3D_SetViewport may not be imported by every build.
+void install_iat_hooks() {
+	struct Target { const char* name; void* detour; bool found; };
+	Target targets[] = {
+		{ "FNA3D_SwapBuffers", (void*)&FNA3D_SwapBuffers, false },
+		{ "SDL_PollEvent",     (void*)&SDL_PollEvent,     false },
+		{ "FNA3D_SetViewport", (void*)&FNA3D_SetViewport, false },
+	};
+
+	BYTE* base = (BYTE*)GetModuleHandleA(NULL);
+	if (!base) { logline("iat: GetModuleHandleA(NULL) failed - no hooks installed"); return; }
+
+	IMAGE_DOS_HEADER* dos = (IMAGE_DOS_HEADER*)base;
+	if (dos->e_magic != IMAGE_DOS_SIGNATURE) { logline("iat: bad DOS header - no hooks"); return; }
+	IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
+	if (nt->Signature != IMAGE_NT_SIGNATURE) { logline("iat: bad NT header - no hooks"); return; }
+
+	IMAGE_DATA_DIRECTORY& impDir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+	if (!impDir.VirtualAddress || !impDir.Size) { logline("iat: no import directory - no hooks"); return; }
+
+	// The import-descriptor array (one entry per imported DLL) is NUL-terminated.
+	for (IMAGE_IMPORT_DESCRIPTOR* imp = (IMAGE_IMPORT_DESCRIPTOR*)(base + impDir.VirtualAddress);
+	     imp->Name; ++imp) {
+		// INT (names) and IAT (live pointers) advance in lockstep. OriginalFirstThunk
+		// can be 0 on some linkers; fall back to FirstThunk for the name array.
+		IMAGE_THUNK_DATA* nameThunk = (IMAGE_THUNK_DATA*)(base + (imp->OriginalFirstThunk ? imp->OriginalFirstThunk : imp->FirstThunk));
+		IMAGE_THUNK_DATA* iatThunk  = (IMAGE_THUNK_DATA*)(base + imp->FirstThunk);
+		for (; nameThunk->u1.AddressOfData; ++nameThunk, ++iatThunk) {
+			if (nameThunk->u1.Ordinal & IMAGE_ORDINAL_FLAG) continue;   // imported by ordinal: no name
+			IMAGE_IMPORT_BY_NAME* byName = (IMAGE_IMPORT_BY_NAME*)(base + nameThunk->u1.AddressOfData);
+			for (Target& t : targets) {
+				if (t.found || strcmp((const char*)byName->Name, t.name) != 0) continue;
+				if (patch_iat_slot((void**)&iatThunk->u1.Function, t.detour)) {
+					t.found = true;
+					logline("iat: hooked %s", t.name);
+				} else {
+					logline("iat: VirtualProtect failed for %s - left unhooked", t.name);
+				}
+			}
+		}
+	}
+
+	for (Target& t : targets)
+		if (!t.found) logline("iat: %s not imported by host - skipped", t.name);
+}
+
+} // namespace
+
+// ---- 3) DllMain ------------------------------------------------------------
+// Windows entry point. On attach: stage assets (preboot) and install the IAT
+// hooks so the game's FNA3D/SDL calls route through us. Kept lean for loader-lock
+// safety - preboot only touches the filesystem, and the IAT walk reads our own
+// already-mapped image plus a couple of VirtualProtect calls, all safe here.
+BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID) {
+	if (reason == DLL_PROCESS_ATTACH) {
+		DisableThreadLibraryCalls(hinst);   // we don't need per-thread notifications
+		eetsmod_preboot();
+		install_iat_hooks();
+	}
+	return TRUE;
+}
+#endif // _WIN32

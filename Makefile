@@ -20,10 +20,12 @@ $(BUILD)/libeetsmod.so: loader/loader.cpp $(HDRS)
 	$(CXX) $(CXXFLAGS) -shared -fvisibility=default -o $@ loader/loader.cpp -ldl
 
 # 32-bit Windows loader: a version.dll proxy injected into the (i386) game.
+# --kill-at strips MinGW's stdcall @N decoration from our exports, so the proxy
+# exports the plain names (GetFileVersionInfoA, ...) that SDL2.dll imports by name.
 win: $(BUILD)/version.dll
 $(BUILD)/version.dll: loader/loader.cpp $(WINHDRS)
 	@mkdir -p $(BUILD)
-	$(WINCXX) -O2 -std=c++17 -Wall -Iinclude -shared -static-libgcc -static-libstdc++ -o $@ loader/loader.cpp
+	$(WINCXX) -O2 -std=c++17 -Wall -Iinclude -shared -static-libgcc -static-libstdc++ -Wl,--kill-at -o $@ loader/loader.cpp
 
 install: all
 	@test -n "$(GAME)" || { echo "usage: make install GAME=/path/to/Eets"; exit 1; }
