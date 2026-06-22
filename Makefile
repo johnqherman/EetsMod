@@ -25,7 +25,7 @@ $(BUILD)/libeetsmod.so: loader/loader.cpp $(HDRS)
 win: $(BUILD)/version.dll
 $(BUILD)/version.dll: loader/loader.cpp $(WINHDRS)
 	@mkdir -p $(BUILD)
-	$(WINCXX) -O2 -std=c++17 -Wall -Iinclude -DEETSMOD_LOADER -shared -static-libgcc -static-libstdc++ \
+	$(WINCXX) -O2 -std=c++17 -Wall -Iinclude -DEETSMOD_LOADER -shared -static \
 		-Wl,--kill-at,--out-implib,$(BUILD)/libeetsmod.dll.a -o $@ loader/loader.cpp
 
 install: all
