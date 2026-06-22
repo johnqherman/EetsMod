@@ -56,7 +56,7 @@ would follow the same shape (`DYLD_INSERT_LIBRARIES`, Mach-O addresses).
 
 ## Status (what's scaffolded)
 Done / portable:
-- `loader/hook.h` is now **cross-platform** - page protection + executable alloc
+- `loader/hook.h` is **cross-platform** - page protection + executable alloc
   abstracted (`mprotect`/`mmap` vs `VirtualProtect`/`VirtualAlloc`); the x86-64
   length decoder + detour logic are shared. (Validated on Linux.)
 - `loader/platform.h` - the OS seam: `load_library`/`get_symbol`/`real_symbol`/

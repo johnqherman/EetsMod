@@ -26,8 +26,6 @@ authoritative list comes from dumping live `_G` inside `localexec` (`getfenv(1)`
 Gotchas: keybind is `Bind` (not `Misc_BindKey`), print is `Print`, resource loader
 is `LoadFile`. Engine-invoked global hooks: `Update()` (per frame, confirmed),
 `OnPause()`, `OnUnpause()`. ~98 globals; class ctors exposed as userdata globals.
-(The engine's Lua VM is still present; this framework no longer ships a Lua mod tier,
-but the `localexec` hook remains a patch-free entry point if ever needed.)
 
 ## Objects / blueprints
 
