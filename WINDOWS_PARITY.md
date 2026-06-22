@@ -63,21 +63,26 @@ Target binary: **Eets.exe, PE32 i386, ImageBase 0x400000, ASLR on** (preserved a
 - **Object_GetPosition** `0xaa0e0` is ABI-correct (Vector2* in EAX, identical to Linux). Its garbage-on-Eets is an
   engine weakness shared with the Linux build, not a port bug - no separate general getter exists.
 
-## ⏳ Genuinely remaining (irreducible niche tail)
-1. **Functions MSVC inlined/COMDAT-folded out of existence** (no standalone address in the Win binary). Reimplemented
-   in the wrappers via raw struct access so the Eets:: API still matches: ThwackerExtension_IsThwacking (state@+0x30),
-   EdibleExtension_GetEater (MSVC set walk), EmotionExtension_SetEmotionName (in-place EString), DrawCircleFilled
-   (FillRect scanlines). **Two could not be faithfully faked:** ThwackerExtension_GetCentre (computed inline from the
-   held object, no field) → returns {0,0}; HoldingExtension_ReleaseObject (single-erase semantics inlined; only bulk
-   ReleaseAll survives) → no-op.
-2. **hook_Creator_OnEndEetsDeadDialog** — the dead-dialog-end event; not recovered. (StartEetsDeadDialog is a generic
-   name-based opener, so the eets_death hook is deferred; derive from object_killed of World_GetEets() meanwhile.)
-3. **PhysicsExtension collision deque on Win32** — GetAccumulate/GetCollisions resolve, but ForEachCollision needs an
-   MSVC-`std::deque` walker (`CollisionReport.unsigned long` is 4 bytes on Win vs 8 on Linux). Guarded to no-op.
+## ✅ Tail closed - 100% functional parity
+- **Collisions:** Object→PhysicsExtension is Object+0x60 on Win; ForEachCollision walks the **MSVC `std::deque`**
+  (CollisionReport is 0x1c bytes since `unsigned long` is 4 on Win32, matching ours). Validated: real per-frame
+  contact counts (37-100+), no crash.
+- **MSVC-inlined functions reconstructed from call sites** so the Eets:: API is complete: ThwackerExtension_IsThwacking
+  (state@+0x30), EdibleExtension_GetEater (MSVC `std::set` walk), EmotionExtension_SetEmotionName (in-place EString),
+  DrawCircleFilled→FillCircle (FillRect scanlines, validated), **ThwackerExtension_GetCentre** (owner.pos +
+  normalize(owner.facing)·reach; owner@+0x4, reach@+0x3c), **HoldingExtension_ReleaseObject** (erase from the held
+  vector + restore physics/collision/visibility/update).
+- **eets_death** hooks Creator::OnEndEetsDeadDialog (0x1293d0, __thiscall(Creator*,int)); all 8 engine events fire.
+- **`det_Goal` returns World_CheckGoal's int** - a void detour leaked EAX from the event dispatch and instantly won
+  every level for any mod with OnEvent. Fixed; levels play normally.
+
+Every mod-facing callable on Windows is wired or faithfully reimplemented and runtime-validated under Proton.
+The only behavioral note: Object_GetPosition is garbage on the player object - an engine weakness shared with Linux.
 
 ## Branch
-`windows-parity` (pushed). Publish-prep on `main`. Graphics+UI, singletons, 32-bit hooks, and dual-binary
-`.eetsmod`/in-process untar all landed + validated under Proton; Linux build/examples green throughout.
+`windows-parity`. Publish-prep on `main`. Graphics+UI, text, singletons, object+extension methods, 32-bit engine
+hooks, sprites/assets, MSVC-deque collisions, and dual-binary `.eetsmod`/in-process untar all landed + validated
+under Proton. One `.cpp` builds and runs on both platforms; Linux build/examples green throughout.
 
 ## Bulk recovery pipeline (for the 55 internals)
 Per-function MCP calls are too slow. Use the headless decompile dump:
