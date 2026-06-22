@@ -458,20 +458,92 @@ void install_engine_event_hooks() {
 	try_hook("eets_death (Creator::StartEetsDeadDialog)",(void*)Eets::addr::hook_Creator_StartEetsDeadDialog,(void*)det_EetsDead,    (void**)&orig_EetsDead);
 }
 
-// a mod is one self-contained .eetsmod file (gzipped tar: <name>.so/.cpp + <name>.cfg
-// + assets/). extract each into a hidden per-bundle staging dir so the mods folder
-// keeps only the .eetsmod; (re)extract only when the bundle is newer than its stamp.
+// a mod is one self-contained .eetsmod file (a STORED ustar tar: <name>.so + <name>.dll
+// + <name>.cpp + <name>.cfg + assets/). extract each into a hidden per-bundle staging dir
+// so the mods folder keeps only the .eetsmod; (re)extract only when newer than its stamp.
+// Extraction is fully in-process (no tar/rm/cp shell-out) so it works identically on
+// Linux and under Wine. Uncompressed so no inflate dependency in the 32-bit loader.
 std::string bundle_dir(const std::string& name) { return cachedir() + "/" + name + ".d"; }
 
+void mkdir_p(const std::string& path) {
+	std::string cur;
+	for (size_t i = 0; i < path.size(); ++i) {
+		cur += path[i];
+		if (path[i] == '/' && cur.size() > 1) mkdir(cur.c_str(), 0755);
+	}
+	mkdir(path.c_str(), 0755);
+}
+void rm_tree(const std::string& path) {
+	DIR* d = opendir(path.c_str());
+	if (d) {
+		struct dirent* e;
+		while ((e = readdir(d)) != nullptr) {
+			std::string n = e->d_name;
+			if (n == "." || n == "..") continue;
+			std::string p = path + "/" + n;
+			struct stat st;
+			if (stat(p.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) rm_tree(p);
+			else remove(p.c_str());
+		}
+		closedir(d);
+	}
+	rmdir(path.c_str());
+}
+void copy_tree(const std::string& src, const std::string& dst) {
+	mkdir_p(dst);
+	DIR* d = opendir(src.c_str()); if (!d) return;
+	struct dirent* e;
+	while ((e = readdir(d)) != nullptr) {
+		std::string n = e->d_name;
+		if (n == "." || n == "..") continue;
+		std::string s = src + "/" + n, t = dst + "/" + n;
+		struct stat st;
+		if (stat(s.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) { copy_tree(s, t); continue; }
+		FILE* in = fopen(s.c_str(), "rb"); if (!in) continue;
+		FILE* out = fopen(t.c_str(), "wb");
+		if (out) { char b[8192]; size_t r; while ((r = fread(b, 1, sizeof(b), in)) > 0) fwrite(b, 1, r, out); fclose(out); }
+		fclose(in);
+	}
+	closedir(d);
+}
+// extract a STORED (uncompressed) ustar archive into dest. returns false on a bad/compressed archive.
+bool untar(const std::string& archive, const std::string& dest) {
+	FILE* f = fopen(archive.c_str(), "rb"); if (!f) return false;
+	unsigned char hdr[512];
+	if (fread(hdr, 1, 512, f) != 512) { fclose(f); return false; }
+	if (hdr[0] == 0x1f && hdr[1] == 0x8b) { fclose(f); return false; }   // gzipped: needs re-pack with current eetsmod
+	bool ok = true;
+	do {
+		if (hdr[0] == '\0') break;                                       // end-of-archive zero block
+		std::string name((char*)hdr, strnlen((char*)hdr, 100));
+		if (hdr[345] != '\0') name = std::string((char*)hdr + 345, strnlen((char*)hdr + 345, 155)) + "/" + name;
+		unsigned long size = strtoul(std::string((char*)hdr + 124, 12).c_str(), nullptr, 8);
+		char type = hdr[156];
+		std::string out = dest + "/" + name;
+		if (type == '5') {                                              // directory
+			mkdir_p(out);
+		} else if (type == '0' || type == '\0') {                       // regular file
+			size_t slash = out.find_last_of('/');
+			if (slash != std::string::npos) mkdir_p(out.substr(0, slash));
+			FILE* of = fopen(out.c_str(), "wb");
+			unsigned long rem = size; char buf[4096];
+			while (rem > 0) {
+				size_t chunk = rem < sizeof(buf) ? (size_t)rem : sizeof(buf);
+				size_t r = fread(buf, 1, chunk, f);
+				if (r == 0) { ok = false; break; }
+				if (of) fwrite(buf, 1, r, of);
+				rem -= r;
+			}
+			if (of) fclose(of);
+			unsigned long pad = (512 - (size % 512)) % 512;
+			if (pad) fseek(f, pad, SEEK_CUR);
+		}
+	} while (fread(hdr, 1, 512, f) == 512);
+	fclose(f);
+	return ok;
+}
+
 void extract_bundles() {
-#ifdef _WIN32
-	// .eetsmod extraction shells out to tar/rm/cp - absent under Wine, and spawning a
-	// process here every reload-poll causes a visible frame hitch. Windows uses loose
-	// .dll mods for now; in-process untar is Phase 4.
-	static bool warned = false;
-	if (!warned) { warned = true; logline("bundle: .eetsmod extraction deferred on Windows (use loose .dll mods; Phase 4)"); }
-	return;
-#endif
 	std::string dir = modsdir();
 	DIR* d = opendir(dir.c_str()); if (!d) return;
 	struct dirent* ent;
@@ -481,13 +553,12 @@ void extract_bundles() {
 		std::string name = stem(n), bundle = dir + "/" + n, sdir = bundle_dir(name);
 		std::string stamp = sdir + "/.stamp";
 		if (exists(stamp) && mtime_of(stamp) >= mtime_of(bundle)) continue;
-		std::string cmd = "rm -rf \"" + sdir + "\" && mkdir -p \"" + sdir + "\" && "
-		                  "tar xzf \"" + bundle + "\" -C \"" + sdir + "\" 2>>\"" + base() + "/Log/native_mods.log\"";
-		if (system(cmd.c_str()) != 0) { logline("bundle: extract FAILED %s (need tar)", n.c_str()); continue; }
+		rm_tree(sdir);
+		mkdir_p(sdir);
+		if (!untar(bundle, sdir)) { logline("bundle: extract FAILED %s (bad/compressed archive - re-pack with eetsmod)", n.c_str()); continue; }
 		// a bundle's assets/ tree mirrors Data/ and is installed on extract
 		std::string adir = sdir + "/assets";
-		if (exists(adir))
-			system(("cp -r --no-preserve=mode \"" + adir + "\"/. \"" + datadir() + "\"/ 2>>\"" + base() + "/Log/native_mods.log\"").c_str());
+		if (exists(adir)) copy_tree(adir, datadir());
 		FILE* f = fopen(stamp.c_str(), "w"); if (f) fclose(f);
 		logline("bundle: installed %s", n.c_str());
 	}

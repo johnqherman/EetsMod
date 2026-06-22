@@ -61,6 +61,22 @@ compile_so() {  # <src.cpp> <out.so> [game-for-includes]
 	"${CXX:-g++}" $opt -fPIC -std=c++17 -Wall -shared "-I$inc" ${EETSMOD_CXXFLAGS:-} -o "$out" "$src"
 }
 
+# where libeetsmod.dll.a (the Windows import lib) lives, for cross-building .dll mods
+libdir() {
+	[[ -f "$SELF/build/libeetsmod.dll.a" ]] && { echo "$SELF/build"; return; }
+	[[ -f "$SELF/libeetsmod.dll.a" ]] && { echo "$SELF"; return; }
+	echo ""
+}
+# ---- cross-compile the same mod to a Windows .dll (best-effort; needs mingw + import lib) ----
+compile_dll() {  # <src.cpp> <out.dll> [game-for-includes] ; returns 1 if toolchain/lib missing
+	local src="$1" out="$2" inc lib; inc="$(includedir "${3:-}")"; lib="$(libdir)"
+	command -v "${WINCXX:-i686-w64-mingw32-g++}" >/dev/null || return 1
+	[[ -n "$lib" ]] || return 1
+	"${WINCXX:-i686-w64-mingw32-g++}" -O2 -std=c++17 "-I$inc" -shared -static-libgcc -static-libstdc++ \
+		-o "$out" "$src" -L"$lib" -leetsmod \
+		-Wl,-Bstatic,--whole-archive,-l:libwinpthread.a,--no-whole-archive,-Bdynamic 2>/dev/null
+}
+
 cmd_uninstall() {
 	local game; game="$(find_game "${1:-}")"
 	rm -f "$game/libeetsmod.so"
@@ -126,6 +142,7 @@ cmd_pack() {
 		name="$(basename "${in%.cpp}")"; local base; base="$(dirname "$in")"
 		cp "$in" "$tmp/$name.cpp"
 		compile_so "$in" "$tmp/$name.so"            # ship a prebuilt .so so users need no compiler
+		compile_dll "$in" "$tmp/$name.dll" || info "no Windows .dll (need i686-w64-mingw32-g++ + libeetsmod.dll.a); bundle is Linux-only"
 		local cfg="$base/$name.cfg"
 		[[ -f "$cfg" ]] && cp "$cfg" "$tmp/$name.cfg" || printf 'version = 1.0\nauthor = unknown\n' > "$tmp/$name.cfg"
 		# custom assets ride along: a sibling <name>.assets/ tree (mirrors Data/) -> assets/ in the bundle
@@ -136,20 +153,24 @@ cmd_pack() {
 		name="$(basename "${cfg%.cfg}")"
 		cp "$cfg" "$tmp/$name.cfg"
 		[[ -f "$in/$name.so" ]]  && cp "$in/$name.so"  "$tmp/"
+		[[ -f "$in/$name.dll" ]] && cp "$in/$name.dll" "$tmp/"
 		[[ -f "$in/$name.cpp" ]] && cp "$in/$name.cpp" "$tmp/"
 		[[ -f "$tmp/$name.so" || -f "$tmp/$name.cpp" ]] || die "no $name.so or $name.cpp in $in"
 		[[ -f "$tmp/$name.so" ]] || { [[ -f "$tmp/$name.cpp" ]] && compile_so "$in/$name.cpp" "$tmp/$name.so" 2>/dev/null || true; }
+		# cross-build the .dll from source if one wasn't supplied
+		[[ -f "$tmp/$name.dll" || ! -f "$tmp/$name.cpp" ]] || compile_dll "$in/$name.cpp" "$tmp/$name.dll" || true
 		[[ -d "$in/assets" ]] && cp -r "$in/assets" "$tmp/"
 	else die "pack source must be a .cpp or a directory"; fi
 	pack_audit "$tmp" "$name"     # warn about sound refs in code that are not bundled
 	[[ -n "$out" ]] || out="$name.eetsmod"
-	tar -C "$tmp" -czf "$out" .
+	tar -C "$tmp" -cf "$out" .                       # STORED (uncompressed) ustar: the loader untars in-process, no inflate
 	# report contents so a forgotten asset is obvious
-	local has_so="no" has_src="no" nassets=0
+	local has_so="no" has_dll="no" has_src="no" nassets=0
 	[[ -f "$tmp/$name.so" ]] && has_so="yes"
+	[[ -f "$tmp/$name.dll" ]] && has_dll="yes"
 	[[ -f "$tmp/$name.cpp" ]] && has_src="yes"
 	[[ -d "$tmp/assets" ]] && nassets="$(find "$tmp/assets" -type f | wc -l)"
-	info "packed $out (name=$name, $(du -h "$out" | cut -f1)): prebuilt=$has_so source=$has_src assets=$nassets"
+	info "packed $out (name=$name, $(du -h "$out" | cut -f1)): linux_so=$has_so win_dll=$has_dll source=$has_src assets=$nassets"
 }
 
 # best-effort lint: the convention dir bundles assets; this just parses code for sound
