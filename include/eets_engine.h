@@ -1,4 +1,4 @@
-// abi note: Vector2 { float x, y } is one SSE eightbyte in xmm0 - matching the type matches the abi.
+// ABI: Vector2 { float x, y } is one SSE eightbyte in xmm0 - matching the type matches the ABI
 #pragma once
 #include <cstdint>
 #include <cstdlib>
@@ -12,10 +12,7 @@
 #include "eets_addr.h"       // Linux x86-64 absolute addresses
 #endif
 
-// On 32-bit MSVC (Win32) C++ member functions use __thiscall (this in ECX, not a
-// stack arg). The wrappers below pass the object/extension/this as the first
-// explicit arg, so member-targeting casts must carry __thiscall there. On Linux
-// (SysV) the convention attribute is empty and these casts are unchanged.
+// Win32 member fns use __thiscall (this in ECX); casts must carry it. empty on Linux SysV
 #ifdef _WIN32
 #  define ECALL __thiscall
 #else
@@ -26,13 +23,9 @@
 
 namespace Eets {
 
-// One null-safe, ABI-correct call path for every engine callable, so a mod never branches on
-// platform. EC<Sig>(addr)(args...) targets a C++ member method - cast as __thiscall on Win32
-// (`this` in ECX), plain on Linux (SysV) - and FC<Sig>(addr)(args...) targets a cdecl free
-// function. The signature is a compile-time type, so the exact ABI (by-value vs const-ref args,
-// return type) is preserved with no decay. If the address is unresolved (a not-yet-ported RVA
-// resolves to 0) the call is skipped and a default-constructed R returned, so calling an absent
-// function degrades to a no-op instead of jumping to address 0.
+// null-safe ABI-correct call path. EC = member (__thiscall on Win32, plain on Linux SysV),
+// FC = cdecl free fn. sig is a compile-time type so the ABI is preserved with no decay
+// unresolved addr (0) -> call skipped, default R returned (no-op, not a jump to 0)
 template <class F, bool Member> struct EngineCall;
 template <class R, class... A> struct EngineCall<R(A...), true> {
 	uintptr_t fn;
@@ -51,7 +44,7 @@ template <class R, class... A> struct EngineCall<R(A...), false> {
 template <class F> inline EngineCall<F, true>  EC(uintptr_t fn) { return {fn}; }   // member (__thiscall on Win32)
 template <class F> inline EngineCall<F, false> FC(uintptr_t fn) { return {fn}; }   // free function (cdecl)
 
-// valid for this exact build; loader warns if the running BuildID differs
+// valid for this exact build; loader warns if running BuildID differs
 constexpr const char* EXPECTED_BUILDID = "e81cc5504d3ef03324805df3e9fc508c1bf8c628";
 
 struct Vector2 { float x, y; };
@@ -63,7 +56,7 @@ struct Object;        // opaque engine type
 struct MotionModel;   // opaque
 struct ObjectMgr;     // opaque
 
-// extension types: object behavior components, fetched from an Object (see Get*Extension below)
+// extension types: object behavior components, fetched via Get*Extension below
 struct PositionExtension; struct SuckableExtension; struct WalkingExtension;
 struct ThwackerExtension; struct EmotionPlatformExtension; struct EdibleExtension;
 struct EmotionExtension; struct FlyingExtension; struct LightingExtension;
@@ -84,14 +77,12 @@ struct CollisionReport {
 	unsigned long id_2;           // +0x20
 };
 
-// Engine string ABI. The engine takes std::string by const-ref (reads only; caller owns).
-// On Linux that's libstdc++ std::string. On Win32 the engine is MSVC: its std::string has a
-// different memory layout, and mingw's std::string is NOT compatible - passing one crashes.
-// EString is compile-time-polymorphic: same call site, the type models the right ABI per platform.
+// engine string ABI. engine takes std::string by const-ref (reads only; caller owns)
+// Linux: libstdc++ std::string. Win32: MSVC layout - mingw's is NOT compatible, passing one crashes
+// EString models the right per-platform ABI at the same call site
 #ifdef _WIN32
-// MSVC 32-bit std::string (release): union{char buf[16]; char* ptr} @0x00, size @0x10, capacity @0x14.
-// SSO when capacity <= 0xf (data inline); else _Ptr. Passed by const-ref so sizeof is irrelevant -
-// only the field layout the engine reads matters (all confirmed from the decompiled TextPrinter).
+// MSVC 32-bit std::string (release): union{char buf[16]; char* ptr}@0x00, size@0x10, cap@0x14
+// SSO when cap <= 0xf (inline); else _Ptr. by const-ref so only field layout matters, not sizeof
 struct EString {
 	union { char buf[16]; const char* ptr; };
 	uint32_t size, cap;
@@ -107,13 +98,12 @@ using EString = std::string;
 
 // FontPrintSizes enum -> pixel height: 1=13 2=14 3=20 4=28 5=35
 enum FontSize { FONT_TINY = 1, FONT_SMALL = 2, FONT_NORMAL = 3, FONT_BIG = 4, FONT_HUGE = 5 };
-// FontPrintStyles -> typeface. STYLE_GEEK (geekabyte) is the in-game gui font.
+// FontPrintStyles -> typeface. STYLE_GEEK (geekabyte) is the in-game gui font
 enum FontStyle { STYLE_KOMIKA = 1, STYLE_GEEK = 2, STYLE_NORMAL = 3, STYLE_BRADY = 4 };
 
 inline Vector2 World_GetGravity() {
 #ifdef _WIN32
-	// 32-bit MSVC returns an 8-byte struct via a hidden first pointer arg (sret);
-	// the engine's real signature is void World_GetGravity(Vector2* out).
+	// 32-bit MSVC returns the 8-byte struct via hidden sret ptr: void World_GetGravity(Vector2* out)
 	Vector2 v; FC<void(Vector2*)>(addr::World_GetGravity)(&v); return v;
 #else
 	return FC<Vector2()>(addr::World_GetGravity)();
@@ -209,7 +199,7 @@ inline const char* MotionModel_GetCurrentMotionName(MotionModel* m) {
 	return EC<const char*(MotionModel*)>(addr::MotionModel_GetCurrentMotionName)(m);
 }
 
-// ObjectMgr holds a std::vector<Object*> at offsets +0 (begin) / +8 (end).
+// ObjectMgr holds a std::vector<Object*> at offsets +0 (begin) / +8 (end)
 inline ObjectMgr* ObjectMgr_i() {
 	return FC<ObjectMgr*()>(addr::ObjectMgr_i)();
 }
@@ -225,8 +215,7 @@ inline void ForEachObject(Fn fn) {
 inline bool World_IsInMainMenu() {
 	return FC<bool()>(addr::World_IsInMainMenu)();
 }
-// the GraphicsEngine singleton. Linux: an accessor function. Win32: a global variable
-// holding the GE pointer (DAT_00ee3db0) - there is no accessor, so deref the global.
+// GraphicsEngine singleton. Linux: accessor fn. Win32: no accessor - deref the global (DAT_00ee3db0)
 inline void* GE_instance() {
 #ifdef _WIN32
 	return addr::GraphicsEngine_i ? *(void**)addr::GraphicsEngine_i : nullptr;
@@ -245,7 +234,7 @@ inline int ScreenHeight() {
 inline void DrawText(int x, int y, const char* text, Color c = Color()) {
 	FC<void(int, int, const char*, const Color&)>(addr::printText)(x, y, text, c);
 }
-// warning: dir is the baseline DIRECTION not a scale - keep horizontal {1,0} or text rotates; dirx<1 shrinks horizontally.
+// dir is baseline DIRECTION not scale - keep {1,0} or text rotates; dirx<1 shrinks horizontally
 inline void DrawTextSized(int x, int y, const char* text, int size,
                           Color c = Color(), int style = STYLE_NORMAL, float dirx = 1.0f) {
 	EString s(text ? text : "");   // std::string on Linux, MSVC-layout on Win32 (same call site)
@@ -260,12 +249,12 @@ inline void DrawTextOutlined(int x, int y, const char* text, int size,
 }
 
 inline void* GraphicsEngine_i() { return GE_instance(); }
-// GraphicsEngine geometry funcs swap R<->B internally; pre-swap so our RGBA shows correctly.
+// GraphicsEngine geometry funcs swap R<->B internally; pre-swap so our RGBA shows correctly
 inline Color swab(Color c) { return Color(c.b, c.g, c.r, c.a); }
 inline void DrawLine(Vector2 a, Vector2 b, Color c, float width = 1.0f) {
 	void* g = GraphicsEngine_i(); if (!g) return;
 	Color s = swab(c);
-	// Win32 GraphicsEngine::DrawLine is __thiscall and RET 0x10 -> 4 stack args incl. width (callee-cleanup)
+	// Win32 GraphicsEngine::DrawLine __thiscall, RET 0x10 -> 4 callee-cleanup stack args incl. width
 	EC<void(void*, const Vector2&, const Vector2&, const Color&, float)>(addr::GraphicsEngine_DrawLine)(g, a, b, s, width);
 }
 inline void FillRect(int x, int y, int w, int h, Color c) {
@@ -277,8 +266,7 @@ inline void FillRect(int x, int y, int w, int h, Color c) {
 inline void FillCircle(int x, int y, float r, Color c, int segs = 24) {
 	void* g = GraphicsEngine_i(); if (!g) return;
 #ifdef _WIN32
-	// the Win build has no procedural filled-circle primitive (it draws circles as sprites);
-	// reproduce one from horizontal FillRect scanlines so the Eets:: API matches Linux.
+	// Win build has no filled-circle primitive; reproduce from FillRect scanlines to match Linux
 	(void)segs;
 	int ri = (int)(r + 0.5f); if (ri < 1) return;
 	for (int dy = -ri; dy <= ri; ++dy) {
@@ -323,11 +311,11 @@ inline void* LoadSprite(const char* path, int format = 0) {
 		struct { void* sprite; void* ctrl; } holder = { nullptr, nullptr };
 #ifdef _WIN32
 		// __thiscall + struct-return: `this`(sm) in ECX, hidden sret ptr is the first stack arg,
-		// then the name (MSVC std::string via EString) and format.
+		// then the name (MSVC std::string via EString) and format
 		EString p(path);
 		EC<void(void*, void*, const EString&, int)>(addr::SpriteManager_Load)(sm, &holder, p, format);
 #else
-		// SysV sret method: hidden sret ptr first, then `this`, then args.
+		// SysV sret method: hidden sret ptr first, then `this`, then args
 		std::string p = path;
 		FC<void(void*, void*, const std::string&, int)>(addr::SpriteManager_Load)(&holder, sm, p, format);
 #endif
@@ -460,7 +448,7 @@ inline void World_ShowSolutionTime(float a) { FC<void(float)>(addr::World_ShowSo
 inline void World_ShowTutorialDialog(const char* a) { FC<void(const char*)>(addr::World_ShowTutorialDialog)(a); }
 
 // ===== object extensions =====
-// each accessor returns null if the object lacks that extension; always null-check.
+// each accessor returns null if the object lacks that extension; always null-check
 inline PositionExtension* Object_GetPositionExtension(Object* o) { return FC<PositionExtension*(Object*)>(addr::Object_GetPositionExtension)(o); }
 inline SuckableExtension* Object_GetSuckableExtension(Object* o) { return FC<SuckableExtension*(Object*)>(addr::Object_GetSuckableExtension)(o); }
 inline WalkingExtension* Object_GetWalkingExtension(Object* o) { return FC<WalkingExtension*(Object*)>(addr::Object_GetWalkingExtension)(o); }
@@ -502,8 +490,7 @@ inline bool ThwackerExtension_IsThwacking(ThwackerExtension* t) {
 inline Vector2 ThwackerExtension_GetCentre(ThwackerExtension* t) {
 	Vector2 r{0.0f, 0.0f};
 #ifdef _WIN32
-	// MSVC-inlined; reconstruct from the call site: centre = owner.pos + normalize(owner.facing) * reach,
-	// where owner = *(this+0x4) (an Object*) and reach = *(float*)(this+0x3c).
+	// MSVC-inlined; centre = owner.pos + normalize(owner.facing)*reach. owner=*(Object**)(this+0x4), reach=*(float*)(this+0x3c)
 	if (!t) return r;
 	Object* owner = *(Object**)((char*)t + 0x4);
 	if (!owner) return r;
@@ -521,9 +508,8 @@ inline Vector2 ThwackerExtension_GetCentre(ThwackerExtension* t) {
 inline bool EdibleExtension_GetEaten(EdibleExtension* e) { return EC<bool(EdibleExtension*)>(addr::EdibleExtension_GetEaten)(e); }
 inline unsigned EdibleExtension_GetEater(EdibleExtension* e) {
 #ifdef _WIN32
-	// standalone getter MSVC-inlined; eaters are a std::set<unsigned> @this+0x8. Return the first
-	// (lowest) eater id by walking the MSVC _Tree: set{_Myhead@+0, _Mysize@+4}; begin = _Myhead->_Left;
-	// node{_Left@0,_Parent@4,_Right@8,_Color@0xc,_Isnil@0xd, _Myval@0x10}.
+	// MSVC-inlined; eaters = std::set<unsigned>@this+0x8. return lowest id via _Tree walk:
+	// set{_Myhead@0,_Mysize@4}; begin=_Myhead->_Left; node{_Left@0,_Parent@4,_Right@8,_Color@0xc,_Isnil@0xd,_Myval@0x10}
 	if (!e) return 0;
 	char* set = (char*)e + 0x8;
 	if (*(unsigned*)(set + 4) == 0) return 0;          // empty set -> no eater
@@ -555,9 +541,8 @@ inline void HoldingExtension_HoldObject(HoldingExtension* h, Object* o) { EC<voi
 inline void HoldingExtension_ReleaseAll(HoldingExtension* h) { EC<void(HoldingExtension*)>(addr::HoldingExtension_ReleaseAll)(h); }
 inline void HoldingExtension_ReleaseObject(HoldingExtension* h, Object* o) {
 #ifdef _WIN32
-	// MSVC-inlined; reconstruct as the single-object inverse of HoldObject: erase o from the held
-	// vector<Object*> (begin@h+0x8, end@h+0xc) then restore the object (re-enable physics/collision/
-	// visibility/update - SetVisibility=0x5c400, SetUpdate=0xab180 are __thiscall(Object*,bool)).
+	// MSVC-inlined inverse of HoldObject: erase o from held vector<Object*> (begin@h+0x8, end@h+0xc),
+	// then restore physics/collision/visibility/update. SetVisibility=0x5c400, SetUpdate=0xab180 __thiscall(Object*,bool)
 	if (!h || !o) return;
 	void** begin = *(void***)((char*)h + 0x8);
 	void** end   = *(void***)((char*)h + 0xc);
@@ -592,8 +577,7 @@ inline bool EmotionExtension_RecentlyChanged(EmotionExtension* e) { return EC<bo
 inline const char* EmotionExtension_GetEmotionName(EmotionExtension* e) { return EC<const char*(EmotionExtension*)>(addr::EmotionExtension_GetEmotionName)(e); }
 inline void EmotionExtension_SetEmotionName(EmotionExtension* e, const char* n) {
 #ifdef _WIN32
-	// standalone setter MSVC-inlined; the name is a std::string @this+0x20. Overwrite it in place
-	// with a fresh MSVC-layout string (SSO for the short emotion names; GetEmotionName reads it back).
+	// MSVC-inlined; name is std::string@this+0x20. overwrite in place with MSVC-layout string (SSO)
 	if (e) new ((char*)e + 0x20) EString(n ? n : "");
 #else
 	EC<void(EmotionExtension*, const char*)>(addr::EmotionExtension_SetEmotionName)(e, n);
@@ -604,8 +588,7 @@ inline unsigned EmotionPlatformExtension_GetCurrentEmotion(EmotionPlatformExtens
 inline bool EmotionPlatformExtension_MatchesCurrentEmotion(EmotionPlatformExtension* e) { return EC<bool(EmotionPlatformExtension*)>(addr::EmotionPlatformExtension_MatchesCurrentEmotion)(e); }
 inline void EmotionPlatformExtension_SetEmotion(EmotionPlatformExtension* e, unsigned id) { EC<void(EmotionPlatformExtension*, unsigned)>(addr::EmotionPlatformExtension_SetEmotion)(e, id); }
 
-// iterate an object's accumulated collision contacts. matches the Lua GetCollisionReports path:
-// reading enables accumulation, so the engine keeps refilling the deque each step.
+// iterate accumulated collision contacts. reading enables accumulation (engine refills deque each step)
 template <class Fn>
 inline void ForEachCollision(Object* o, Fn fn) {
 	PhysicsExtension* phys = Object_GetPhysicsExtension(o);
@@ -613,9 +596,8 @@ inline void ForEachCollision(Object* o, Fn fn) {
 	char* dq = (char*)EC<void*(PhysicsExtension*)>(addr::PhysicsExtension_GetAccumulate)(phys);
 	if (!dq) return;
 #ifdef _WIN32
-	// MSVC std::deque<CollisionReport> at &dq: _Map@0 (T**), _Mapsize@4, _Myoff@8, _Mysize@0xc.
-	// CollisionReport is 0x1c bytes on Win32 (unsigned long = 4) so the engine's element matches ours;
-	// _DEQUESIZ for a 0x1c-byte element is 1, so each map slot points to exactly one report.
+	// MSVC std::deque<CollisionReport>: _Map@0 (T**), _Mapsize@4, _Myoff@8, _Mysize@0xc
+	// CollisionReport=0x1c bytes on Win32; _DEQUESIZ=1 so each map slot holds exactly one report
 	char**   map     = *(char***)(dq + 0x0);
 	unsigned mapsize = *(unsigned*)(dq + 0x4);
 	unsigned myoff   = *(unsigned*)(dq + 0x8);

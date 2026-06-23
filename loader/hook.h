@@ -37,7 +37,7 @@ inline void* alloc_exec(size_t n) {
 	void* p = mmap(nullptr, n, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	return p == MAP_FAILED ? nullptr : p;
 }
-// allocate executable memory within +-2GB of `nearp` so rel32 from it reaches.
+// exec memory within +-2GB of `nearp` so rel32 reaches
 inline void* alloc_exec_near(void* nearp, size_t n) {
 #ifdef MAP_FIXED_NOREPLACE
 	uintptr_t base = (uintptr_t)nearp & ~(uintptr_t)0xFFF;
@@ -51,7 +51,7 @@ inline void* alloc_exec_near(void* nearp, size_t n) {
 		}
 	}
 #endif
-	return alloc_exec(n);   // fallback (may be far; relocation guards against overflow)
+	return alloc_exec(n);   // fallback: may be far, relocation guards rel32 overflow
 }
 inline long pagesz() { return sysconf(_SC_PAGESIZE); }
 inline bool prot(void* addr, size_t len, int flags) {
@@ -67,16 +67,15 @@ inline void make_exec(void* a, size_t l)     { prot(a, l, PROT_READ | PROT_EXEC)
 inline int modrm_len(const uint8_t* p);
 
 #ifdef _WIN32
-// ===== 32-bit (i386) length decoder + E9 rel32 hook (Win32/Proton) =====
-// 32-bit has no REX and no RIP-relative addressing: ModRM mod0/rm5 is an ABSOLUTE disp32,
-// so such instructions relocate verbatim (the address doesn't move when we copy the prologue).
+// ===== 32-bit (i386) length decoder + E9 rel32 hook (Win32) =====
+// no REX, no RIP-relative: ModRM mod0/rm5 is absolute disp32, relocates verbatim
 constexpr int JMP_SIZE = 5;   // E9 rel32
 
 inline void write_jmp(uint8_t* at, void* target) {
 	at[0] = 0xE9;
 	*(int32_t*)(at + 1) = (int32_t)((uint8_t*)target - (at + 5));
 }
-inline int prefix_len(const uint8_t* ins) {   // legacy prefixes only (0x40-0x4F are INC/DEC, not REX)
+inline int prefix_len(const uint8_t* ins) {   // legacy prefixes only; 0x40-0x4F are INC/DEC here, not REX
 	int i = 0;
 	while (ins[i] == 0x66 || ins[i] == 0x67 || ins[i] == 0xF0 || ins[i] == 0xF2 || ins[i] == 0xF3 ||
 	       ins[i] == 0x2E || ins[i] == 0x36 || ins[i] == 0x3E || ins[i] == 0x26 ||
@@ -93,7 +92,7 @@ inline int modrm_len(const uint8_t* p) {
 		int base = sib & 7;
 		if (mod == 0 && base == 5) n += 4;                   // disp32
 	} else if (mod == 0 && rm == 5) {
-		return n + 4;                                        // ABSOLUTE disp32 (not RIP-rel): relocatable verbatim
+		return n + 4;                                        // absolute disp32 (not RIP-rel): relocatable verbatim
 	}
 	if (mod == 1) n += 1;                                     // disp8
 	else if (mod == 2) n += 4;                               // disp32
@@ -174,11 +173,10 @@ modrm:
 }
 #else
 // ===== 64-bit (x86-64) length decoder + FF25 abs64 hook (Linux) =====
-// returns instruction length, or 0 if it can't be safely relocated
+// returns instruction length, or 0 if not safely relocatable
 inline int insn_len(const uint8_t* p) {
 	int len = 0;
 	bool op66 = false;            // operand-size override
-	// legacy prefixes
 	for (;;) {
 		uint8_t b = p[len];
 		if (b == 0x66) { op66 = true; len++; continue; }
@@ -191,7 +189,7 @@ inline int insn_len(const uint8_t* p) {
 
 	uint8_t op = p[len++];
 
-	// two-byte opcode (0F ..) - accept a tiny known set (endbr64, common mov/movzx)
+	// two-byte opcode (0F ..): accept a small known set
 	if (op == 0x0F) {
 		uint8_t op2 = p[len++];
 		if (op2 == 0x1E) { len++; return len; }          // endbr64 / nop (modrm byte FA/FB)
@@ -258,7 +256,7 @@ modrm:
 	}
 }
 
-// length of ModRM(+SIB+disp). returns 0 if RIP-relative (cannot relocate here).
+// length of ModRM(+SIB+disp). returns 0 if RIP-relative (cannot relocate here)
 inline int modrm_len(const uint8_t* p) {
 	uint8_t modrm = p[0];
 	int mod = modrm >> 6, rm = modrm & 7;
@@ -302,7 +300,7 @@ inline bool emit_rel(uint8_t* tramp, int& tp, const uint8_t* op, int opbytes, ui
 	return true;
 }
 
-// re-encodes rel8/rel32 branches in the copied prologue so they still reach.
+// re-encodes rel8/rel32 branches in the copied prologue so they still reach
 inline bool install(void* target, void* detour, void** original) {
 	if (!target) return false;   // unresolved address (e.g. a not-yet-recovered RVA): skip, don't deref null
 	uint8_t* t = (uint8_t*)target;

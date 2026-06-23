@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Scaffold a new Eets native mod.
+# scaffold a new Eets native mod
 #   ./tools/new-mod.sh <name> [mods-dir]
-# Default mods-dir: $HOME/.local/share/Steam/steamapps/common/Eets/mods
+# default mods-dir: $HOME/.local/share/Steam/steamapps/common/Eets/mods
 set -euo pipefail
 
 NAME="${1:-}"
@@ -45,7 +45,7 @@ author = you
 # min_framework = 0.7.0
 EOF
 
-# clangd/IDE config so editors resolve eetsmod.h and the engine API.
+# clangd/IDE config so editors resolve eetsmod.h and the engine API
 FLAGS="$DIR/compile_flags.txt"
 if [[ ! -e "$FLAGS" ]]; then
 	INC="${EETS_INCLUDE:-}"

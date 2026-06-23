@@ -22,7 +22,7 @@ Players mostly don't need this: drop a .eetsmod in <game>/mods and manage in-gam
 EOF
 }
 
-# ---- locate the game ----
+# locate the game dir: explicit arg, then EETS_DIR, then known Steam paths
 find_game() {
 	local g="${1:-${EETS_DIR:-}}"
 	if [[ -n "$g" ]]; then [[ -x "$g/Eets" ]] || die "no Eets binary at $g"; echo "$g"; return; fi
@@ -37,14 +37,14 @@ find_game() {
 	die "could not find Eets; pass the game dir explicitly or set EETS_DIR"
 }
 
-# ---- include dir + loader (dev repo or an installed game) ----
+# find eetsmod headers in the repo or an installed game dir
 includedir() {
 	for c in "$SELF/include" "${1:-}/eetsmod-include"; do
 		[[ -f "$c/eetsmod.h" ]] && { echo "$c"; return; }
 	done
 	die "no eetsmod headers found (looked in repo and game dir)"
 }
-loader_so() {  # build from the repo if present, else use a prebuilt next to this script
+loader_so() {  # build from repo if present, else use prebuilt next to this script
 	if [[ -f "$SELF/Makefile" && -d "$SELF/loader" ]]; then
 		make -C "$SELF" >/dev/null 2>&1 || die "loader build failed (need g++)"
 		echo "$SELF/build/libeetsmod.so"
@@ -52,7 +52,7 @@ loader_so() {  # build from the repo if present, else use a prebuilt next to thi
 	else die "no loader: run from the repo or a release directory"; fi
 }
 
-# ---- compile a mod the way the loader does ----
+# compile a mod the same way the loader does
 compile_so() {  # <src.cpp> <out.so> [game-for-includes]
 	local src="$1" out="$2" inc; inc="$(includedir "${3:-}")"
 	local opt="-O2"; [[ "${EETSMOD_DEBUG:-0}" != "0" ]] && opt="-g -O0"
@@ -60,14 +60,14 @@ compile_so() {  # <src.cpp> <out.so> [game-for-includes]
 	"${CXX:-g++}" $opt -fPIC -std=c++17 -Wall -shared "-I$inc" ${EETSMOD_CXXFLAGS:-} -o "$out" "$src"
 }
 
-# where libeetsmod.dll.a (the Windows import lib) lives, for cross-building .dll mods
+# dir holding libeetsmod.dll.a (Windows import lib) for cross-building .dll mods
 libdir() {
 	[[ -f "$SELF/build/libeetsmod.dll.a" ]] && { echo "$SELF/build"; return; }
 	[[ -f "$SELF/libeetsmod.dll.a" ]] && { echo "$SELF"; return; }
 	echo ""
 }
-# ---- cross-compile the same mod to a Windows .dll (best-effort; needs mingw + import lib) ----
-compile_dll() {  # <src.cpp> <out.dll> [game-for-includes] ; returns 1 if toolchain/lib missing
+# cross-compile mod to a Windows .dll; needs mingw + import lib, returns 1 if missing
+compile_dll() {  # <src.cpp> <out.dll> [game-for-includes]
 	local src="$1" out="$2" inc lib; inc="$(includedir "${3:-}")"; lib="$(libdir)"
 	command -v "${WINCXX:-i686-w64-mingw32-g++}" >/dev/null || return 1
 	[[ -n "$lib" ]] || return 1
@@ -96,10 +96,7 @@ cmd_doctor() {
 
 cmd_new()   { "$SELF/tools/new-mod.sh" "$@"; }
 
-# generate custom sound(s) into <mod>.assets/ so pack bundles them. forms:
-#   eetsmod add-sound [--music] <mod> <name> <audiofile>   one sound, explicit name
-#   eetsmod add-sound [--music] <mod> <audiofile>          one sound, name = filename
-#   eetsmod add-sound [--music] <mod> <folder>             every audio file in folder
+# write sound(s) into <mod>.assets/ so pack bundles them: <name> <file>, <file>, or <folder>
 cmd_add_sound() {
 	local music=""; [[ "${1:-}" == "--music" ]] && { music="--music"; shift; }
 	local mod="${1:-}"; shift || true
@@ -140,11 +137,11 @@ cmd_pack() {
 	if [[ -f "$in" && "$in" == *.cpp ]]; then
 		name="$(basename "${in%.cpp}")"; local base; base="$(dirname "$in")"
 		cp "$in" "$tmp/$name.cpp"
-		compile_so "$in" "$tmp/$name.so"            # ship a prebuilt .so so users need no compiler
+		compile_so "$in" "$tmp/$name.so"            # prebuilt .so: users need no compiler
 		compile_dll "$in" "$tmp/$name.dll" || info "no Windows .dll (need i686-w64-mingw32-g++ + libeetsmod.dll.a); bundle is Linux-only"
 		local cfg="$base/$name.cfg"
 		[[ -f "$cfg" ]] && cp "$cfg" "$tmp/$name.cfg" || printf 'version = 1.0\nauthor = unknown\n' > "$tmp/$name.cfg"
-		# custom assets ride along: a sibling <name>.assets/ tree (mirrors Data/) -> assets/ in the bundle
+		# sibling <name>.assets/ tree (mirrors Data/) -> assets/ in the bundle
 		[[ -d "$base/$name.assets" ]] && cp -r "$base/$name.assets" "$tmp/assets"
 	elif [[ -d "$in" ]]; then
 		local cfg; cfg="$(ls "$in"/*.cfg 2>/dev/null | head -1)" || true
@@ -156,13 +153,13 @@ cmd_pack() {
 		[[ -f "$in/$name.cpp" ]] && cp "$in/$name.cpp" "$tmp/"
 		[[ -f "$tmp/$name.so" || -f "$tmp/$name.cpp" ]] || die "no $name.so or $name.cpp in $in"
 		[[ -f "$tmp/$name.so" ]] || { [[ -f "$tmp/$name.cpp" ]] && compile_so "$in/$name.cpp" "$tmp/$name.so" 2>/dev/null || true; }
-		# cross-build the .dll from source if one wasn't supplied
+		# cross-build .dll from source if one wasn't supplied
 		[[ -f "$tmp/$name.dll" || ! -f "$tmp/$name.cpp" ]] || compile_dll "$in/$name.cpp" "$tmp/$name.dll" || true
 		[[ -d "$in/assets" ]] && cp -r "$in/assets" "$tmp/"
 	else die "pack source must be a .cpp or a directory"; fi
-	pack_audit "$tmp" "$name"     # warn about sound refs in code that are not bundled
+	pack_audit "$tmp" "$name"     # warn about sound refs in code not bundled
 	[[ -n "$out" ]] || out="$name.eetsmod"
-	tar -C "$tmp" -cf "$out" .                       # STORED (uncompressed) ustar: the loader untars in-process, no inflate
+	tar -C "$tmp" -cf "$out" .                       # STORED (uncompressed) ustar: loader untars in-process, no inflate
 	# report contents so a forgotten asset is obvious
 	local has_so="no" has_dll="no" has_src="no" nassets=0
 	[[ -f "$tmp/$name.so" ]] && has_so="yes"
@@ -172,9 +169,7 @@ cmd_pack() {
 	info "packed $out (name=$name, $(du -h "$out" | cut -f1)): linux_so=$has_so win_dll=$has_dll source=$has_src assets=$nassets"
 }
 
-# best-effort lint: the convention dir bundles assets; this just parses code for sound
-# string-literals and flags any with no matching patch in the bundle (could be a stock
-# game sound, or a forgotten custom one). literals only - dynamic names are invisible.
+# lint: flag sound string-literals in code with no matching patch in the bundle (literals only - dynamic names are invisible)
 pack_audit() {
 	local tmp="$1" name="$2" src="$1/$name.cpp"
 	[[ -f "$src" ]] || return 0

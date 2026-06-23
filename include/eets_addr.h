@@ -110,11 +110,11 @@ constexpr uintptr_t MotionModel_GetCurrentMotionName   = 0x50dc40;  // (MotionMo
 // ===== singletons / engine / UI =====
 constexpr uintptr_t ObjectMgr_i                        = 0x576280;  // () -> ObjectMgr*
 constexpr uintptr_t Simulator_i                        = 0x62ae90;  // () -> Simulator*
-constexpr uintptr_t GraphicsEngine_i                   = 0x549100;  // () -> GraphicsEngine*  (w@+0x40 h@+0x44)
+constexpr uintptr_t GraphicsEngine_i                   = 0x549100;  // () -> GraphicsEngine* (w@+0x40 h@+0x44)
 constexpr uintptr_t printText                          = 0x58a020;  // (int x,int y,char const*,Color const&)
 constexpr uintptr_t TextPrinter_DrawString             = 0x541380;  // (string,size,style,Color,Vector2,bool,Vector2 const&)
 constexpr uintptr_t GraphicsEngine_DrawLine            = 0x54a2f0;  // (GE*,Vector2 const&,Vector2 const&,Color const&,float) 1px line (width ignored)
-constexpr uintptr_t GraphicsEngine_DrawSquare          = 0x54a050;  // (GE*,Vector2 const& topLeft,Vector2 const& botRight,Color const&) FILLED rect
+constexpr uintptr_t GraphicsEngine_DrawSquare          = 0x54a050;  // (GE*,Vector2 const& topLeft,Vector2 const& botRight,Color const&) filled rect
 constexpr uintptr_t GraphicsEngine_DrawCircleFilled    = 0x54a030;  // (GE*,Vector2 const&,float r,Color const&,int segs)
 
 // ===== localization (StringPool) =====
@@ -123,8 +123,7 @@ constexpr uintptr_t StringPool_Resolve                 = 0x58b0d0;  // (StringPo
 constexpr uintptr_t StringPool_LoadFile                = 0x58ac50;  // (char const* path) load extra strings
 
 // ===== assets (ADVANCED/experimental: ABI not wrapper-validated) =====
-// Texture::Load is __thiscall into a caller-allocated Texture; you must allocate
-// the object, Load(path), UploadTexture(), then IGraphicsEngine::DrawTexture.
+// Texture::Load __thiscall into caller-allocated Texture: alloc, Load(path), UploadTexture(), IGraphicsEngine::DrawTexture
 constexpr uintptr_t Texture_Load                       = 0x542b60;  // (Texture* this, char const* path)
 constexpr uintptr_t Texture_UploadTexture              = 0x552b00;  // (Texture* this, int)
 constexpr uintptr_t IGraphicsEngine_i                  = 0x53e440;  // () -> IGraphicsEngine*

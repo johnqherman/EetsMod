@@ -44,7 +44,7 @@ jobs:
             -Wl,-Bstatic,--whole-archive,-l:libwinpthread.a,--no-whole-archive,-Bdynamic
           # the load-killer is a stray libwinpthread import - fail if it leaks back in
           if i686-w64-mingw32-objdump -p /tmp/lowgrav.dll | grep -qi libwinpthread; then
-            echo "ERROR: libwinpthread-1.dll import leaked (mod would fail to load under Wine)"; exit 1; fi
+            echo "ERROR: libwinpthread-1.dll import leaked (mod would fail to load under the Windows compat layer)"; exit 1; fi
       - name: Pack a dual-binary .eetsmod (carries both .so and .dll)
         run: |
           ./bin/eetsmod pack examples/lowgrav.cpp -o /tmp/lowgrav.eetsmod

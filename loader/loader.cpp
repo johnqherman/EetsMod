@@ -13,12 +13,12 @@
 #include <algorithm>
 #include <exception>
 #include "eets_engine.h"
-#include "eetsmod.h"   // service decls; EETS_API marks them dllexport in the loader (Windows)
+#include "eetsmod.h"   // EETS_API marks service decls dllexport in the loader (Windows)
 #include "hook.h"
 
 #define EETSMOD_VERSION "0.18.0"
 
-// a mod's native binary: .dll on Windows, .so on Linux. .eetsmod bundles carry both.
+// mod native binary ext: .dll on Windows, .so on Linux (.eetsmod bundles carry both)
 #ifdef _WIN32
 #define MOD_EXT ".dll"
 #else
@@ -63,21 +63,18 @@ unsigned long g_frame = 0;
 const unsigned RELOAD_POLL_FRAMES = 30;
 int g_mouse_x = 0, g_mouse_y = 0;        // in render (viewport) space
 bool g_overlay = false;
-// main-menu MODS button hit-rect, refreshed each frame it is drawn (w=0 when hidden)
+// main-menu MODS button hit-rect, refreshed each frame drawn (w=0 when hidden)
 int g_modbtn_x = 0, g_modbtn_y = 0, g_modbtn_w = 0, g_modbtn_h = 0;
-// "open mods folder" button row inside the overlay (y set during draw, -1 when hidden)
+// overlay "open mods folder" button row (y set during draw, -1 when hidden)
 int g_folder_btn_y = -1;
-// real render backbuffer size from FNA3D_SetViewport (correct in fullscreen,
-// where it differs from the window/configured resolution).
+// real backbuffer size from FNA3D_SetViewport; differs from window res in fullscreen
 int g_vp_w = 0, g_vp_h = 0;              // committed (last full frame)
 int g_vp_cur_w = 0, g_vp_cur_h = 0;     // max seen during the current frame
 double g_time = 0.0, g_dt = 0.0;
 const int OV_X = 8, OV_Y = 8, OV_W = 320, OV_TITLE = 40, OV_ROWH = 26;  // f1 manager layout
 std::string g_selected;
 
-// absolute game dir, resolved from this .so's own path (libeetsmod.so lives in the
-// game dir). works even in the LD_PRELOAD constructor, before the game chdir's there -
-// so we must never rely on the process cwd for our paths.
+// absolute game dir from this .so's own path; never use process cwd (LD_PRELOAD ctor runs before game chdir's)
 std::string base() {
 	static std::string b;
 	if (b.empty()) {
@@ -105,7 +102,7 @@ void logline(const char* fmt, ...) {
 
 // crash guard: a faulting mod is disabled, the game survives
 #ifdef _WIN32
-// Windows: a vectored exception handler longjmps back to the guard when a mod faults.
+// Windows: vectored exception handler longjmps back to the guard on a mod fault
 jmp_buf g_jmp;
 volatile long g_guarding = 0;
 #define EETS_SETJMP() setjmp(g_jmp)
@@ -115,7 +112,7 @@ LONG WINAPI crash_veh(EXCEPTION_POINTERS* ep) {
 	             c == EXCEPTION_INT_DIVIDE_BY_ZERO || c == EXCEPTION_FLT_DIVIDE_BY_ZERO ||
 	             c == EXCEPTION_PRIV_INSTRUCTION || c == EXCEPTION_IN_PAGE_ERROR;
 	if (g_guarding && fatal) { g_guarding = 0; longjmp(g_jmp, 1); }
-	return EXCEPTION_CONTINUE_SEARCH;   // not in a mod: let the engine/default handler run
+	return EXCEPTION_CONTINUE_SEARCH;   // not in a mod: defer to engine/default handler
 }
 void install_guards() { AddVectoredExceptionHandler(1, crash_veh); }
 #else
@@ -310,8 +307,7 @@ std::string trim(const std::string& s) {
 }
 
 std::map<std::string, std::map<std::string, std::string>> g_cfg;
-// mods extracted from a .eetsmod keep their files in a hidden staging dir; this maps
-// a mod name to the real path of its .cfg (loose mods fall back to mods/<name>.cfg).
+// maps a bundled mod's name to its staged .cfg path (loose mods fall back to mods/<name>.cfg)
 std::map<std::string, std::string> g_cfgpath;
 std::string cfg_path(const std::string& mod) {
 	auto it = g_cfgpath.find(mod);
@@ -419,10 +415,9 @@ void fire_event(const char* name, void* a, void* b) {
 		guard(&m, [&]{ m.onevent(name, a, b); });
 }
 
-// These targets are __thiscall C++ member methods (this in ECX on Win32), so the detours and
-// trampoline pointers must carry ECALL too - else `this` is read off the stack and the
-// callee/caller stack cleanup disagrees, corrupting the stack. (emotion/goal below are cdecl
-// luabind free functions, so they stay plain.) ECALL is empty on Linux (SysV), unchanged there.
+// __thiscall member methods (this in ECX on Win32): detours/trampolines must carry ECALL or `this`
+// reads off the stack and caller/callee cleanup disagree, corrupting the stack. emotion/goal are
+// cdecl luabind free functions (plain). ECALL is empty on Linux (SysV)
 typedef void* (ECALL *CreateObjectFn)(void*, const char*, unsigned);
 CreateObjectFn orig_CreateObject = nullptr;
 void* ECALL det_CreateObject(void* self, const char* name, unsigned layer) {
@@ -444,12 +439,11 @@ void ECALL det_Complete(void* s, void* p) { orig_Complete(s, p); fire_event("lev
 typedef void (*EmotionFn)(unsigned long, unsigned int);
 EmotionFn orig_Emotion = nullptr;
 void det_Emotion(unsigned long h, unsigned int e) { orig_Emotion(h, e); fire_event("emotion_change", (void*)h, (void*)(unsigned long)e); }
-// World_CheckGoal returns int (the goal-check result the engine acts on) - the detour MUST
-// return it, else EAX leaks whatever the event dispatch left and the engine reads "goal reached".
+// detour MUST return World_CheckGoal's int, else EAX leaks event-dispatch junk and engine reads "goal reached"
 typedef int (*GoalFn)(void*);
 GoalFn orig_Goal = nullptr;
 int det_Goal(void* o) { int r = orig_Goal(o); fire_event("goal_check", o, nullptr); return r; }
-// note: eets_death prologue isn't relocatable; detect via object_killed of World_GetEets()
+// eets_death prologue isn't relocatable; detect via object_killed of World_GetEets()
 
 void try_hook(const char* name, void* target, void* detour, void** orig) {
 	if (eets_hook::install(target, detour, orig)) logline("hook: %s", name);
@@ -463,17 +457,14 @@ void install_engine_event_hooks() {
 	try_hook("object_killed (Object::KillMe)",          (void*)Eets::addr::hook_Object_KillMe,              (void*)det_KillMe,       (void**)&orig_KillMe);
 	try_hook("emotion_change (World_ChangeEmotion)",    (void*)Eets::addr::hook_World_ChangeEmotion,        (void*)det_Emotion,      (void**)&orig_Emotion);
 	try_hook("goal_check (World_CheckGoal)",            (void*)Eets::addr::hook_World_CheckGoal,            (void*)det_Goal,         (void**)&orig_Goal);
-	// eets_death: hook Creator::OnEndEetsDeadDialog (the dialog-close handler, __thiscall(Creator*, int)),
-	// not the generic StartEetsDeadDialog opener. Fires once when the death dialog ends.
+	// eets_death: hook the dialog-close handler OnEndEetsDeadDialog (__thiscall(Creator*, int)), not the opener; fires once per death
 	try_hook("eets_death (Creator::OnEndEetsDeadDialog)", (void*)Eets::addr::hook_Creator_OnEndEetsDeadDialog,(void*)det_EetsDead, (void**)&orig_EetsDead2);
 	(void)orig_EetsDead;
 }
 
-// a mod is one self-contained .eetsmod file (a STORED ustar tar: <name>.so + <name>.dll
-// + <name>.cpp + <name>.cfg + assets/). extract each into a hidden per-bundle staging dir
-// so the mods folder keeps only the .eetsmod; (re)extract only when newer than its stamp.
-// Extraction is fully in-process (no tar/rm/cp shell-out) so it works identically on
-// Linux and under Wine. Uncompressed so no inflate dependency in the 32-bit loader.
+// .eetsmod is a STORED (uncompressed) ustar tar: .so + .dll + .cpp + .cfg + assets/
+// (re)extract into a per-bundle staging dir only when newer than its stamp. in-process
+// (no tar/rm/cp shell-out) for Linux/compat-layer parity; uncompressed avoids an inflate dep in the 32-bit loader
 std::string bundle_dir(const std::string& name) { return cachedir() + "/" + name + ".d"; }
 
 void mkdir_p(const std::string& path) {
@@ -517,7 +508,7 @@ void copy_tree(const std::string& src, const std::string& dst) {
 	}
 	closedir(d);
 }
-// extract a STORED (uncompressed) ustar archive into dest. returns false on a bad/compressed archive.
+// extract a STORED (uncompressed) ustar archive into dest. returns false on a bad/compressed archive
 bool untar(const std::string& archive, const std::string& dest) {
 	FILE* f = fopen(archive.c_str(), "rb"); if (!f) return false;
 	unsigned char hdr[512];
@@ -576,7 +567,7 @@ void extract_bundles() {
 	closedir(d);
 }
 
-// build a Mod from an extracted bundle staging dir; false if it has no .so/.cpp
+// build a Mod from an extracted staging dir; false if it has no .so/.cpp
 bool make_bundle_mod(const std::string& name, Mod& m) {
 	std::string sdir = bundle_dir(name);
 	std::string so = sdir + "/" + name + MOD_EXT, cpp = sdir + "/" + name + ".cpp", cfg = sdir + "/" + name + ".cfg";
@@ -588,8 +579,7 @@ bool make_bundle_mod(const std::string& name, Mod& m) {
 	return true;
 }
 
-// overwrites matching files under Data/ (intentional override). in-process recursive copy
-// (no find/cp shell-out) so it works identically on Linux and under Wine.
+// overwrites matching Data/ files (intentional override); in-process copy for Linux/compat-layer parity
 void install_assets() {
 	std::string adir = modsdir() + "/assets";
 	if (!exists(adir)) return;
@@ -597,17 +587,13 @@ void install_assets() {
 	logline("assets: installed mods/assets/ into Data/");
 }
 
-// runs at load, before the engine scans Data/ at boot - so a bundle's custom assets
-// (sounds/textures) are in place for that first scan, not one launch late. On Linux the
-// constructor attribute drives it at LD_PRELOAD time; on Windows DllMain calls it instead
-// (so it must NOT also be a constructor there, or it would double-init).
+// must run before the engine's boot scan of Data/ so bundle assets are present on first scan
+// Linux: ctor attribute at LD_PRELOAD time. Windows: DllMain calls it (NOT a ctor, would double-init)
 #ifndef _WIN32
 __attribute__((constructor))
 #endif
 void eetsmod_preboot() {
-	// LD_PRELOAD is inherited by children; our extract/compile steps shell out via
-	// system(), and those children would re-load this .so and re-run this constructor -
-	// a fork bomb. drop it now (we are already mapped; the game does not need it set).
+	// drop inherited LD_PRELOAD: our system()/popen() children would re-load this .so and re-run the ctor (fork bomb). already mapped, so safe to clear
 	unsetenv("LD_PRELOAD");
 	mkdir((base() + "/Log").c_str(), 0755);
 	mkdir(modsdir().c_str(), 0755);
@@ -627,8 +613,7 @@ void load_all() {
 	logline("eetsmod v%s  include=%s compiler=%s", EETSMOD_VERSION, includedir().c_str(), compiler());
 	logline("loader: scanning %s", dir.c_str());
 
-	// gather candidate filenames, then process .eetsmod first so a bundle wins over any
-	// stray loose file of the same name (one mod per name, never duplicated).
+	// process .eetsmod first so a bundle wins over a loose file of the same name (one mod per name)
 	std::vector<Mod> found;
 	std::vector<std::string> names;
 	DIR* d = opendir(dir.c_str());
@@ -693,7 +678,7 @@ void load_all() {
 		logline("integrity: '%s' affects simulation - replays/leaderboards may be invalid", m.name.c_str());
 }
 
-// transient on-screen message (reload result, compile errors). g_time set in the swap hook.
+// transient on-screen message (reload result, compile errors). g_time set in the swap hook
 std::string g_toast; double g_toast_until = 0; bool g_toast_fail = false;
 void toast(const std::string& s, bool fail = false) { g_toast = s; g_toast_fail = fail; g_toast_until = g_time + 6.0; }
 
@@ -854,7 +839,7 @@ namespace Eets {
 
 extern "C" {
 
-// capture the real backbuffer size (viewport) - correct in fullscreen
+// capture the real backbuffer size (viewport); correct in fullscreen
 void FNA3D_SetViewport(void* device, void* viewport) {
 	static void (*real)(void*, void*) = nullptr;
 	if (!real) real = (decltype(real))dlsym(RTLD_NEXT, "FNA3D_SetViewport");
@@ -882,7 +867,7 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		using namespace Eets;
 		size_t active = 0; for (auto& m : g_mods) if (!m.disabled) active++;
 		int h = RenderHeight(); if (h <= 0) h = 720;
-		// clickable MODS button, bottom-left. opens the manager overlay (no F1 needed).
+		// clickable bottom-left MODS button: opens the manager overlay (no F1 needed)
 		g_modbtn_x = 10; g_modbtn_w = 150; g_modbtn_h = 38; g_modbtn_y = h - g_modbtn_h - 10;
 		bool hot = g_mouse_x >= g_modbtn_x && g_mouse_x < g_modbtn_x + g_modbtn_w &&
 		           g_mouse_y >= g_modbtn_y && g_mouse_y < g_modbtn_y + g_modbtn_h;
@@ -1006,26 +991,17 @@ int SDL_PollEvent(void* event) {
 
 #ifdef _WIN32
 // ============================================================================
-// Windows entry path: version.dll proxy exports + IAT hooks + DllMain.
+// Windows entry path: version.dll proxy exports + IAT hooks + DllMain
 //
-// On Linux the three functions above (FNA3D_SwapBuffers / SDL_PollEvent /
-// FNA3D_SetViewport) are LD_PRELOAD interposers. On Windows we instead ship as
-// version.dll: Eets.exe loads SDL2.dll, SDL2.dll imports GetFileVersionInfoA /
-// GetFileVersionInfoSizeA / VerQueryValueA from "version" - but naming our DLL
-// "version" replaces the system one process-wide, so we forward EVERY version.dll
-// export to the real one (not just SDL2's three), and we redirect
-// the game's calls into FNA3D/SDL by rewriting the matching IAT slots of Eets.exe
-// to point at our functions. The originals stay reachable via dlsym(RTLD_NEXT),
-// shimmed in compat.h to GetModuleHandle+GetProcAddress, so the call-through in
-// each function above already works unchanged.
+// Linux interposes FNA3D_SwapBuffers/SDL_PollEvent/FNA3D_SetViewport via LD_PRELOAD
+// Windows ships as version.dll: naming our DLL "version" replaces the system one
+// process-wide, so we forward EVERY real-version.dll export (not just SDL2's three),
+// and redirect the game's FNA3D/SDL calls by rewriting Eets.exe's IAT slots. originals
+// stay reachable via dlsym(RTLD_NEXT) (compat.h shims it to GetModuleHandle+GetProcAddress)
 // ============================================================================
 
-// logline() and eetsmod_preboot() are defined above in the file's anonymous
-// namespace, so they are already visible unqualified from here in the same TU.
-
 // ---- 1) version.dll export proxy -------------------------------------------
-// Load the real system version.dll once (System32\version.dll) and cache its
-// HMODULE; each export is then resolved + cached on first call.
+// load+cache the real System32\version.dll HMODULE once; each export resolved+cached on first call
 namespace {
 HMODULE real_version_dll() {
 	static HMODULE h = []() -> HMODULE {
@@ -1034,8 +1010,7 @@ HMODULE real_version_dll() {
 		std::string path = (n && n < MAX_PATH) ? std::string(dir) : std::string("C:\\Windows\\System32");
 		path += "\\version.dll";
 		HMODULE m = LoadLibraryA(path.c_str());
-		// Under a Wine "version=n,b" override the name request can resolve back to THIS
-		// proxy; forwarding to ourselves would recurse forever. Detect and refuse.
+		// a Windows compat-layer "version=n,b" override can resolve back to THIS proxy; refuse to forward to self (infinite recursion)
 		HMODULE self = nullptr;
 		GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 		                   (LPCSTR)&real_version_dll, &self);
@@ -1051,19 +1026,15 @@ FARPROC real_version_proc(const char* name) {
 }
 } // namespace
 
-// Overriding "version" replaces the system DLL process-wide, so EVERY export the
-// real version.dll provides must exist here too - a caller of any unforwarded one
-// (e.g. SDL2 needs GetFileVersionInfoSizeA/VerQueryValueA, but other code may call
-// the W/Ex variants) would otherwise hit a missing function and Wine would abort.
-// We forward the complete export set; signatures are taken verbatim from <winver.h>
-// (pulled in by <windows.h>) so the IAT and the forwarded call share one ABI.
+// "version" replaces the system DLL process-wide, so EVERY real export must exist here too or an
+// unforwarded call (W/Ex variants too) hits a missing function and the compat layer aborts; signatures verbatim
+// from <winver.h> so the IAT and forwarded call share one ABI
 //
-// VERSION_PROXY(ret, name, params, ptypes, args, fail): define an undecorated
-// (-Wl,--kill-at) WINAPI export that resolves "name" in the real version.dll once,
-// caches it, and calls through - returning `fail` if it could not be resolved.
-//   params : the parameter list, verbatim from winver.h (names included)
+// VERSION_PROXY(ret, name, params, ptypes, args, fail): undecorated (-Wl,--kill-at) WINAPI export that
+// resolves+caches "name" in the real version.dll and calls through, returning `fail` if unresolved
+//   params : parameter list, verbatim from winver.h (names included)
 //   ptypes : the same parameters' TYPES only, for the function-pointer cast
-//   args   : the parameter names, forwarded in the call
+//   args   : parameter names, forwarded in the call
 #define VERSION_PROXY(ret, name, params, ptypes, args, fail)                 \
 	__declspec(dllexport) ret WINAPI name params {                           \
 		typedef ret (WINAPI *Fn) ptypes;                                     \
@@ -1149,8 +1120,7 @@ VERSION_PROXY(DWORD, VerFindFileW,
 // ---- 2) IAT hook installer -------------------------------------------------
 namespace {
 
-// Overwrite one IAT slot (*slot = target), flipping the page writable around the
-// store and restoring its protection. False only if VirtualProtect refuses.
+// overwrite one IAT slot, flipping the page writable around the store; false only if VirtualProtect refuses
 bool patch_iat_slot(void** slot, void* target) {
 	DWORD old = 0;
 	if (!VirtualProtect(slot, sizeof(void*), PAGE_READWRITE, &old)) return false;
@@ -1160,11 +1130,9 @@ bool patch_iat_slot(void** slot, void* target) {
 	return true;
 }
 
-// Walk the host EXE's import directory; for every imported function whose name
-// matches one of ours, repoint its IAT slot at our detour. We match on the INT
-// (OriginalFirstThunk) name array while writing the parallel IAT (FirstThunk)
-// slot. Imports by ordinal (no name) are skipped; a name we don't find is not an
-// error - e.g. FNA3D_SetViewport may not be imported by every build.
+// walk the host EXE's import directory; match on the INT (OriginalFirstThunk) name array,
+// repoint the parallel IAT (FirstThunk) slot at our detour. ordinal imports skipped; a name
+// not found is fine (e.g. FNA3D_SetViewport may not be imported by every build)
 void install_iat_hooks() {
 	struct Target { const char* name; void* detour; bool found; };
 	Target targets[] = {
@@ -1184,11 +1152,10 @@ void install_iat_hooks() {
 	IMAGE_DATA_DIRECTORY& impDir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
 	if (!impDir.VirtualAddress || !impDir.Size) { logline("iat: no import directory - no hooks"); return; }
 
-	// The import-descriptor array (one entry per imported DLL) is NUL-terminated.
+	// import-descriptor array (one per imported DLL) is NUL-terminated
 	for (IMAGE_IMPORT_DESCRIPTOR* imp = (IMAGE_IMPORT_DESCRIPTOR*)(base + impDir.VirtualAddress);
 	     imp->Name; ++imp) {
-		// INT (names) and IAT (live pointers) advance in lockstep. OriginalFirstThunk
-		// can be 0 on some linkers; fall back to FirstThunk for the name array.
+		// INT (names) and IAT (live pointers) advance in lockstep; OriginalFirstThunk can be 0 (fall back to FirstThunk)
 		IMAGE_THUNK_DATA* nameThunk = (IMAGE_THUNK_DATA*)(base + (imp->OriginalFirstThunk ? imp->OriginalFirstThunk : imp->FirstThunk));
 		IMAGE_THUNK_DATA* iatThunk  = (IMAGE_THUNK_DATA*)(base + imp->FirstThunk);
 		for (; nameThunk->u1.AddressOfData; ++nameThunk, ++iatThunk) {
@@ -1213,12 +1180,10 @@ void install_iat_hooks() {
 } // namespace
 
 // ---- 3) DllMain ------------------------------------------------------------
-// We must do almost nothing in DllMain: eetsmod_preboot() shells out via
-// system()/popen(), and spawning a process (or waiting on other DLLs) while the
-// loader lock is held deadlocks - especially under Wine. So DllMain only starts a
-// worker thread, which runs AFTER the loader lock is released. The thread waits
-// for the game's render/input DLLs to be mapped (so their IAT slots are bound),
-// then stages assets and installs the hooks.
+// DllMain must do almost nothing: eetsmod_preboot() shells out (system()/popen()), and spawning a
+// process under the held loader lock deadlocks (esp. under a compat layer), so it only starts a worker thread that
+// runs after the lock releases, waits for the render/input DLLs to be mapped (IAT slots bound),
+// then stages assets and installs hooks
 DWORD WINAPI eets_init_thread(LPVOID) {
 	for (int i = 0; i < 400; i++) {            // up to ~20s for FNA3D + SDL2 to load
 		if (GetModuleHandleA("FNA3D.dll") && GetModuleHandleA("SDL2.dll")) break;

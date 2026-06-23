@@ -1,9 +1,7 @@
-// compat.h - POSIX->Win32 shims so loader.cpp stays one body across platforms.
-// Linux pulls the real POSIX headers; Windows gets thin inline equivalents.
+// compat.h - POSIX->Win32 shims so loader.cpp stays one body across platforms
 #pragma once
 
 #ifndef _WIN32
-// ---- Linux: the genuine articles ----
 #include <dlfcn.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -14,12 +12,11 @@
 #include <ctime>
 
 #else
-// ---- Windows: minimal shims over Win32 ----
 #include <windows.h>
 #include <direct.h>
-#include <sys/stat.h>     // mingw provides struct stat / stat()
-#include <ctime>          // mingw provides struct timespec / clock_gettime via winpthreads
-#include <csetjmp>        // setjmp/longjmp for the crash guard (VEH-driven)
+#include <sys/stat.h>
+#include <ctime>
+#include <csetjmp>        // setjmp/longjmp for VEH-driven crash guard
 #include <string>
 #include <cstring>
 
@@ -29,7 +26,7 @@
 #define RTLD_LAZY   0x0
 #define RTLD_NEXT   ((void*)-1)
 namespace eets_compat {
-    // the game's interposed exports live in these DLLs; RTLD_NEXT means "the real one".
+    // RTLD_NEXT resolves the real (un-hooked) export from these interposed DLLs
     static const char* const kNextMods[] = { "FNA3D.dll", "SDL2.dll", "FAudio.dll" };
 }
 inline void* dlopen(const char* path, int) { return (void*)LoadLibraryA(path); }
@@ -74,7 +71,7 @@ inline dirent* readdir(DIR* d) {
 inline int closedir(DIR* d) { if (d) { FindClose(d->h); delete d; } return 0; }
 
 // --- misc POSIX ---
-inline int eets_mkdir(const char* p, int) { return _mkdir(p); }      // 2-arg POSIX shape
+inline int eets_mkdir(const char* p, int) { return _mkdir(p); }      // drop POSIX mode arg
 #define mkdir(p, mode) eets_mkdir((p), (mode))
 inline int unsetenv(const char* n) { std::string s = std::string(n) + "="; return _putenv(s.c_str()); }
 inline char* getcwd_compat(char* b, size_t n) { return _getcwd(b, (int)n); }
@@ -84,9 +81,8 @@ inline int   pclose_compat(FILE* f) { return _pclose(f); }
 #define popen(c, m) popen_compat((c), (m))
 #define pclose(f)   pclose_compat((f))
 
-// Always route clock_gettime through QueryPerformanceCounter via a macro, so we never link the
-// real symbol (it lives in libwinpthread, which newer mingw declares - defining CLOCK_MONOTONIC -
-// but does not auto-link, giving an "undefined reference to clock_gettime" at link time).
+// macro-route clock_gettime through QPC: never link the real symbol (libwinpthread, declared by
+// newer mingw but not auto-linked -> "undefined reference to clock_gettime")
 #ifndef CLOCK_MONOTONIC
 #define CLOCK_MONOTONIC 1
 #endif
@@ -99,7 +95,7 @@ inline int clock_gettime_compat(int, struct timespec* ts) {
 }
 #define clock_gettime(c, t) clock_gettime_compat((c), (t))
 
-// directory this DLL lives in (the game folder) - replaces dladdr on Linux.
+// directory this DLL lives in (game folder); replaces dladdr
 inline std::string eets_self_dir() {
     HMODULE m = nullptr;
     GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Compile a native mod the exact way the loader does, without launching the game.
-# Surfaces compiler errors in the terminal for a fast edit/check loop.
+# compile a native mod the way the loader does, without launching the game
 #   ./tools/check-mod.sh mods/foo.cpp [bar.cpp ...]
-# Honors the same env as the loader: CXX, EETS_INCLUDE, EETSMOD_DEBUG, EETSMOD_CXXFLAGS.
+# honors loader env: CXX, EETS_INCLUDE, EETSMOD_DEBUG, EETSMOD_CXXFLAGS
 set -euo pipefail
 
 [[ $# -ge 1 ]] || { echo "usage: $0 <mod.cpp> [more.cpp ...]" >&2; exit 1; }

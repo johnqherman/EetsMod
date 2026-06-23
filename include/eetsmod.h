@@ -1,10 +1,8 @@
 #pragma once
 #include "eets_engine.h"
 
-// The loader provides these services; a mod calls them across the binary boundary.
-// On Linux that resolves at dlopen (global symbols). On Windows a DLL must bind every
-// symbol at link time, so the loader dllexports them and a mod dllimports + links the
-// import library (libeetsmod.dll.a). No-op on Linux.
+// loader services called across the binary boundary. Linux: resolved at dlopen (global symbols)
+// Win32: loader dllexports, mod dllimports + links the import lib (libeetsmod.dll.a). no-op on Linux
 #if defined(_WIN32) && defined(EETSMOD_LOADER)
 #  define EETS_API __declspec(dllexport)
 #elif defined(_WIN32)
@@ -64,7 +62,7 @@ namespace Eets {
 	EETS_API void StopTextInput();
 }
 
-// minimal SDL keycode / modifier constants (so mods don't need SDL headers).
+// minimal SDL keycode / modifier constants (so mods don't need SDL headers)
 #ifndef EETS_SDL_KEYS
 #define EETS_SDL_KEYS
 enum {

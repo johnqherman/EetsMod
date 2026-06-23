@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Generate API.md from the public header signatures, so the
-# API is discoverable without grepping headers. Run after changing the headers.
+# generate API.md from public header signatures; run after changing the headers
 set -euo pipefail
 export LC_ALL=C   # deterministic sort order across machines (CI runs C locale)
 SELF="$(cd "$(dirname "$0")/.." && pwd)"

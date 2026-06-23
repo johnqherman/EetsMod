@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Make a custom Eets sound (ogg .snd + sample-rate-matched .ptch), playable by name.
-#   into a mod's asset tree (for bundling):  ./add-sound.sh --into <dir> [--music] <name> <audiofile>
-#   straight into a game (for quick testing): ./add-sound.sh [--music] <name> <audiofile> [game-dir]
-# sfx:   Eets::PlaySound("<name>")     music: Sound_PlayMusic("<name>", loop)
-# non-ogg input is converted with ffmpeg. the .ptch frequency tracks the .snd sample rate.
+# make a custom Eets sound (ogg .snd + sample-rate-matched .ptch), playable by name
+#   --into <dir> [--music] <name> <audiofile>   into a mod asset tree (for bundling)
+#   [--music] <name> <audiofile> [game-dir]     straight into a game (quick testing)
+# sfx: Eets::PlaySound("<name>")  music: Sound_PlayMusic("<name>", loop)
+# non-ogg input converted via ffmpeg; .ptch frequency tracks the .snd sample rate
 set -euo pipefail
 
 INTO=""; MUSIC=0
@@ -17,7 +17,7 @@ done
 NAME="${1:-}"; SRC="${2:-}"
 [[ -n "$NAME" && -f "$SRC" ]] || { echo "usage: $0 [--into <dir>] [--music] <name> <audiofile> [game-dir]" >&2; exit 1; }
 
-# SNDROOT is the dir that holds Sound/. for a mod asset tree that's <dir>; for a game it's <game>/Data.
+# SNDROOT holds Sound/: <dir> for a mod asset tree, <game>/Data for a game
 if [[ -n "$INTO" ]]; then
 	SNDROOT="$INTO"; WHERE="$INTO"
 else
