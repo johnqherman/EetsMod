@@ -17,7 +17,6 @@ Players mostly don't need this: drop a .eetsmod in <game>/mods and manage in-gam
   eetsmod build <mod.cpp> [-o so]         compile a mod to a redistributable .so
   eetsmod pack <dir|mod.cpp> [-o f]       bundle .so + source + manifest + assets -> one .eetsmod
   eetsmod add-sound [--music] <mod> <file|folder>   bundle custom sound(s) into <mod>.assets/
-  eetsmod add <file|url> [GAME]           install a mod file (.eetsmod, .so, or .cpp)
   eetsmod remove <name> [GAME]            uninstall a mod
   eetsmod list [GAME]                     list installed mods
 EOF
@@ -92,7 +91,7 @@ cmd_doctor() {
 	echo "headers    : $([[ -f "$game/eetsmod-include/eetsmod.h" ]] && echo present || echo missing)"
 	echo "mods dir   : $game/mods ($(ls "$game/mods"/*.so "$game/mods"/*.cpp 2>/dev/null | wc -l) mod file(s))"
 	echo "compiler   : $(command -v "${CXX:-g++}" >/dev/null && "${CXX:-g++}" --version | head -1 || echo 'none (prebuilt .so mods still work)')"
-	echo "tar/curl   : $(command -v tar >/dev/null && echo tar || echo 'no tar') / $(command -v curl >/dev/null && echo curl || (command -v wget >/dev/null && echo wget || echo none))"
+	echo "tar        : $(command -v tar >/dev/null && echo present || echo 'missing (needed to pack)')"
 }
 
 cmd_new()   { "$SELF/tools/new-mod.sh" "$@"; }
@@ -192,25 +191,6 @@ pack_audit() {
 	return 0
 }
 
-cmd_add() {
-	local src="$1"; shift || true
-	local game; game="$(find_game "${1:-}")"
-	mkdir -p "$game/mods"
-	case "$src" in
-		http://*|https://*)
-			local tmp; tmp="$(mktemp --suffix=".$(basename "$src")")"
-			fetch "$src" "$tmp"; cmd_add "$tmp" "$game"; rm -f "$tmp"; return;;
-	esac
-	[[ -f "$src" ]] || die "no such file: $src"
-	case "$src" in
-		# a .eetsmod is self-contained: just drop the one file in, the loader stages it
-		*.eetsmod) install -m644 "$src" "$game/mods/"; info "added $(basename "$src")";;
-		*.so)  install -m644 "$src" "$game/mods/"; info "added $(basename "$src") (prebuilt)";;
-		*.cpp) cp "$src" "$game/mods/"; info "added $(basename "$src") (compiles at next launch)";;
-		*) die "unsupported mod file: $src (.eetsmod, .so, .cpp, or URL)";;
-	esac
-}
-
 cmd_remove() {
 	local name="$1"; shift || true
 	local game; game="$(find_game "${1:-}")"
@@ -234,12 +214,6 @@ cmd_list() {
 	[[ $any -eq 1 ]] || info "no mods installed in $game/mods"
 }
 
-fetch() {  # <url> <out>
-	if command -v curl >/dev/null; then curl -fsSL "$1" -o "$2"
-	elif command -v wget >/dev/null; then wget -qO "$2" "$1"
-	else die "need curl or wget to download"; fi
-}
-
 main() {
 	local cmd="${1:-}"; shift || true
 	case "$cmd" in
@@ -249,7 +223,6 @@ main() {
 		add-sound) cmd_add_sound "$@";;
 		build)   cmd_build   "$@";;
 		pack)    cmd_pack    "$@";;
-		add)     cmd_add     "$@";;
 		remove|rm) cmd_remove "$@";;
 		list|ls) cmd_list    "$@";;
 		-h|--help|help|"") usage;;
