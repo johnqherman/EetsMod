@@ -1,90 +1,143 @@
-# Eets Mod Framework
+# EetsMod
 
 [![build](https://github.com/johnqherman/eets-mod-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/johnqherman/eets-mod-framework/actions/workflows/ci.yml)
 
-A modding framework for **Eets** (the Klei puzzle game), a native C++ engine.
-Mods are native `.so` plugins, injected by a small `LD_PRELOAD` loader, packaged as
-one self-contained `.eetsmod` file - and managed from inside the game.
+<p align="center">
+  <img width="676" height="322" alt="eetsmod" src="https://github.com/user-attachments/assets/447a13fa-5127-4ac8-9c50-68edebce5798" />
+</p>
+
+A modding framework for **Eets** (the Klei puzzle game).
+Mods are native plugins (`.dll` on Windows, `.so` on Linux), injected by a small
+loader, packaged as one self-contained `.eetsmod` file, and managed from inside the
+game.
 
 ## Play with mods
 
-A mod is one file: **`mymod.eetsmod`**, with everything inside - code, settings, art.
-Turning on mod support is three steps:
+A mod is one **`.eetsmod`** file with everything inside (code, assets, config, etc).
 
-1. **Open the game folder.** In Steam, right-click **Eets -> Manage -> Browse local
-   files**. Drop **`libeetsmod.so`** (from a [release](../../releases)) into it.
-2. **Set the launch option.** Steam -> right-click **Eets -> Properties -> General ->
-   Launch Options**, paste exactly:
-   ```
-   LD_PRELOAD=./libeetsmod.so %command%
-   ```
-3. **Add mods.** Put `.eetsmod` files in the `mods` folder (next to `libeetsmod.so`;
-   it appears after the first launch, or just make it). Press **Play**.
+Turning on mod support takes three steps. The first two differ by platform; the third
+is the same everywhere.
 
-In-game: on the main menu, click the **MODS** button (bottom-left) to enable/disable
-mods, change their settings, or open the mods folder. (`F1` also opens it.)
+1. **Open the game folder.** In Steam, right click **Eets > Manage > Browse local
+   files**, then drop the loader (from a [release](../../releases)) into it:
+   - **Windows:** `version.dll` (a proxy the game loads on startup)
+   - **Linux:** `libeetsmod.so`
+2. **Set the launch option** (Steam > right click **Eets > Properties > General >
+   Launch Options**), pasted exactly:
+   - **Windows:** none needed; Windows loads `version.dll` from the game folder
+     automatically.
+   - **Linux:**
+     ```
+     LD_PRELOAD=./libeetsmod.so %command%
+     ```
+3. **Add mods.** Put `.eetsmod` files in the `mods` folder. Press **Play**.
 
-> **Heads up:** mods are native code that runs as part of the game (no sandbox).
+In-game: on the main menu, click the **MODS** button (bottom left) to enable/disable
+mods, change their settings, or open the mods folder.
+
+> **Heads up:** Mods are native code that runs as part of the game (no sandbox).
 > Only install mods from people you trust.
 
 ## Make mods
 
+A mod is one C++ source file that hooks engine events. This walkthrough builds a mod
+that cuts gravity on **Ctrl+G**, start to finish.
+
+### Before you start
+
+The `eetsmod` CLI used below lives in this repo at `bin/eetsmod`. Clone the repo and
+put it on your `PATH`:
+
 ```sh
-eetsmod new mymod                    # scaffold mymod.cpp + mymod.cfg
-# ...write your mod...
-eetsmod add-sound mymod ~/sounds/    # (optional) bundle custom sounds
-eetsmod pack mymod.cpp -o mymod.eetsmod   # one-file bundle: .so + source + manifest + assets
+git clone https://github.com/johnqherman/eets-mod-framework
+export PATH="$PWD/eets-mod-framework/bin:$PATH"   # so `eetsmod` runs from anywhere
 ```
+
+You also need a C++ compiler (`g++`). To build the Windows `.dll` as well, install
+MinGW (`i686-w64-mingw32-g++`); without it `pack` still works but the bundle is
+Linux-only.
+
+### 1. Scaffold
+
+```sh
+eetsmod new mymod
+```
+
+This writes three files:
+
+- **`mymod.cpp`**: your code, pre-filled with empty event hooks.
+- **`mymod.cfg`**: the manifest (version, author, dependencies; all optional).
+- **`compile_flags.txt`**: include path so clangd/your editor resolves the API.
+
+### 2. Write hooks
+
+Implement the engine callbacks you care about; leave the rest out. The main ones:
+
+| Hook | Fires |
+|------|-------|
+| `EetsMod_Init()` | once at load |
+| `EetsMod_Update()` | every frame |
+| `EetsMod_OnKey(key, mods, down)` | key press/release |
+| `EetsMod_OnEvent(name, a, b)` | game events: `object_spawn`, `object_killed`, `level_load`, `level_reset`, `level_complete` |
+
+The gravity mod needs only one:
 
 ```cpp
 #include "eetsmod.h"
 using namespace Eets;
+
 extern "C" void EetsMod_OnKey(int key, int mods, int down) {
     if (down && key == EKEY_g && (mods & EKMOD_CTRL))
-        World_SetGravity({0, World_GetGravity().y * 0.25f}, 0);   // CTRL+G: low gravity
+        World_SetGravity({0, World_GetGravity().y * 0.25f}, 0);   // Ctrl+G: low gravity
 }
 ```
 
-`eetsmod new` scaffolds a mod; `eetsmod pack` bundles it; the in-game **MODS** button
-manages it. The engine API is in [`API.md`](API.md) and the
-`include/` headers; learn by example in [`examples/`](examples) (gravity, custom
-images/sounds/anims, the UI toolkit, object extensions, collisions).
+The full engine API is in [`API.md`](API.md) and the `include/` headers.
 
-## How it works
+### 3. Add assets (optional)
 
-Eets is a non-PIE C++ ELF that links SDL2/FNA3D dynamically, so a preloaded loader
-interposes `FNA3D_SwapBuffers` (per-frame) and `SDL_PollEvent` (input), `dlopen`s mod
-`.so`s, and calls engine functions at their fixed addresses. Everything is derived by
-reverse-engineering the binary (non-PIE, so addresses are stable per build). The Windows
-build is supported too (see below); one mod `.cpp` builds for both platforms.
+Custom images, sounds, and anims live in a sibling **`mymod.assets/`** folder whose
+layout **mirrors the game's `Data/` tree** (e.g. `mymod.assets/Sound/Music/song.ogg`).
+Drop files there and the next step bundles them automatically.
 
-## Windows / Proton
+Sounds are the one exception: the engine needs its own patch format, not a raw audio
+file. Supply an **`.ogg`** and convert it first:
 
-The Windows build of Eets.exe (PE32 i386) is supported. The loader ships as a `version.dll`
-proxy that injects into the game, IAT-patches the same SDL2/FNA3D entry points, and loads
-native `.dll` mods - same engine API, same mod source. A mod author writes one `.cpp`;
-`eetsmod pack` cross-builds both the Linux `.so` and the Windows `.dll` into one `.eetsmod`.
+```sh
+eetsmod add-sound mymod song.ogg           # writes the engine-format files into mymod.assets/
+```
 
-- Build the loader: `make win` -> `build/version.dll`.
-- Install: drop `version.dll` in the game folder and your mod `.dll` (or `.eetsmod`) in `mods/`.
-- Under **Proton**, set the Steam launch option `WINEDLLOVERRIDES="version=n,b" %command%`
-  so Wine loads our `version.dll` instead of its builtin. (Native Windows needs no option.)
-- Build a mod `.dll` directly (the link recipe avoids a fatal `libwinpthread-1.dll` import):
-  ```
-  i686-w64-mingw32-g++ -O2 -std=c++17 -Iinclude -shared -static-libgcc -static-libstdc++ \
-    -o mymod.dll mymod.cpp -L build -leetsmod \
-    -Wl,-Bstatic,--whole-archive,-l:libwinpthread.a,--no-whole-archive,-Bdynamic
-  ```
+Then play it by name from code: `PlaySound("song")`.
 
-Working on Windows: the in-game MODS manager UI, the engine API (draw/text/sprites,
-singletons, object + extension methods), engine event hooks (32-bit inline hooks), and
-in-process `.eetsmod` extraction. See `WINDOWS_PARITY.md` for the full status.
+### 4. Pack
+
+```sh
+eetsmod pack mymod.cpp -o mymod.eetsmod
+```
+
+`pack` does everything in one shot: compiles the `.dll` (Windows) and `.so` (Linux),
+then bundles them with the source, the manifest, and `mymod.assets/` into a single
+`mymod.eetsmod` file.
+
+### 5. Install and run
+
+Drop `mymod.eetsmod` in `<game>/mods`, then launch
+and toggle it from the in-game **MODS** button. On launch the loader unpacks the bundle
+and overlays its assets onto the game's `Data/` *before* the engine reads them, so
+custom assets load as if they shipped with the game. Build logs land in
+`<game>/Log/native_mods.log`.
+
+> **Tip:** while developing you can skip packing: drop `mymod.cpp` straight into
+> `mods/` and the loader compiles it on launch.
+
+Learn by example in [`examples/`](examples): gravity, custom images/sounds/anims, the UI
+toolkit, object extensions, collisions.
 
 ## Layout
 
 ```
 bin/eetsmod    build/pack/manage CLI
-loader/        the LD_PRELOAD loader (hooks, crash isolation, .eetsmod staging)
+loader/        the injected loader (hooks, crash isolation, .eetsmod staging)
 include/       mod headers: engine API, addresses, UI toolkit
 examples/      example mods (source + <name>.assets/)
 tools/         check-mod, add-sound, gen-api-ref, new-mod
@@ -97,5 +150,5 @@ Makefile       build / check / bundles / apidoc / release
 MIT.
 
 Not affiliated with or endorsed by Klei Entertainment; *Eets* and its assets belong to
-their owners. This framework ships no game code - only original tooling and addresses
-derived from your own copy of the game. Use at your own risk.
+their owners. This framework ships no game code, only original tooling and addresses
+derived from our own copy of the game. Use at your own risk.
