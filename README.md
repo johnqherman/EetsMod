@@ -9,7 +9,7 @@ Mods are native plugins (`.dll` on Windows, `.so` on Linux), injected by a small
 loader, packaged as one self-contained `.eetsmod` file, and managed from inside the
 game.
 
-## Play with mods
+## Playing with mods
 
 A mod is one **`.eetsmod`** file with everything inside (code, assets, config, etc).
 
@@ -36,10 +36,7 @@ mods, change their settings, or open the mods folder.
 > **Heads up:** Mods are native code that runs as part of the game (no sandbox).
 > Only install mods from people you trust.
 
-## Make mods
-
-A mod is one C++ source file that hooks engine events. This walkthrough builds a mod
-that cuts gravity on **Ctrl+G**, start to finish.
+## Making mods
 
 ### Before you start
 
@@ -48,7 +45,7 @@ put it on your `PATH`:
 
 ```sh
 git clone https://github.com/johnqherman/eets-mod-framework
-export PATH="$PWD/eets-mod-framework/bin:$PATH"   # so `eetsmod` runs from anywhere
+export PATH="$PWD/eets-mod-framework/bin:$PATH"
 ```
 
 You also need a C++ compiler (`g++`). To build the Windows `.dll` as well, install
@@ -77,18 +74,6 @@ Implement the engine callbacks you care about; leave the rest out. The main ones
 | `EetsMod_Update()` | every frame |
 | `EetsMod_OnKey(key, mods, down)` | key press/release |
 | `EetsMod_OnEvent(name, a, b)` | game events: `object_spawn`, `object_killed`, `level_load`, `level_reset`, `level_complete` |
-
-The gravity mod needs only one:
-
-```cpp
-#include "eetsmod.h"
-using namespace Eets;
-
-extern "C" void EetsMod_OnKey(int key, int mods, int down) {
-    if (down && key == EKEY_g && (mods & EKMOD_CTRL))
-        World_SetGravity({0, World_GetGravity().y * 0.25f}, 0);   // Ctrl+G: low gravity
-}
-```
 
 The full engine API is in [`API.md`](API.md) and the `include/` headers.
 
