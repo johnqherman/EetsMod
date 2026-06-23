@@ -156,15 +156,24 @@ inline void PlaySound(const char* name, float vol = 0.0f) {
 }
 
 inline Vector2 Object_GetPosition(Object* o) {
+	// Object::GetPosition reads through the object's Model (Object+0x38, same offset on Win32 + Linux64)
+	// and the engine returns a Vector2& - i.e. a POINTER in (E/R)AX, not a Vector2 by value - so it must
+	// be dereferenced on BOTH platforms. The old Linux path read the return as a value, reinterpreting
+	// the pointer's 64 bits as two floats (x came out ~1e11, y ~0 from the heap address's high half).
+	// A null Model (non-visual object, or before the Model attaches) makes the engine deref garbage.
+	if (!o || !*(void**)((char*)o + 0x38)) return Vector2{0.0f, 0.0f};
 #ifdef _WIN32
-	return *EC<Vector2*(Object*)>(addr::Object_GetPosition)(o);   // returns Vector2* (ptr in EAX), deref
+	Vector2* p = EC<Vector2*(Object*)>(addr::Object_GetPosition)(o);   // __thiscall (this in ECX)
 #else
-	return FC<Vector2(Object*)>(addr::Object_GetPosition)(o);
+	Vector2* p = FC<Vector2*(Object*)>(addr::Object_GetPosition)(o);   // SysV (this is the first arg)
 #endif
+	return p ? *p : Vector2{0.0f, 0.0f};
 }
 inline Vector2 Object_GetVelocity(Object* o) {
+	// velocity is computed (pos - prevpos) and returned by value; guard the Model it reads through
+	if (!o || !*(void**)((char*)o + 0x38)) return Vector2{0.0f, 0.0f};
 #ifdef _WIN32
-	Vector2 r; EC<void(Object*, Vector2*)>(addr::Object_GetVelocity)(o, &r); return r;   // sret
+	Vector2 r{0.0f, 0.0f}; EC<void(Object*, Vector2*)>(addr::Object_GetVelocity)(o, &r); return r;   // sret
 #else
 	return FC<Vector2(Object*)>(addr::Object_GetVelocity)(o);
 #endif
@@ -179,11 +188,15 @@ inline void Object_SetPosition(Object* o, const Vector2& p)   { EC<void(Object*,
 inline void Object_ForcePosition(Object* o, const Vector2& p) { EC<void(Object*, const Vector2&)>(addr::Object_ForcePosition)(o, p); }
 inline void Object_SetFacing(Object* o, const Vector2& f)     { EC<void(Object*, const Vector2&)>(addr::Object_SetFacing)(o, f); }
 inline Vector2 Object_GetFacing(Object* o) {
+	// engine returns &(Object+0x14) - a Vector2& (POINTER in (E/R)AX), not by value and not sret - so
+	// dereference it on both platforms (was Win-sret / Linux-by-value, both wrong -> garbage facing).
+	if (!o) return Vector2{0.0f, 0.0f};
 #ifdef _WIN32
-	Vector2 r; EC<void(Object*, Vector2*)>(addr::Object_GetFacing)(o, &r); return r;   // sret
+	Vector2* p = EC<Vector2*(Object*)>(addr::Object_GetFacing)(o);
 #else
-	return FC<Vector2(Object*)>(addr::Object_GetFacing)(o);
+	Vector2* p = FC<Vector2*(Object*)>(addr::Object_GetFacing)(o);
 #endif
+	return p ? *p : Vector2{0.0f, 0.0f};
 }
 inline void Object_SetFlipped(Object* o, bool f)             { EC<void(Object*, bool)>(addr::Object_SetFlipped)(o, f); }
 inline bool Object_GetFlipped(Object* o)                     { return EC<bool(Object*)>(addr::Object_GetFlipped)(o); }
