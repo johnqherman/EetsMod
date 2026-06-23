@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="676" height="322" alt="eetsmod" src="https://github.com/user-attachments/assets/447a13fa-5127-4ac8-9c50-68edebce5798" />
+  <img width="676" height="322" alt="eetsmod" src="https://github.com/user-attachments/assets/b53b0fb0-7d3e-46fa-b9f1-4511b21e225c" />
 </p>
 
 [![build](https://github.com/johnqherman/eets-mod-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/johnqherman/eets-mod-framework/actions/workflows/ci.yml)
