@@ -1,5 +1,3 @@
-# EetsMod
-
 [![build](https://github.com/johnqherman/eets-mod-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/johnqherman/eets-mod-framework/actions/workflows/ci.yml)
 
 <p align="center">
