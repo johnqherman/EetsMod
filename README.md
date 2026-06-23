@@ -1,8 +1,8 @@
-[![build](https://github.com/johnqherman/eets-mod-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/johnqherman/eets-mod-framework/actions/workflows/ci.yml)
-
 <p align="center">
   <img width="676" height="322" alt="eetsmod" src="https://github.com/user-attachments/assets/447a13fa-5127-4ac8-9c50-68edebce5798" />
 </p>
+
+[![build](https://github.com/johnqherman/eets-mod-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/johnqherman/eets-mod-framework/actions/workflows/ci.yml)
 
 A modding framework for **Eets** (the Klei puzzle game).
 Mods are native plugins (`.dll` on Windows, `.so` on Linux), injected by a small
