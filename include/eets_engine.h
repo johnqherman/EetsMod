@@ -228,6 +228,22 @@ inline void ForEachObject(Fn fn) {
 inline bool World_IsInMainMenu() {
 	return FC<bool()>(addr::World_IsInMainMenu)();
 }
+
+// ===== level / simulation control (some addrs are per-build; 0 -> call is a null-guarded no-op) =====
+// LevelManager: hubs linked-list @+0x10; hub +0x08 id, +0x28..+0x30 levels (0x70-byte entries, each
+// starting with a Filepath::FileNamePair). Walk it to enumerate the level catalog.
+inline void* GameUtil_GetLevelManager() { return (void*)FC<uintptr_t()>(addr::GameUtil_GetLevelManager)(); }
+// proper "Go": snapshots each object's initial state (so reset restores), reseeds RNG, sets the sim flag.
+// the weak_ptr<InputSimulator> arg is null-safe, so an empty one is fine.
+inline void Simulator_StartSimulation(void* sim) {
+	char weak[16] = {0};
+	EC<void(void*, const void*)>(addr::Simulator_StartSimulation)(sim, weak);
+}
+// load a level into the build phase (does NOT start the sim). `self` is a MainMenu*; the engine only
+// uses it as scratch for the level's "Music" string @self+0x14b0, so a faked buffer works (see callers).
+inline void MainMenu_LoadSimulatorLevel(void* self, const void* fileNamePair) {
+	EC<void(void*, const void*)>(addr::MainMenu_LoadSimulatorLevel)(self, fileNamePair);
+}
 // GraphicsEngine singleton. Linux: accessor fn. Win32: no accessor - deref the global (DAT_00ee3db0)
 inline void* GE_instance() {
 #ifdef _WIN32

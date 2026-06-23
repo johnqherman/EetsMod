@@ -71,8 +71,9 @@ compile_dll() {  # <src.cpp> <out.dll> [game-for-includes]
 	local src="$1" out="$2" inc lib; inc="$(includedir "${3:-}")"; lib="$(libdir)"
 	command -v "${WINCXX:-i686-w64-mingw32-g++}" >/dev/null || return 1
 	[[ -n "$lib" ]] || return 1
+	# EETSMOD_WINLIBS: extra link libs a mod needs on Windows (e.g. -lws2_32 for winsock mods)
 	"${WINCXX:-i686-w64-mingw32-g++}" -O2 -std=c++17 "-I$inc" -shared -static-libgcc -static-libstdc++ \
-		-o "$out" "$src" -L"$lib" -leetsmod \
+		-o "$out" "$src" -L"$lib" -leetsmod ${EETSMOD_WINLIBS:-} \
 		-Wl,-Bstatic,--whole-archive,-l:libwinpthread.a,--no-whole-archive,-Bdynamic 2>/dev/null
 }
 

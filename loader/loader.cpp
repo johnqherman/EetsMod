@@ -16,7 +16,7 @@
 #include "eetsmod.h"   // EETS_API marks service decls dllexport in the loader (Windows)
 #include "hook.h"
 
-#define EETSMOD_VERSION "0.18.0"
+#define EETSMOD_VERSION "0.19.0"
 
 // mod native binary ext: .dll on Windows, .so on Linux (.eetsmod bundles carry both)
 #ifdef _WIN32
