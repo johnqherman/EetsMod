@@ -554,6 +554,25 @@ inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f,
 	return true;
 }
 
+inline void GFX_ResetViewOffset() {
+	if (!addr::World_SetGFXViewOffset) return;
+	Vector2 z{0.0f, 0.0f};
+	FC<void(const Vector2&, const Vector2&)>(addr::World_SetGFXViewOffset)(z, z);
+}
+
+inline bool DrawAnimFrozenFit(const char* path, int cx, int cy, int targetH, Color tint = Color(), bool flip = false) {
+	void* a = LoadAnim(path); if (!a) return false;
+	void* sprite = FC<void*(void*)>(addr::Animation_GetCurrentFrame)(a);
+	if (!sprite) return false;
+	int nh = SpriteHeight(sprite), nw = SpriteWidth(sprite);
+	if (nh <= 0) return false;
+	float S = (float)targetH / (float)nh;
+	int dw = (int)(nw * S);
+	int x = flip ? (cx + dw / 2) : (cx - dw / 2);
+	DrawSpriteAt(sprite, x, cy - targetH / 2, tint, flip, S);
+	return true;
+}
+
 inline const char* Localize(const char* id) {
 	void* sp = *(void**)addr::StringPool_instance;
 	if (!sp) return id;
