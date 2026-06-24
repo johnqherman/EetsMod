@@ -300,31 +300,35 @@ inline void Simulator_SetPaused(bool paused) {
 	void* sim = FC<void*()>(addr::Simulator_i)();
 	if (sim) EC<void(void*, bool)>(addr::SetPaused)(sim, paused);
 }
-// The player's active vanilla Eets profile name. GlobalSettings::i() holds the last-selected profile
-// FileNamePair at +off_GlobalSettings_lastProfile; its name is a std::string (data ptr at +0x20 of the
-// pair, length at +0x28). Returns "" if no profile is selected yet or the address is unavailable. Linux
-// only - the Win GlobalSettings/FileNamePair/std::string offsets differ and aren't RE'd, so callers fall
-// back to a configured id there.
+// The player's active vanilla Eets profile name from GlobalSettings::i(). Layouts differ per platform:
+//   Linux: a FileNamePair at GlobalSettings+off_GlobalSettings_lastProfile whose name std::string (libstdc++:
+//          data ptr @+0x20, length @+0x28) is the "<name>.prf" filename.
+//   Win32: an MSVC std::string display-name directly at GlobalSettings+off_GlobalSettings_displayName
+//          (union buf/ptr @+0x00, length @+0x10, capacity @+0x14; SSO when cap < 16).
+// Returns "" if no profile is selected yet or the address is unavailable; callers fall back to a configured id.
 inline std::string Profile_GetName() {
-#ifdef _WIN32
-	return std::string();
-#else
-	if (!addr::GlobalSettings_i) return std::string();
+	std::string name;
+	if (!addr::GlobalSettings_i) return name;
 	void* gs = FC<void*()>(addr::GlobalSettings_i)();
-	if (!gs) return std::string();
+	if (!gs) return name;
+#ifdef _WIN32
+	const char* sp = (const char*)gs + addr::off_GlobalSettings_displayName;
+	uint32_t len = *(const uint32_t*)(sp + 0x10), cap = *(const uint32_t*)(sp + 0x14);
+	const char* p = (cap < 16) ? sp : *(const char* const*)sp;   // MSVC SSO inline buffer vs heap pointer
+#else
 	const char* pair = (const char*)gs + addr::off_GlobalSettings_lastProfile;
-	size_t len = *(const size_t*)(pair + addr::off_FileNamePair_name + 8);   // std::string _M_string_length
-	const char* p = *(const char* const*)(pair + addr::off_FileNamePair_name);   // std::string _M_p (valid for SSO + heap)
-	if (!p || !len) return std::string();
-	std::string name(p, len);
-	// profiles are stored as "<name>.prf" files, so the FileNamePair name carries the extension - strip it
+	size_t len = *(const size_t*)(pair + addr::off_FileNamePair_name + 8);   // libstdc++ _M_string_length
+	const char* p = *(const char* const*)(pair + addr::off_FileNamePair_name);   // _M_p (valid for SSO + heap)
+#endif
+	if (!p || !len) return name;
+	name.assign(p, (size_t)len);
+	// profiles are stored as "<name>.prf" files; strip a trailing ".prf" (the Win displayname has none -> no-op)
 	size_t n = name.size();
-	if (n >= 4 && name[n-4] == '.') {
-		auto lo = [](char c){ return (c >= 'A' && c <= 'Z') ? char(c + 32) : c; };
-		if (lo(name[n-3]) == 'p' && lo(name[n-2]) == 'r' && lo(name[n-1]) == 'f') name.resize(n - 4);
+	if (n >= 4 && name[n - 4] == '.') {
+		auto lo = [](char c) { return (c >= 'A' && c <= 'Z') ? char(c + 32) : c; };
+		if (lo(name[n - 3]) == 'p' && lo(name[n - 2]) == 'r' && lo(name[n - 1]) == 'f') name.resize(n - 4);
 	}
 	return name;
-#endif
 }
 // TRUE engine sim-tick: the count of deterministic frame advances the engine has actually executed
 // (Simulator::DeterministicFrameAdvance, gated on sim-run && !paused). Monotonic process-wide, so the
