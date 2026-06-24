@@ -16,7 +16,7 @@
 #include "eetsmod.h"   // EETS_API marks service decls dllexport in the loader (Windows)
 #include "hook.h"
 
-#define EETSMOD_VERSION "0.19.0"
+#define EETSMOD_VERSION "0.19.1"
 
 // mod native binary ext: .dll on Windows, .so on Linux (.eetsmod bundles carry both)
 #ifdef _WIN32
@@ -443,6 +443,30 @@ void det_Emotion(unsigned long h, unsigned int e) { orig_Emotion(h, e); fire_eve
 typedef int (*GoalFn)(void*);
 GoalFn orig_Goal = nullptr;
 int det_Goal(void* o) { int r = orig_Goal(o); fire_event("goal_check", o, nullptr); return r; }
+// level WON: Builder::CompleteLevel(Builder*), the win-moment handler (sets the win flag -> WinDialog, tags
+// stats). Fires on EVERY win, unlike LevelManager::CompleteLevel which is skipped on already-completed levels.
+ThisFn orig_Win = nullptr;
+void ECALL det_Win(void* s) { orig_Win(s); fire_event("level_won", s, nullptr); }
+// Eets DYING: Creator::StartEetsDeadDialog(Creator*), fired the instant the Eets dies (it pops the death
+// dialog + pauses the sim). Fire BEFORE orig so a mod can react before the dialog shows (e.g. a match that
+// resets+counts the death instead of ending the round). 'eets_death' (the close handler) only fires after
+// the player dismisses that dialog.
+ThisFn orig_Dying = nullptr;
+void ECALL det_Dying(void* s) { fire_event("eets_dying", s, nullptr); orig_Dying(s); }
+// SIM GUARD: Object::UpdatePlaying(Object*, float) runs each object's per-frame Lua. Some levels have buggy
+// scripts (e.g. The Merch's reaper calls obj:GetEdibleExtension() on a just-killed -> nil object) that throw
+// a Lua error -> uncaught C++ exception -> std::terminate -> the whole game dies. Wrap it so a single bad
+// object's update is skipped this frame and the sim/game survive.
+typedef void (ECALL *ThisFloatFn)(void*, float);
+ThisFloatFn orig_UpdatePlaying = nullptr;
+static long g_simGuardCount = 0;
+void ECALL det_UpdatePlaying(void* o, float dt) {
+	try { orig_UpdatePlaying(o, dt); }
+	catch (...) {
+		if ((g_simGuardCount++ % 300) == 0)
+			logline("sim-guard: caught exception in Object::UpdatePlaying (count=%ld) - skipped object frame", g_simGuardCount);
+	}
+}
 // eets_death prologue isn't relocatable; detect via object_killed of World_GetEets()
 
 void try_hook(const char* name, void* target, void* detour, void** orig) {
@@ -457,6 +481,9 @@ void install_engine_event_hooks() {
 	try_hook("object_killed (Object::KillMe)",          (void*)Eets::addr::hook_Object_KillMe,              (void*)det_KillMe,       (void**)&orig_KillMe);
 	try_hook("emotion_change (World_ChangeEmotion)",    (void*)Eets::addr::hook_World_ChangeEmotion,        (void*)det_Emotion,      (void**)&orig_Emotion);
 	try_hook("goal_check (World_CheckGoal)",            (void*)Eets::addr::hook_World_CheckGoal,            (void*)det_Goal,         (void**)&orig_Goal);
+	try_hook("level_won (Builder::CompleteLevel)",      (void*)Eets::addr::hook_Builder_CompleteLevel,      (void*)det_Win,          (void**)&orig_Win);
+	try_hook("eets_dying (Creator::StartEetsDeadDialog)",(void*)Eets::addr::hook_Creator_StartEetsDeadDialog,(void*)det_Dying,       (void**)&orig_Dying);
+	try_hook("sim-guard (Object::UpdatePlaying)",       (void*)Eets::addr::hook_Object_UpdatePlaying,       (void*)det_UpdatePlaying,(void**)&orig_UpdatePlaying);
 	// eets_death: hook the dialog-close handler OnEndEetsDeadDialog (__thiscall(Creator*, int)), not the opener; fires once per death
 	try_hook("eets_death (Creator::OnEndEetsDeadDialog)", (void*)Eets::addr::hook_Creator_OnEndEetsDeadDialog,(void*)det_EetsDead, (void**)&orig_EetsDead2);
 	(void)orig_EetsDead;

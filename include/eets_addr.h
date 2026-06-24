@@ -106,6 +106,8 @@ constexpr uintptr_t hook_Object_KillMe                 = 0x5742c0;  // -> "objec
 constexpr uintptr_t hook_ObjectMgr_CreateObject        = 0x576290;  // -> "object_spawn"
 constexpr uintptr_t hook_World_ChangeEmotion           = 0x5bcb90;  // -> "emotion_change" (ulong hash, uint emotion)
 constexpr uintptr_t hook_World_CheckGoal               = 0x5bcc00;  // -> "goal_check" (Object*)
+constexpr uintptr_t hook_Object_UpdatePlaying          = 0x573890;  // Object::UpdatePlaying(Object*, float) - per-object per-frame Lua update. Wrapped in a try/catch so a buggy level's Lua error (e.g. The Merch reaper calling a method on a killed/nil object) skips that object's frame instead of escaping to std::terminate and hard-crashing the game.
+constexpr uintptr_t hook_Builder_CompleteLevel         = 0x614f50;  // -> "level_won" (Builder*): the win-moment handler - sets the win flag (Builder+0x2fa0=1 -> shows WinDialog), tags win stats, and calls LevelManager::CompleteLevel ONLY if !IsLevelComplete. Our 'level_complete' hook (LevelManager::CompleteLevel) thus MISSES wins on already-completed campaign levels (the ranked pool); this fires on EVERY win. NOT StartWinEffect@0x614740 (just a sub-effect, not always called).
 constexpr uintptr_t hook_Creator_OnEndEetsDeadDialog   = 0x6185d0;  // -> "eets_death" (Creator*, int)
 constexpr uintptr_t MotionModel_PushMotion             = 0x50d830;  // (MotionModel*, char const*, bool, bool)
 constexpr uintptr_t MotionModel_PopMotion              = 0x50dc60;  // (MotionModel*)
@@ -125,6 +127,24 @@ constexpr uintptr_t GraphicsEngine_DrawCircleFilled    = 0x54a030;  // (GE*,Vect
 constexpr uintptr_t Simulator_StartSimulation          = 0x62dd10;  // (Simulator*, weak_ptr<InputSimulator> const&) snapshots object initial state (for reset), reseeds RNG, sets sim flag [sim+0x160]
 constexpr uintptr_t MainMenu_LoadSimulatorLevel        = 0x629ff0;  // (MainMenu*, FileNamePair const*) load level into the build phase; `this` only used as scratch for the "Music" string @this+0x14b0
 constexpr uintptr_t GameUtil_GetLevelManager           = 0x5a0d20;  // () -> LevelManager* ( *(World::i()+0x10)+0x180 ); hubs linked-list @+0x10, hub +0x08 id / +0x28..0x30 levels (0x70 stride)
+constexpr uintptr_t World_i                            = 0x5ddcf0;  // World::i() -> World* (singleton)
+constexpr uintptr_t World_StartBuilder                 = 0x5de460;  // World::StartBuilder(FileNamePair const*, LevelDirectory, bool) - REAL play entry: news a Builder at World+0x20, loads the level, sets game mode 3 (build phase). Call (World::i(), fnp, 0, true).
+constexpr uintptr_t Creator_StartSimulation            = 0x61cfb0;  // Creator::StartSimulation(Creator*) - the real "Go" on the active builder ( *(World::i()+0x20) ); does the full sim-start (input recording, stat tags, releases Eets)
+constexpr uintptr_t GUI_OnUpdate                       = 0x555e70;  // GUI::OnUpdate(GUI*, float) - primes a GUI's widget tree. Creator::LoadLevel calls it twice on the Creator GUI (creator+8) ONLY on its param_3==0 path; a programmatic StartBuilder(dir=1) load must replicate this prime or Creator::OnNonDeterministicUpdate -> GUI::OnUpdate -> Widget::GetParent crashes on the unprimed tree.
+constexpr uintptr_t Creator_StopSimulation             = 0x61bb00;  // Creator::StopSimulation(Creator*) - reverts a running sim to build (Simulator::ResetSimulation + re-enable toolbar); used to abort an early "Go" before the synced build timer.
+constexpr uintptr_t GUI_FindWidget                     = 0x556350;  // GUI::FindWidget(GUI*, char const* name) -> Widget* (by name; the Creator GUI is at creator+8)
+constexpr uintptr_t Widget_AddFlags                    = 0x571b20;  // Widget::AddFlags(Widget*, long): flags |= arg. Flag 0x10 = HIDDEN (see GUI::TutorialHideWidgets).
+constexpr uintptr_t Widget_RemoveFlags                 = 0x571bc0;  // Widget::RemoveFlags(Widget*, long): flags &= ~arg
+
+// ===== struct offsets (Linux x86-64 values; the Win twin in eets_addr_win.h differs) =====
+constexpr unsigned off_World_creator      = 0x20;   // World -> active Creator/Builder
+constexpr unsigned off_Creator_gui        = 0x08;   // Creator -> GUI subobject
+constexpr unsigned off_Creator_guiPrime   = 0x2548; // Creator -> GUI-prime flag set by LoadLevel dir==0
+constexpr unsigned off_Creator_action     = 0x2218; // Creator -> in-progress action ptr (the drag)
+constexpr unsigned off_Creator_winFlag    = 0x2fa0; // Creator -> win-effect flag byte
+constexpr unsigned off_Creator_winTimer   = 0x2fa4; // Creator -> win-effect timer float
+constexpr unsigned vtidx_action_undo      = 3;      // (Add/Move)Action vtable slot for Undo (+0x18/8)
+constexpr unsigned vtidx_action_dtor      = 1;      // action vtable slot for the deleting dtor (+0x08/8)
 constexpr uintptr_t DetMode_flag                       = 0x1210840; // s_deterministic_flag (byte): 0=libc rand(), nonzero=internal deterministic LCG
 constexpr uintptr_t PRNG_seed                          = 0x8d8d10;  // RANDOM_SEED (int32): LCG seed state; Util::SetSeedInternal writes it (engine reseeds on StartSimulation)
 

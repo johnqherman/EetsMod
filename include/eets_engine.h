@@ -241,6 +241,92 @@ inline void Simulator_StartSimulation(void* sim) {
 }
 // load a level into the build phase (does NOT start the sim). `self` is a MainMenu*; the engine only
 // uses it as scratch for the level's "Music" string @self+0x14b0, so a faked buffer works (see callers).
+inline void* World_i() { return addr::World_i ? (void*)FC<uintptr_t()>(addr::World_i)() : nullptr; }
+// the active gameplay controller (Builder/Creator/LevelEditor) lives at World+0x20
+inline void* World_GetCreator() { void* w = World_i(); return w ? *(void**)((char*)w + addr::off_World_creator) : nullptr; }
+// the real "Go": start the sim on the active builder (full init - input recording, stat tags, Eets release)
+inline bool Creator_StartSimulation(void* creator) {
+	if (!creator || !addr::Creator_StartSimulation) return false;
+	EC<void(void*)>(addr::Creator_StartSimulation)(creator); return true;
+}
+// revert a running sim back to the build phase (Simulator::ResetSimulation + re-enable the toolbar). Used to
+// abort an early "Go" so a match sim only starts when the synced build timer expires.
+inline bool Creator_StopSimulation(void* creator) {
+	if (!creator || !addr::Creator_StopSimulation) return false;
+	EC<void(void*)>(addr::Creator_StopSimulation)(creator); return true;
+}
+// dismiss all active modal dialogs on a GUI (GUI::StopAllModalsImmediate). The Creator/Builder GUI is at
+// creator+8. Used to suppress the vanilla "YOU DID IT!"/death dialogs in a match so it proceeds straight to
+// the next round instead of waiting on a menu.
+inline void Creator_StopAllModals(void* creator) {
+	if (!creator || !addr::StopAllModalsImmediate) return;
+	EC<void(void*)>(addr::StopAllModalsImmediate)((char*)creator + addr::off_Creator_gui);
+}
+// clear the Builder's pending win-effect (Builder+0x2fa0 flag, +0x2fa4 timer). Builder::OnEndWonTrophyDialog
+// sets these on a win; a per-frame updater counts the timer down then pops the WinDialog ~0.3s later. Because
+// StartBuilder REUSES the Builder (World+0x20), the pending effect survives a level reload and fires the
+// "YOU DID IT!" dialog on the NEXT round. Clearing it kills the deferred dialog at the source. Linux offsets;
+// behind addr::Creator_StopSimulation so Win (no level flow yet) is a safe no-op.
+// show/hide a named widget on the Creator's GUI (creator+8). Flags: 0x10 = HIDDEN (no draw, per GUI::
+// TutorialHideWidgets); 0x02 = makes the click hit-test skip it (FindWidgetByPos -> IsFlagged(w,3), where
+// 3 = bits 0x1|0x2), i.e. not clickable. We set both so a "hidden" widget is also non-interactive (else it
+// stays clickable while invisible). Used to remove the hint/solution/speed buttons during an online match.
+inline void Creator_SetWidgetHidden(void* creator, const char* name, bool hidden) {
+	if (!creator || !addr::GUI_FindWidget) return;
+	void* w = (void*)EC<uintptr_t(void*, const char*)>(addr::GUI_FindWidget)((char*)creator + addr::off_Creator_gui, name);
+	if (!w) return;
+	if (hidden) { if (addr::Widget_AddFlags)    EC<void(void*, long)>(addr::Widget_AddFlags)(w, 0x12); }
+	else        { if (addr::Widget_RemoveFlags) EC<void(void*, long)>(addr::Widget_RemoveFlags)(w, 0x12); }
+}
+// cancel the Creator's in-progress action (Creator+0x2218) - e.g. an object the player is mid-drag. Mirrors
+// Creator::Update's own cancel block: vtable+0x18 = (Add/Move)Action::Undo (removes/reverts the dragged
+// object, returns it to the toolbar), vtable+8 = deleting dtor, then clear the slot. Without this,
+// Creator::StartSimulation bails ("Trying to start the simulation while in action! Ignoring...") so a
+// forced/auto Go during a drag would silently no-op. Linux offsets; Win no-op until RE'd.
+inline void Creator_CancelAction(void* creator) {
+	if (!creator) return;
+	void* act = *(void**)((char*)creator + addr::off_Creator_action);
+	if (!act) return;
+	void** vt = *(void***)act;
+	((void(*)(void*))vt[addr::vtidx_action_undo])(act);           // (Add/Move)Action::Undo - clean up the in-progress objects
+	void* act2 = *(void**)((char*)creator + addr::off_Creator_action);
+	if (act2) ((void(*)(void*))(*(void***)act2)[addr::vtidx_action_dtor])(act2);   // deleting destructor
+	*(void**)((char*)creator + addr::off_Creator_action) = 0;
+}
+// pause/unpause the simulation (Simulator::SetPaused). The death dialog pauses the sim; a match that resets
+// on death must unpause so the rebuild/retry is interactive.
+inline void Simulator_SetPaused(bool paused) {
+	if (!addr::SetPaused || !addr::Simulator_i) return;
+	void* sim = FC<void*()>(addr::Simulator_i)();
+	if (sim) EC<void(void*, bool)>(addr::SetPaused)(sim, paused);
+}
+inline void Creator_ClearWinEffect(void* creator) {
+	if (!creator) return;
+	*(volatile unsigned char*)((char*)creator + addr::off_Creator_winFlag) = 0;
+	*(volatile float*)((char*)creator + addr::off_Creator_winTimer) = 0.0f;
+}
+// REAL play entry: enter gameplay for a level (news a Builder, loads the level, sets build-phase game
+// mode). dir = GameUtil::LevelDirectory (0 for the catalog levels), reload = true. See addr note.
+inline void World_StartBuilder(const void* fileNamePair, int dir = 0, bool reload = true) {
+	void* w = World_i();
+	if (w && addr::World_StartBuilder) EC<void(void*, const void*, int, bool)>(addr::World_StartBuilder)(w, fileNamePair, dir, reload);
+}
+// Programmatic level entry for the catalog (LEVELS:Game) levels - the ranked-pool path. StartBuilder with
+// dir=1 (GameUtil::LevelDirectory: 1="LEVELS:Game\\", 0="USER:Custom Levels\\"), then replicate the GUI
+// prime that Creator::LoadLevel only runs on its param_3==0 branch (two GUI::OnUpdate(creator+8, 0) calls
+// + creator+0x2548=1). Without the prime, Creator::OnNonDeterministicUpdate -> GUI::OnUpdate -> Widget::
+// GetParent crashes on the unprimed widget tree. The normal dialog-driven play path primes via the load
+// screen flow we bypass. Linux-only (Win World::i/StartBuilder/GUI_OnUpdate addrs not RE'd).
+inline void World_EnterLevel(const void* fileNamePair) {
+	World_StartBuilder(fileNamePair, 1, true);
+	void* creator = World_GetCreator();
+	if (creator && addr::GUI_OnUpdate) {
+		void* gui = (char*)creator + addr::off_Creator_gui;
+		EC<void(void*, float)>(addr::GUI_OnUpdate)(gui, 0.0f);
+		EC<void(void*, float)>(addr::GUI_OnUpdate)(gui, 0.0f);
+		*(uint32_t*)((char*)creator + addr::off_Creator_guiPrime) = 1;
+	}
+}
 inline void MainMenu_LoadSimulatorLevel(void* self, const void* fileNamePair) {
 	EC<void(void*, const void*)>(addr::MainMenu_LoadSimulatorLevel)(self, fileNamePair);
 }
@@ -356,11 +442,12 @@ inline void* LoadSprite(const char* path, int format = 0) {
 inline int  SpriteWidth(void* s)  { return s ? (int)EC<unsigned(void*)>(addr::Sprite_GetWidth)(s)  : 0; }
 inline int  SpriteHeight(void* s) { return s ? (int)EC<unsigned(void*)>(addr::Sprite_GetHeight)(s) : 0; }
 
-inline void DrawSpriteAt(void* sprite, int x, int y, Color tint = Color()) {
+inline void DrawSpriteAt(void* sprite, int x, int y, Color tint = Color(), bool flip = false) {
 	void* ge = GraphicsEngine_i();
 	if (!ge || !sprite) return;
 	Vector2 uv0{0.0f, 0.0f}, uv1{1.0f, 1.0f};
 	EC<void(void*, Vector2&, Vector2&)>(addr::Sprite_GetDiffuseUV)(sprite, uv0, uv1);
+	if (flip) { float t = uv0.x; uv0.x = uv1.x; uv1.x = t; }   // mirror horizontally (swap U)
 	Vector2 pos{(float)x, (float)y};
 	EC<void(void*, void*, const Vector2&, const Vector2&, const Vector2&, const Color&)>(addr::GraphicsEngine_DrawSprite)(ge, sprite, pos, uv0, uv1, tint);
 }
@@ -400,7 +487,7 @@ inline float AnimFrameDuration(void* a) { return a ? *(float*)((char*)a + 0x30) 
 #endif
 inline int AnimFrameCount(void* a) { return a ? (int)FC<unsigned(void*)>(addr::Animation_FrameCount)(a) : 0; }
 
-inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color()) {
+inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false) {
 	void* a = LoadAnim(path);
 	if (!a) return false;
 	unsigned frames = (unsigned)AnimFrameCount(a);
@@ -418,7 +505,7 @@ inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f,
 	}
 	void* sprite = FC<void*(void*)>(addr::Animation_GetCurrentFrame)(a);
 	if (!sprite) return false;
-	DrawSpriteAt(sprite, x, y, tint);
+	DrawSpriteAt(sprite, x, y, tint, flip);
 	return true;
 }
 

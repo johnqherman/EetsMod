@@ -106,6 +106,8 @@ inline uintptr_t hook_Creator_StartEetsDeadDialog   = resolve(0x12b5d0);  // Cre
 inline uintptr_t hook_Object_KillMe                 = resolve(0xaa2a0);  // Object::KillMe (object_killed); sets death flag this+0x30=0x100, fires OnDestroy
 inline uintptr_t hook_ObjectMgr_CreateObject        = resolve(0xac560);  // ObjectMgr::CreateObject (object_spawn); hashes name, allocs Object, pushes to vector
 inline uintptr_t hook_World_ChangeEmotion           = resolve(0xdb8f0);  // -> "emotion_change" (ulong hash, uint emotion)
+inline uintptr_t hook_Object_UpdatePlaying          = resolve(0xab190);   // Object::UpdatePlaying(Object*,float); sim-guard try/catch (RE'd via "Error calling Update for object: %s"). NOTE: mingw catch(...) may not catch the game's MSVC C++ exceptions - verify on Win.
+inline uintptr_t hook_Builder_CompleteLevel         = resolve(0x1213a0);  // Builder::CompleteLevel -> "level_won" (RE'd via "win_one_less_items"/"puzzle_pieces" string refs)
 inline uintptr_t hook_World_CheckGoal               = resolve(0xdb910);  // -> "goal_check" (Object*)
 inline uintptr_t hook_Creator_OnEndEetsDeadDialog   = resolve( 0x1293d0);  // Creator::OnEndEetsDeadDialog (eets_death dialog close); __thiscall(Creator*, int) RET 4
 inline uintptr_t MotionModel_PushMotion             = resolve(0x58300);  // (MotionModel*, char const*, bool, bool) thiscall
@@ -125,7 +127,27 @@ inline uintptr_t GraphicsEngine_DrawCircleFilled    = resolve(0);  // absent in 
 // ===== level / simulation control (Win function addrs TBD - RE the PE build; calls null-guard on 0) =====
 inline uintptr_t Simulator_StartSimulation          = resolve(0x138850); // (Simulator*, weak_ptr const&) snapshots object initial state, reseeds RNG, sets sim flag
 inline uintptr_t MainMenu_LoadSimulatorLevel        = resolve(0x133c70); // (MainMenu*, FileNamePair const*) load level into build phase; `this` scratch for "Music" string (Win offset differs from Linux)
-inline uintptr_t GameUtil_GetLevelManager           = resolve(0);        // () -> LevelManager* TBD (no string locator; pool walk is Linux-only for now)
+inline uintptr_t GameUtil_GetLevelManager           = resolve(0xc39b0);  // () -> LevelManager* = World::i()[+8]+0xa0
+inline uintptr_t World_i                            = resolve(0xf8600);  // World::i() -> World* (reads global 0xee3cbc)
+inline uintptr_t World_StartBuilder                 = resolve(0xf7d30);  // World::StartBuilder(World*,FileNamePair*,dir,bool) - real play entry; news Builder@World+0x10, mode field@+0x14=3
+inline uintptr_t Creator_StartSimulation            = resolve(0x12b8b0);  // Creator::StartSimulation (RE'd via "...while in action!" + calls Simulator::StartSimulation). Inert until World_i is RE'd (reached via World_GetCreator).
+inline uintptr_t GUI_OnUpdate                       = resolve(0x96e50);  // GUI::OnUpdate(GUI*,float) - GUI prime for programmatic level load
+inline uintptr_t Creator_StopSimulation             = resolve(0x12bb00); // Creator::StopSimulation - reset sim->build (checks Simulator+0xb8, ResetSimulation, Toolbar enable)
+inline uintptr_t GUI_FindWidget                     = resolve(0x96600);  // GUI::FindWidget(GUI*,char* name) -> Widget* (GUI list @GUI+0x30)
+inline uintptr_t Widget_AddFlags                    = resolve(0xa7c10);  // Widget::AddFlags(Widget*,long): flags(@Widget+0x20) |= arg. 0x10=hidden, 0x2=no-input (hit-test skips on &3)
+inline uintptr_t Widget_RemoveFlags                 = resolve(0xa8790);  // Widget::RemoveFlags(Widget*,long): flags &= ~arg
+inline uintptr_t StopAllModalsImmediate             = resolve(0x97bd0);  // GUI::StopAllModalsImmediate(GUI*) - dismiss all modals (Creator GUI @creator+0x4)
+inline uintptr_t SetPaused                          = resolve(0x138700); // Simulator::SetPaused(Simulator*,bool) - paused flag @Simulator+0xb9
+
+// ===== struct offsets (Win 32-bit values; DIFFER from Linux - mirror eets_addr.h) =====
+constexpr unsigned off_World_creator      = 0x10;   // World -> active Creator/Builder (Linux 0x20)
+constexpr unsigned off_Creator_gui        = 0x04;   // Creator -> GUI subobject (Linux 0x08)
+constexpr unsigned off_Creator_guiPrime   = 0x156c; // Creator -> GUI-prime flag set by LoadLevel dir==0 (Linux 0x2548)
+constexpr unsigned off_Creator_action     = 0x1398; // Creator -> in-progress action ptr (Linux 0x2218)
+constexpr unsigned off_Creator_winFlag    = 0x1b68; // Creator -> win-effect flag byte (Linux 0x2fa0)
+constexpr unsigned off_Creator_winTimer   = 0x1b6c; // Creator -> win-effect timer float (Linux 0x2fa4)
+constexpr unsigned vtidx_action_undo      = 2;      // (Add/Move)Action vtable slot for Undo (Linux 3)
+constexpr unsigned vtidx_action_dtor      = 0;      // action vtable slot for the deleting dtor (Linux 1)
 inline uintptr_t DetMode_flag                       = resolve(0xae3bf0); // DAT_00ee3bf0: 0=libc rand(), nonzero=Park-Miller
 inline uintptr_t PRNG_seed                          = resolve(0x1a1790); // DAT_005a1790: Park-Miller integer seed state
 

@@ -11,6 +11,37 @@
 #include <csignal>
 #include <ctime>
 
+// --- glibc 2.38 C23 symbol shim (Steam Linux Runtime compatibility) ---
+// GCC 13+/glibc 2.38 redirect strtol/strtoul/sscanf to __isoc23_* variants the Steam Linux Runtime's
+// older glibc does NOT provide - so a loader (or mod) built on a modern toolchain fails to preload/
+// dlopen inside the runtime container (silent "symbol not found"). Define those symbols here, exported
+// from the loader so dlopen'd mods resolve them too, routed to the long-standing glibc versions. Only
+// compiled when built against glibc >= 2.38 (older toolchains already emit the legacy symbols).
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
+#if __GLIBC_PREREQ(2, 38)
+#include <cstdarg>
+__asm__(".symver eets_strtol,   strtol@GLIBC_2.2.5");
+__asm__(".symver eets_strtoul,  strtoul@GLIBC_2.2.5");
+__asm__(".symver eets_strtoll,  strtoll@GLIBC_2.2.5");
+__asm__(".symver eets_strtoull, strtoull@GLIBC_2.2.5");
+__asm__(".symver eets_strtod,   strtod@GLIBC_2.2.5");
+__asm__(".symver eets_vsscanf,  __isoc99_vsscanf@GLIBC_2.7");
+extern "C" long               eets_strtol(const char*, char**, int);
+extern "C" unsigned long      eets_strtoul(const char*, char**, int);
+extern "C" long long          eets_strtoll(const char*, char**, int);
+extern "C" unsigned long long eets_strtoull(const char*, char**, int);
+extern "C" double             eets_strtod(const char*, char**);
+extern "C" int                eets_vsscanf(const char*, const char*, va_list);
+#define EETS_C23SHIM extern "C" __attribute__((visibility("default")))
+EETS_C23SHIM long               __isoc23_strtol(const char* p, char** e, int b)   { return eets_strtol(p, e, b); }
+EETS_C23SHIM unsigned long      __isoc23_strtoul(const char* p, char** e, int b)  { return eets_strtoul(p, e, b); }
+EETS_C23SHIM long long          __isoc23_strtoll(const char* p, char** e, int b)  { return eets_strtoll(p, e, b); }
+EETS_C23SHIM unsigned long long __isoc23_strtoull(const char* p, char** e, int b) { return eets_strtoull(p, e, b); }
+EETS_C23SHIM double             __isoc23_strtod(const char* p, char** e)          { return eets_strtod(p, e); }
+EETS_C23SHIM int __isoc23_sscanf(const char* s, const char* f, ...) { va_list a; va_start(a, f); int r = eets_vsscanf(s, f, a); va_end(a); return r; }
+#endif
+#endif
+
 #else
 #include <windows.h>
 #include <direct.h>

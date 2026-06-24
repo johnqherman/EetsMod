@@ -28,6 +28,9 @@ struct State {
 	bool  down = false, prevDown = false;
 	bool  clicked = false;
 	int   clickX = 0, clickY = 0;
+	// column layout (BeginColumns/NextColumn/EndColumns)
+	int   colCount = 0, colIdx = 0, colGap = 8, colW = 0;
+	int   colOrigPx = 0, colOrigPw = 0, colStartY = 0, colMaxY = 0;
 };
 inline State& S() { static State s; return s; }
 
@@ -106,6 +109,49 @@ inline float Slider(const char* label, float& value, float lo, float hi) {
 	}
 	s.cy += h + 6;
 	return value;
+}
+
+// a section header with an underline rule - groups related rows
+inline void Section(const char* label) {
+	State& s = S();
+	s.cy += 6;
+	DrawTextOutlined(s.px + s.pad, s.cy, label, FONT_NORMAL, col::title());
+	s.cy += 22;
+	FillRect(s.px + s.pad, s.cy, s.pw - 2 * s.pad, 2, col::black());
+	s.cy += 7;
+}
+
+// a thin divider rule
+inline void Separator() {
+	State& s = S();
+	s.cy += 4;
+	FillRect(s.px + s.pad, s.cy, s.pw - 2 * s.pad, 2, col::shadow());
+	s.cy += 6;
+}
+
+// split the current width into N side-by-side columns (rows added between Begin/Next/End stack per
+// column). Keeps a tall menu on-screen. Always pair with matching NextColumn()/EndColumns().
+inline void BeginColumns(int n, int gap = 10) {
+	State& s = S();
+	if (n < 1) n = 1;
+	s.colCount = n; s.colIdx = 0; s.colGap = gap;
+	s.colOrigPx = s.px; s.colOrigPw = s.pw; s.colStartY = s.cy; s.colMaxY = s.cy;
+	int inner = s.pw - 2 * s.pad;
+	s.colW = (inner - (n - 1) * gap) / n;
+	s.pw = s.colW + 2 * s.pad;          // widget width becomes one column wide
+}
+inline void NextColumn() {
+	State& s = S();
+	if (s.cy > s.colMaxY) s.colMaxY = s.cy;
+	if (s.colIdx < s.colCount - 1) s.colIdx++;
+	s.px = s.colOrigPx + s.colIdx * (s.colW + s.colGap);
+	s.cy = s.colStartY;
+}
+inline void EndColumns() {
+	State& s = S();
+	if (s.cy > s.colMaxY) s.colMaxY = s.cy;
+	s.px = s.colOrigPx; s.pw = s.colOrigPw; s.cy = s.colMaxY;
+	s.colCount = 0;
 }
 
 inline void End() {
