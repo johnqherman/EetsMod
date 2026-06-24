@@ -300,6 +300,40 @@ inline void Simulator_SetPaused(bool paused) {
 	void* sim = FC<void*()>(addr::Simulator_i)();
 	if (sim) EC<void(void*, bool)>(addr::SetPaused)(sim, paused);
 }
+// The player's active vanilla Eets profile name. GlobalSettings::i() holds the last-selected profile
+// FileNamePair at +off_GlobalSettings_lastProfile; its name is a std::string (data ptr at +0x20 of the
+// pair, length at +0x28). Returns "" if no profile is selected yet or the address is unavailable. Linux
+// only - the Win GlobalSettings/FileNamePair/std::string offsets differ and aren't RE'd, so callers fall
+// back to a configured id there.
+inline std::string Profile_GetName() {
+#ifdef _WIN32
+	return std::string();
+#else
+	if (!addr::GlobalSettings_i) return std::string();
+	void* gs = FC<void*()>(addr::GlobalSettings_i)();
+	if (!gs) return std::string();
+	const char* pair = (const char*)gs + addr::off_GlobalSettings_lastProfile;
+	size_t len = *(const size_t*)(pair + addr::off_FileNamePair_name + 8);   // std::string _M_string_length
+	const char* p = *(const char* const*)(pair + addr::off_FileNamePair_name);   // std::string _M_p (valid for SSO + heap)
+	if (!p || !len) return std::string();
+	std::string name(p, len);
+	// profiles are stored as "<name>.prf" files, so the FileNamePair name carries the extension - strip it
+	size_t n = name.size();
+	if (n >= 4 && name[n-4] == '.') {
+		auto lo = [](char c){ return (c >= 'A' && c <= 'Z') ? char(c + 32) : c; };
+		if (lo(name[n-3]) == 'p' && lo(name[n-2]) == 'r' && lo(name[n-1]) == 'f') name.resize(n - 4);
+	}
+	return name;
+#endif
+}
+// TRUE engine sim-tick: the count of deterministic frame advances the engine has actually executed
+// (Simulator::DeterministicFrameAdvance, gated on sim-run && !paused). Monotonic process-wide, so the
+// caller subtracts a baseline captured at sim start to get a per-round tick. Returns -1 if the address
+// is unavailable (e.g. a platform whose counter address isn't RE'd) so the caller can fall back.
+inline long Engine_GetSimTick() {
+	if (!addr::Simulator_FrameCounter) return -1;
+	return (long)*(volatile int*)addr::Simulator_FrameCounter;
+}
 inline void Creator_ClearWinEffect(void* creator) {
 	if (!creator) return;
 	*(volatile unsigned char*)((char*)creator + addr::off_Creator_winFlag) = 0;
@@ -310,6 +344,11 @@ inline void Creator_ClearWinEffect(void* creator) {
 inline void World_StartBuilder(const void* fileNamePair, int dir = 0, bool reload = true) {
 	void* w = World_i();
 	if (w && addr::World_StartBuilder) EC<void(void*, const void*, int, bool)>(addr::World_StartBuilder)(w, fileNamePair, dir, reload);
+}
+// leave the current level back to the main menu (the vanilla "quit to menu" path)
+inline void World_StartMainMenu() {
+	void* w = World_i();
+	if (w && addr::World_StartMainMenu) EC<void(void*)>(addr::World_StartMainMenu)(w);
 }
 // Programmatic level entry for the catalog (LEVELS:Game) levels - the ranked-pool path. StartBuilder with
 // dir=1 (GameUtil::LevelDirectory: 1="LEVELS:Game\\", 0="USER:Custom Levels\\"), then replicate the GUI
@@ -442,9 +481,15 @@ inline void* LoadSprite(const char* path, int format = 0) {
 inline int  SpriteWidth(void* s)  { return s ? (int)EC<unsigned(void*)>(addr::Sprite_GetWidth)(s)  : 0; }
 inline int  SpriteHeight(void* s) { return s ? (int)EC<unsigned(void*)>(addr::Sprite_GetHeight)(s) : 0; }
 
-inline void DrawSpriteAt(void* sprite, int x, int y, Color tint = Color(), bool flip = false) {
+inline void DrawSpriteAt(void* sprite, int x, int y, Color tint = Color(), bool flip = false, float scale = 1.0f) {
 	void* ge = GraphicsEngine_i();
 	if (!ge || !sprite) return;
+	if (scale != 1.0f && addr::GraphicsEngine_DrawSpriteEx) {   // scaled path (BltSpriteEx): top-left pivot, opaque
+		Vector2 pos{(float)x, (float)y}, origin{0.0f, 0.0f}, sc{scale, scale};
+		EC<void(void*, const Vector2&, void*, float, const Vector2&, const Vector2&, float, bool, bool, const Color&, bool)>(
+			addr::GraphicsEngine_DrawSpriteEx)(ge, pos, sprite, 0.0f, origin, sc, 1.0f, flip, false, tint, false);
+		return;
+	}
 	Vector2 uv0{0.0f, 0.0f}, uv1{1.0f, 1.0f};
 	EC<void(void*, Vector2&, Vector2&)>(addr::Sprite_GetDiffuseUV)(sprite, uv0, uv1);
 	if (flip) { float t = uv0.x; uv0.x = uv1.x; uv1.x = t; }   // mirror horizontally (swap U)
@@ -487,7 +532,7 @@ inline float AnimFrameDuration(void* a) { return a ? *(float*)((char*)a + 0x30) 
 #endif
 inline int AnimFrameCount(void* a) { return a ? (int)FC<unsigned(void*)>(addr::Animation_FrameCount)(a) : 0; }
 
-inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false) {
+inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f) {
 	void* a = LoadAnim(path);
 	if (!a) return false;
 	unsigned frames = (unsigned)AnimFrameCount(a);
@@ -505,7 +550,7 @@ inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f,
 	}
 	void* sprite = FC<void*(void*)>(addr::Animation_GetCurrentFrame)(a);
 	if (!sprite) return false;
-	DrawSpriteAt(sprite, x, y, tint, flip);
+	DrawSpriteAt(sprite, x, y, tint, flip, scale);
 	return true;
 }
 

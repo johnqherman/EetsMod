@@ -337,6 +337,12 @@ void cfg_flush(const std::string& mod) {
 	for (auto& kv : it->second) fprintf(f, "%s = %s\n", kv.first.c_str(), kv.second.c_str());
 	fclose(f);
 }
+// manifest/identity keys are mod metadata read by read_manifest (not user-tunable settings); the config
+// editor must never expose them - e.g. flipping `sim` would change the mod's simulation flag on next load.
+bool is_reserved_key(const std::string& k) {
+	return k == "version" || k == "author" || k == "min_framework" ||
+	       k == "sim" || k == "priority" || k == "requires";
+}
 std::string cfg_adjust(const std::string& v, int dir) {
 	if (v == "0" || v == "1") return v == "0" ? "1" : "0";
 	char* end = nullptr; double d = strtod(v.c_str(), &end);
@@ -814,6 +820,7 @@ bool manage_click(int mx, int my) {
 	int row = (my - cy0) / OV_ROWH - 1;             // -1: first row is the "config:" header
 	int k = 0;
 	for (auto& kv : cfg) {
+		if (is_reserved_key(kv.first)) continue;   // manifest keys are hidden, so they take no click rows
 		if (k == row) {
 			int minusX = OV_X + OV_W - 70, plusX = OV_X + OV_W - 34;
 			if (mx >= plusX) kv.second = cfg_adjust(kv.second, +1);
@@ -917,7 +924,7 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		using namespace Eets;
 		int nMods = (int)g_mods.size();
 		int cfgRows = 0;
-		if (!g_selected.empty()) cfgRows = (int)g_cfg[g_selected].size() + 1;   // +1 header
+		if (!g_selected.empty()) { cfgRows = 1; for (auto& kv : g_cfg[g_selected]) if (!is_reserved_key(kv.first)) cfgRows++; }   // +1 header, manifest keys hidden
 		int H = OV_TITLE + nMods * OV_ROWH + cfgRows * OV_ROWH + OV_ROWH + 18;  // +1 row for the folder button
 		FillRect(OV_X + 5, OV_Y + 6, OV_W, H, Color(0, 0, 0, 110));
 		FillRect(OV_X, OV_Y, OV_W, H, Color(205, 40, 35, 255));
@@ -943,6 +950,7 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 			DrawTextOutlined(OV_X + 10, y + 4, ("config: " + g_selected).c_str(), FONT_SMALL, Color(255, 232, 40, 255));
 			y += OV_ROWH;
 			for (auto& kv : g_cfg[g_selected]) {
+				if (is_reserved_key(kv.first)) continue;   // manifest/identity keys are not user-tunable
 				snprintf(line, sizeof(line), "%s = %s", kv.first.c_str(), kv.second.c_str());
 				DrawTextOutlined(OV_X + 14, y + 4, line, FONT_SMALL, Color(255, 255, 255, 255));
 				FillRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Color(70, 50, 60, 255));

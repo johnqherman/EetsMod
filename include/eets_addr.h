@@ -129,6 +129,7 @@ constexpr uintptr_t MainMenu_LoadSimulatorLevel        = 0x629ff0;  // (MainMenu
 constexpr uintptr_t GameUtil_GetLevelManager           = 0x5a0d20;  // () -> LevelManager* ( *(World::i()+0x10)+0x180 ); hubs linked-list @+0x10, hub +0x08 id / +0x28..0x30 levels (0x70 stride)
 constexpr uintptr_t World_i                            = 0x5ddcf0;  // World::i() -> World* (singleton)
 constexpr uintptr_t World_StartBuilder                 = 0x5de460;  // World::StartBuilder(FileNamePair const*, LevelDirectory, bool) - REAL play entry: news a Builder at World+0x20, loads the level, sets game mode 3 (build phase). Call (World::i(), fnp, 0, true).
+constexpr uintptr_t World_StartMainMenu                = 0x5de600;  // World::StartMainMenu(World*) - leave the current level back to the main menu
 constexpr uintptr_t Creator_StartSimulation            = 0x61cfb0;  // Creator::StartSimulation(Creator*) - the real "Go" on the active builder ( *(World::i()+0x20) ); does the full sim-start (input recording, stat tags, releases Eets)
 constexpr uintptr_t GUI_OnUpdate                       = 0x555e70;  // GUI::OnUpdate(GUI*, float) - primes a GUI's widget tree. Creator::LoadLevel calls it twice on the Creator GUI (creator+8) ONLY on its param_3==0 path; a programmatic StartBuilder(dir=1) load must replicate this prime or Creator::OnNonDeterministicUpdate -> GUI::OnUpdate -> Widget::GetParent crashes on the unprimed tree.
 constexpr uintptr_t Creator_StopSimulation             = 0x61bb00;  // Creator::StopSimulation(Creator*) - reverts a running sim to build (Simulator::ResetSimulation + re-enable toolbar); used to abort an early "Go" before the synced build timer.
@@ -147,6 +148,12 @@ constexpr unsigned vtidx_action_undo      = 3;      // (Add/Move)Action vtable s
 constexpr unsigned vtidx_action_dtor      = 1;      // action vtable slot for the deleting dtor (+0x08/8)
 constexpr uintptr_t DetMode_flag                       = 0x1210840; // s_deterministic_flag (byte): 0=libc rand(), nonzero=internal deterministic LCG
 constexpr uintptr_t PRNG_seed                          = 0x8d8d10;  // RANDOM_SEED (int32): LCG seed state; Util::SetSeedInternal writes it (engine reseeds on StartSimulation)
+constexpr uintptr_t Simulator_FrameCounter             = 0x1210c88; // Simulator::DeterministicFrameAdvance()::s_count (int32) - TRUE engine sim-tick: incremented once per deterministic frame advance (gated sim-run && !paused). Free-running/process-wide (drives the object-update stagger), so per-round tick = value - baseline@sim-start. More accurate than counting mod Update calls (catches engine sub-stepping).
+
+// ===== player profile (active vanilla Eets profile name) =====
+constexpr uintptr_t GlobalSettings_i                   = 0x5a2a30;  // GlobalSettings::i() -> GlobalSettings* (singleton; m_instance @0x1210a00)
+constexpr unsigned off_GlobalSettings_lastProfile      = 0x18;      // GlobalSettings -> last/active profile FileNamePair (SetLastProfile writes here; persisted in global settings)
+constexpr unsigned off_FileNamePair_name               = 0x20;      // FileNamePair -> name std::string: data ptr @+0x20, length @+0x28 (profiles live at USER:Profiles/<name>)
 
 // ===== localization (StringPool) =====
 constexpr uintptr_t StringPool_instance                = 0x1210838; // StringPool* (read the pointer)
@@ -172,6 +179,7 @@ constexpr uintptr_t TextureManager_LoadTexture         = 0x5512c0;  // (TM*, str
 constexpr uintptr_t SpriteManager_i                    = 0x545c50;  // () -> SpriteManager*
 constexpr uintptr_t SpriteManager_Load                 = 0x546940;  // (sret{Sprite*,ctrl}, SM*, string const&, ImageFormat)
 constexpr uintptr_t GraphicsEngine_DrawSprite          = 0x54be10;  // (GE*, Sprite*, Vector2 pos, Vector2 uv0, Vector2 uv1, Color)
+constexpr uintptr_t GraphicsEngine_DrawSpriteEx        = 0x54c090;  // (GE*, Vector2 pos, Sprite*, float rot, Vector2 origin(px pivot), Vector2 scale({0,0}=1x), float alpha, bool flipX, bool flipY, Colour, bool) -> BltSpriteEx; scaled/rotated draw
 constexpr uintptr_t Sprite_GetWidth                    = 0x545510;  // (Sprite*) -> unsigned
 constexpr uintptr_t Sprite_GetHeight                   = 0x545520;  // (Sprite*) -> unsigned
 constexpr uintptr_t Sprite_GetDiffuseUV                = 0x5459d0;  // (Sprite*, Vector2& uv0, Vector2& uv1) per-frame texcoords

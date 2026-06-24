@@ -130,6 +130,7 @@ inline uintptr_t MainMenu_LoadSimulatorLevel        = resolve(0x133c70); // (Mai
 inline uintptr_t GameUtil_GetLevelManager           = resolve(0xc39b0);  // () -> LevelManager* = World::i()[+8]+0xa0
 inline uintptr_t World_i                            = resolve(0xf8600);  // World::i() -> World* (reads global 0xee3cbc)
 inline uintptr_t World_StartBuilder                 = resolve(0xf7d30);  // World::StartBuilder(World*,FileNamePair*,dir,bool) - real play entry; news Builder@World+0x10, mode field@+0x14=3
+inline uintptr_t World_StartMainMenu                = resolve(0);        // TODO Win: World::StartMainMenu(World*) - leave to main menu
 inline uintptr_t Creator_StartSimulation            = resolve(0x12b8b0);  // Creator::StartSimulation (RE'd via "...while in action!" + calls Simulator::StartSimulation). Inert until World_i is RE'd (reached via World_GetCreator).
 inline uintptr_t GUI_OnUpdate                       = resolve(0x96e50);  // GUI::OnUpdate(GUI*,float) - GUI prime for programmatic level load
 inline uintptr_t Creator_StopSimulation             = resolve(0x12bb00); // Creator::StopSimulation - reset sim->build (checks Simulator+0xb8, ResetSimulation, Toolbar enable)
@@ -150,6 +151,10 @@ constexpr unsigned vtidx_action_undo      = 2;      // (Add/Move)Action vtable s
 constexpr unsigned vtidx_action_dtor      = 0;      // action vtable slot for the deleting dtor (Linux 1)
 inline uintptr_t DetMode_flag                       = resolve(0xae3bf0); // DAT_00ee3bf0: 0=libc rand(), nonzero=Park-Miller
 inline uintptr_t PRNG_seed                          = resolve(0x1a1790); // DAT_005a1790: Park-Miller integer seed state
+inline uintptr_t Simulator_FrameCounter             = resolve(0xae3da4); // _DAT_00ee3da4 (int32): TRUE engine sim-tick, ++ once per sim-step (FUN_00536440, gated +0xb8 run && !+0xb9 paused). Free-running; per-round tick = value - baseline@sim-start.
+inline uintptr_t GlobalSettings_i                   = resolve(0);        // TODO Win: GlobalSettings::i() (profile name read is Linux-only - Win FileNamePair/std::string offsets differ)
+inline unsigned  off_GlobalSettings_lastProfile     = 0x18;              // TODO Win: re-RE (Linux value; Win struct offsets differ)
+inline unsigned  off_FileNamePair_name              = 0x20;              // TODO Win: re-RE (Linux value; Win MSVC std::string layout differs)
 
 // ===== localization (StringPool) =====
 inline uintptr_t StringPool_instance                = resolve(0xae3be8);  // StringPool* global DAT_00ee3be8 (read the pointer)
@@ -174,6 +179,7 @@ inline uintptr_t TextureManager_LoadTexture         = resolve(0x91f80);  // (TM*
 inline uintptr_t SpriteManager_i                    = resolve(0x89ff0);  // () -> SpriteManager* (mov eax,[0xe7ef38]; ret)
 inline uintptr_t SpriteManager_Load                 = resolve(0x896c0);  // (sret{Sprite*,ctrl}, SM* this, string const&, ImageFormat) thiscall, RET 0xc; caches in hashmap
 inline uintptr_t GraphicsEngine_DrawSprite          = resolve(0x8dbd0);  // (GE*, Sprite*, Vector2 pos, Vector2 uv0, Vector2 uv1, Color) FNA3D prim 0 (TriList,2)
+inline uintptr_t GraphicsEngine_DrawSpriteEx        = resolve(0);       // TODO Win: scaled DrawSprite/BltSpriteEx (scale falls back to native size until RE'd)
 inline uintptr_t Sprite_GetWidth                    = resolve(0x88170);  // (Sprite*) -> unsigned (mov eax,[ecx+0x60])
 inline uintptr_t Sprite_GetHeight                   = resolve(0x88130);  // (Sprite*) -> unsigned (mov eax,[ecx+0x64])
 inline uintptr_t Sprite_GetDiffuseUV                = resolve(0x88100);  // (Sprite*, Vector2& uv0, Vector2& uv1) thiscall RET 8; uv0=+0x40/+0x44 uv1=+0x48/+0x4c

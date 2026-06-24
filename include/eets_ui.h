@@ -31,8 +31,21 @@ struct State {
 	// column layout (BeginColumns/NextColumn/EndColumns)
 	int   colCount = 0, colIdx = 0, colGap = 8, colW = 0;
 	int   colOrigPx = 0, colOrigPw = 0, colStartY = 0, colMaxY = 0;
+	const char* clickSound = nullptr;   // played when a Button/Toggle is activated (null = silent)
+	const char* hoverSound = nullptr;   // played once when the mouse enters a Button/Toggle (null = silent)
+	int   hoverId = -1, curHoverId = -1;   // widget under the mouse last frame / this frame (position-derived id)
 };
 inline State& S() { static State s; return s; }
+
+// set the sound played on a Button/Toggle click (a game sfx name, e.g. "GUI Click 1"); null = silent
+inline void SetClickSound(const char* name) { S().clickSound = name; }
+// set the sound played once when the mouse first enters a Button/Toggle (e.g. "GUI MouseOver"); null = silent
+inline void SetHoverSound(const char* name) { S().hoverSound = name; }
+// call when a widget is hovered: plays the hover sfx on enter (id differs from last frame's hovered widget)
+inline void noteHover(int x, int y) {
+	State& s = S(); int id = y * 4096 + x; s.curHoverId = id;
+	if (s.hoverSound && id != s.hoverId) PlaySound(s.hoverSound);
+}
 
 inline void FeedMouse(int x, int y, int button, int down) {
 	State& s = S();
@@ -48,6 +61,7 @@ inline bool hover(int x, int y, int w, int h){ State& s = S(); return s.mx>=x &&
 
 inline void Begin(int x, int y, int w, const char* title = nullptr) {
 	State& s = S();
+	s.hoverId = s.curHoverId; s.curHoverId = -1;   // roll over hover tracking for this frame
 	s.px = x; s.py = y; s.pw = w; s.top = y;
 	int H = s.lastH;
 	FillRect(x + 6, y + 7, w, H, col::shadow());
@@ -67,12 +81,13 @@ inline bool Button(const char* label) {
 	State& s = S();
 	int x = s.px + s.pad, y = s.cy, w = s.pw - 2*s.pad, h = s.rowh + 4;
 	bool hov = hover(x, y, w, h);
+	if (hov) noteHover(x, y);
 	FillRect(x, y, w, h, hov ? col::btnHover() : col::btn());
 	DrawRect(x, y, w, h, col::black(), 3.0f);
 	DrawTextOutlined(x + 12, y + 7, label, FONT_NORMAL, hov ? col::textHover() : col::textC());
 	s.cy += h + 8;
 	bool c = s.clicked && hit(x, y, w, h);
-	if (c) s.clicked = false;
+	if (c) { s.clicked = false; if (s.clickSound) PlaySound(s.clickSound); }
 	return c;
 }
 
@@ -80,11 +95,12 @@ inline bool Toggle(const char* label, bool& value) {
 	State& s = S();
 	int x = s.px + s.pad, y = s.cy, w = s.pw - 2*s.pad, h = s.rowh + 4, box = h - 8;
 	bool hov = hover(x, y, w, h);
+	if (hov) noteHover(x, y);
 	FillRect(x, y + 4, box, box, value ? col::on() : col::cream());
 	DrawRect(x, y + 4, box, box, col::black(), 3.0f);
 	DrawTextOutlined(x + box + 12, y + 7, label, FONT_NORMAL, hov ? col::textHover() : col::textC());
 	s.cy += h + 8;
-	if (s.clicked && hit(x, y, w, h)) { s.clicked = false; value = !value; return value; }
+	if (s.clicked && hit(x, y, w, h)) { s.clicked = false; value = !value; if (s.clickSound) PlaySound(s.clickSound); return value; }
 	return value;
 }
 
