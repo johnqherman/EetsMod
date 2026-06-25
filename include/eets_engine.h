@@ -184,6 +184,20 @@ inline unsigned long Object_GetID(Object* o) {
 inline MotionModel* Object_GetMotionModel(Object* o) {
 	return EC<MotionModel*(Object*)>(addr::Object_GetMotionModel)(o);
 }
+// the object's current animation frame index (top of its motion stack); -1 if unavailable. Lets a mod
+// frame-sync a remote ghost so play-once anims (jump takeoff/windup, land, eat) mirror instead of looping.
+inline int Object_GetAnimFrameIndex(Object* o) {
+#ifdef _WIN32
+	(void)o; return -1;   // MotionModel motion-stack offsets not RE'd on Win yet -> ghost falls back to local cycling
+#else
+	MotionModel* mm = Object_GetMotionModel(o);
+	if (!mm) return -1;
+	char* begin = *(char**)((char*)mm + 0x48);   // motion stack (Linux): current motion = *begin; empty when begin==end@+0x68
+	if (!begin || begin == *(char**)((char*)mm + 0x68)) return -1;
+	void* anim = FC<void*(void*)>(addr::Motion_GetCurrentAnim)(begin);
+	return anim ? FC<int(void*)>(addr::Anim_GetCurrentFrameIndex)(anim) : -1;
+#endif
+}
 inline void Object_SetPosition(Object* o, const Vector2& p)   { EC<void(Object*, const Vector2&)>(addr::Object_SetPosition)(o, p); }
 inline void Object_ForcePosition(Object* o, const Vector2& p) { EC<void(Object*, const Vector2&)>(addr::Object_ForcePosition)(o, p); }
 inline void Object_SetFacing(Object* o, const Vector2& f)     { EC<void(Object*, const Vector2&)>(addr::Object_SetFacing)(o, f); }
@@ -539,25 +553,30 @@ inline float AnimFrameDuration(void* a) { return a ? *(float*)((char*)a + 0x30) 
 #endif
 inline int AnimFrameCount(void* a) { return a ? (int)FC<unsigned(void*)>(addr::Animation_FrameCount)(a) : 0; }
 
-inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f) {
+// frame >= 0 pins that exact frame (mirror a remote anim - no local looping); frame < 0 = cycle locally at fps
+inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f, int frame = -1) {
 	void* a = LoadAnim(path);
 	if (!a) return false;
 	unsigned frames = (unsigned)AnimFrameCount(a);
 	if (frames > 1) {
-		if (fps <= 0.0f) {                      // native rate from the anim's frame duration
-			float d = AnimFrameDuration(a);
-			fps = (d > 0.0001f) ? 1.0f / d : 12.0f;
+		if (frame >= 0) {                       // pinned: show exactly this frame
+			FC<void(void*, unsigned)>(addr::Animation_SetCurrentFrame)(a, (unsigned)frame % frames);
+		} else {                                // locally cycle at the native (or given) rate
+			if (fps <= 0.0f) {
+				float d = AnimFrameDuration(a);
+				fps = (d > 0.0001f) ? 1.0f / d : 12.0f;
+			}
+			static std::unordered_map<std::string, double>   acc;
+			static std::unordered_map<std::string, unsigned> idx;
+			double step = 1.0 / fps;
+			double& t = acc[path]; t += dt;
+			while (t >= step) { t -= step; idx[path] = (idx[path] + 1) % frames; }
+			FC<void(void*, unsigned)>(addr::Animation_SetCurrentFrame)(a, idx[path]);
 		}
-		static std::unordered_map<std::string, double>   acc;
-		static std::unordered_map<std::string, unsigned> idx;
-		double step = 1.0 / fps;
-		double& t = acc[path]; t += dt;
-		while (t >= step) { t -= step; idx[path] = (idx[path] + 1) % frames; }
-		FC<void(void*, unsigned)>(addr::Animation_SetCurrentFrame)(a, idx[path]);
 	}
 	void* sprite = FC<void*(void*)>(addr::Animation_GetCurrentFrame)(a);
 	if (!sprite) return false;
-	DrawSpriteAt(sprite, x, y, tint, flip, scale);
+	DrawSpriteAt(sprite, x, y, tint, flip, scale, rot);
 	return true;
 }
 

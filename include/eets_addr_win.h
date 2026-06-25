@@ -10,6 +10,7 @@ inline uintptr_t resolve(uintptr_t rva){ return rva?(uintptr_t)GetModuleHandleA(
 // ===== Lua-binding statics (all 76) =====
 inline uintptr_t Anim_GetCurrentFrameIndex          = resolve(0x53a70);  // (Anim::Animation*) -> [this+0x30]+1 (1-based)
 inline uintptr_t Anim_SetCurrentFrameIndex          = resolve(0x50880);  // (Anim::Animation*, unsigned) same setter as Animation_SetCurrentFrame
+inline uintptr_t Motion_GetCurrentAnim              = resolve(0);        // Anim::Motion::GetCurrentAnim (Win TBD; frame-sync is Linux-only for now)
 inline uintptr_t Creator_Undo                       = resolve(0xd9c30);  // ()
 inline uintptr_t Misc_BindKey                       = resolve(0xd9d60);  // (char const*, char const*) wraps FUN_00498650
 inline uintptr_t Misc_PauseProfile                  = resolve(0xd9d80);  // ()
