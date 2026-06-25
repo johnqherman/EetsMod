@@ -11,6 +11,7 @@ constexpr uintptr_t Anim_GetCurrentFrameIndex          = 0x506630;  // (Anim::An
 constexpr uintptr_t Anim_SetCurrentFrameIndex          = 0x506640;  // (Anim::Animation*, unsigned int)
 constexpr uintptr_t Motion_GetCurrentAnim              = 0x50be00;  // Anim::Motion::GetCurrentAnim() -> Animation*
 constexpr uintptr_t Motion_GetCurrentAnimName          = 0x506660;  // Anim::Motion::GetCurrentAnimName() -> char const* (the anim base, e.g. "eets_happy_squat")
+constexpr uintptr_t MotionModel_GetCurrentMotion       = 0x50de20;  // Anim::MotionModel::GetCurrentMotion() -> Motion* (0 if stack empty)
 constexpr uintptr_t Creator_Undo                       = 0x5bce20;  // ()
 constexpr uintptr_t Misc_BindKey                       = 0x5bce70;  // (char const*, char const*)
 constexpr uintptr_t Misc_PauseProfile                  = 0x5bceb0;  // ()
