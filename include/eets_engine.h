@@ -562,8 +562,10 @@ inline float AnimFrameDuration(void* a) { return a ? *(float*)((char*)a + 0x30) 
 #endif
 inline int AnimFrameCount(void* a) { return a ? (int)FC<unsigned(void*)>(addr::Animation_FrameCount)(a) : 0; }
 
-// frame >= 0 pins that exact frame (mirror a remote anim - no local looping); frame < 0 = cycle locally at fps
-inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f, int frame = -1) {
+// frame >= 0 pins that exact frame (mirror a remote anim - no local looping); frame < 0 = cycle locally at fps.
+// footAnchor: treat (x,y) as the sprite's bottom-centre (feet) instead of top-left - keeps a varying-height
+// sprite grounded consistently (no float/sink across frames or emotion swaps).
+inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f, int frame = -1, bool footAnchor = false) {
 	void* a = LoadAnim(path);
 	if (!a) return false;
 	unsigned frames = (unsigned)AnimFrameCount(a);
@@ -585,6 +587,7 @@ inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f,
 	}
 	void* sprite = FC<void*(void*)>(addr::Animation_GetCurrentFrame)(a);
 	if (!sprite) return false;
+	if (footAnchor) { x -= (int)(SpriteWidth(sprite) * scale) / 2; y -= (int)(SpriteHeight(sprite) * scale); }
 	DrawSpriteAt(sprite, x, y, tint, flip, scale, rot);
 	return true;
 }
