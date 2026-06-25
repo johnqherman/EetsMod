@@ -485,13 +485,16 @@ inline void* LoadSprite(const char* path, int format = 0) {
 inline int  SpriteWidth(void* s)  { return s ? (int)EC<unsigned(void*)>(addr::Sprite_GetWidth)(s)  : 0; }
 inline int  SpriteHeight(void* s) { return s ? (int)EC<unsigned(void*)>(addr::Sprite_GetHeight)(s) : 0; }
 
-inline void DrawSpriteAt(void* sprite, int x, int y, Color tint = Color(), bool flip = false, float scale = 1.0f) {
+inline void DrawSpriteAt(void* sprite, int x, int y, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f) {
 	void* ge = GraphicsEngine_i();
 	if (!ge || !sprite) return;
-	if (scale != 1.0f && addr::GraphicsEngine_DrawSpriteEx) {   // scaled path (BltSpriteEx): top-left pivot, opaque
-		Vector2 pos{(float)x, (float)y}, origin{0.0f, 0.0f}, sc{scale, scale};
+	if ((scale != 1.0f || rot != 0.0f) && addr::GraphicsEngine_DrawSpriteEx) {   // scaled/rotated path (BltSpriteEx)
+		// rotate about the sprite centre (origin = half-size, pos shifted to keep the top-left at x,y); else top-left pivot
+		Vector2 origin{0.0f, 0.0f};
+		if (rot != 0.0f) { origin.x = (float)SpriteWidth(sprite) * 0.5f; origin.y = (float)SpriteHeight(sprite) * 0.5f; }
+		Vector2 pos{(float)x + origin.x, (float)y + origin.y}, sc{scale, scale};
 		EC<void(void*, const Vector2&, void*, float, const Vector2&, const Vector2&, float, bool, bool, const Color&, bool)>(
-			addr::GraphicsEngine_DrawSpriteEx)(ge, pos, sprite, 0.0f, origin, sc, 1.0f, flip, false, tint, false);
+			addr::GraphicsEngine_DrawSpriteEx)(ge, pos, sprite, rot, origin, sc, 1.0f, flip, false, tint, false);
 		return;
 	}
 	Vector2 uv0{0.0f, 0.0f}, uv1{1.0f, 1.0f};
@@ -536,7 +539,7 @@ inline float AnimFrameDuration(void* a) { return a ? *(float*)((char*)a + 0x30) 
 #endif
 inline int AnimFrameCount(void* a) { return a ? (int)FC<unsigned(void*)>(addr::Animation_FrameCount)(a) : 0; }
 
-inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f) {
+inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f) {
 	void* a = LoadAnim(path);
 	if (!a) return false;
 	unsigned frames = (unsigned)AnimFrameCount(a);
