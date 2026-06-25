@@ -428,6 +428,18 @@ inline void DrawTextOutlined(int x, int y, const char* text, int size,
 	DrawTextSized(x + 2, y + 2, text, size, shadow, style);
 	DrawTextSized(x, y, text, size, c, style);
 }
+// horizontally centre text on x: the engine measures the (proportional) font and offsets the start by
+// width/2 itself (DrawString's 6th arg = centred), so no strlen guessing. y is the baseline as usual.
+inline void DrawTextCentered(int x, int y, const char* text, int size, Color c = Color(), int style = STYLE_NORMAL, float dirx = 1.0f) {
+	EString s(text ? text : "");
+	Vector2 pos{(float)x, (float)y}, dir{dirx, 0.0f};
+	FC<void(const EString&, int, int, Color, Vector2, bool, const Vector2&)>(addr::TextPrinter_DrawString)(s, size, style, c, pos, true, dir);
+}
+inline void DrawTextCenteredOutlined(int x, int y, const char* text, int size, Color c = Color(),
+                                     Color shadow = Color(0, 0, 0, 200), int style = STYLE_NORMAL) {
+	DrawTextCentered(x + 2, y + 2, text, size, shadow, style);
+	DrawTextCentered(x, y, text, size, c, style);
+}
 
 inline void* GraphicsEngine_i() { return GE_instance(); }
 // GraphicsEngine geometry funcs swap R<->B internally; pre-swap so our RGBA shows correctly
