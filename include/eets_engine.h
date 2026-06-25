@@ -198,6 +198,21 @@ inline int Object_GetAnimFrameIndex(Object* o) {
 	return anim ? FC<int(void*)>(addr::Anim_GetCurrentFrameIndex)(anim) : -1;
 #endif
 }
+// the object's current animation's NAME (e.g. "eets_happy_squat" = the .anim base), "" if none. NOTE: this
+// is the ANIM name, not the motion name - the engine's motion names differ (motion "jump_begin" plays anim
+// "eets_*_squat", "rise" -> "eets_*_land"), so a remote ghost must mirror this, not GetCurrentMotionName.
+inline const char* Object_GetCurrentAnimName(Object* o) {
+#ifdef _WIN32
+	(void)o; return "";   // Win MotionModel offsets not RE'd -> ghost falls back to its emotion x motion enum
+#else
+	MotionModel* mm = Object_GetMotionModel(o);
+	if (!mm) return "";
+	char* begin = *(char**)((char*)mm + 0x48);
+	if (!begin || begin == *(char**)((char*)mm + 0x68)) return "";
+	const char* n = FC<const char*(void*)>(addr::Motion_GetCurrentAnimName)(begin);
+	return n ? n : "";
+#endif
+}
 inline void Object_SetPosition(Object* o, const Vector2& p)   { EC<void(Object*, const Vector2&)>(addr::Object_SetPosition)(o, p); }
 inline void Object_ForcePosition(Object* o, const Vector2& p) { EC<void(Object*, const Vector2&)>(addr::Object_ForcePosition)(o, p); }
 inline void Object_SetFacing(Object* o, const Vector2& f)     { EC<void(Object*, const Vector2&)>(addr::Object_SetFacing)(o, f); }
