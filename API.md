@@ -32,7 +32,7 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   WalkingExtension* Object_GetWalkingExtension(Object* o)
   bool Creator_StartSimulation(void* creator)
   bool Creator_StopSimulation(void* creator)
-  bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f)
+  bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f, int frame = -1, bool footAnchor = false)
   bool DrawAnimFrozenFit(const char* path, int cx, int cy, int targetH, Color tint = Color(), bool flip = false)
   bool DrawImage(const char* path, int x, int y, Color tint = Color())
   bool DrawImageHUD(const char* path, int x, int y, Color tint = Color())
@@ -63,6 +63,7 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   const char* Localize(const char* id)
   const char* MotionModel_GetCurrentMotionName(MotionModel* m)
   const char* Object_GetBlueprintName(Object* a)
+  const char* Object_GetCurrentAnimName(Object* o)
   double World_GetDeterministicDouble()
   float AnimFrameDuration(void* a)
   float VecDot(const Vector2& a, const Vector2& b)
@@ -71,6 +72,7 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   int  SpriteHeight(void* s)
   int  SpriteWidth(void* s)
   int AnimFrameCount(void* a)
+  int Object_GetAnimFrameIndex(Object* o)
   int ScreenHeight()
   int ScreenWidth()
   int World_GetDeterministicIntRange(int a, int b)
@@ -91,8 +93,10 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   void Creator_Undo()
   void DrawLine(Vector2 a, Vector2 b, Color c, float width = 1.0f)
   void DrawRect(int x, int y, int w, int h, Color c, float t = 2.0f)
-  void DrawSpriteAt(void* sprite, int x, int y, Color tint = Color(), bool flip = false, float scale = 1.0f)
+  void DrawSpriteAt(void* sprite, int x, int y, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f)
   void DrawText(int x, int y, const char* text, Color c = Color())
+  void DrawTextCentered(int x, int y, const char* text, int size, Color c = Color(), int style = STYLE_NORMAL, float dirx = 1.0f)
+  void DrawTextCenteredOutlined(int x, int y, const char* text, int size, Color c = Color(),
   void DrawTextOutlined(int x, int y, const char* text, int size,
   void DrawTextSized(int x, int y, const char* text, int size,
   void EmotionExtension_SetEmotionName(EmotionExtension* e, const char* n)
