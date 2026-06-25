@@ -22,6 +22,7 @@ for ln in sys.stdin:
     a,_,n=ln.partition('\t'); n=n.strip()
     if not n or ('0x'+a.lstrip('0')) in exa: continue
     i=re.sub(r'_+','_',re.sub(r'[^A-Za-z0-9_]','_',n)).strip('_')
+    i=i.replace('Centre','Center').replace('centre','center')   # US spelling; binary uses British "Centre"
     if not i or i[0].isdigit() or i in KW: i='f_'+i
     if i in exn: continue
     if i in seen: i='%s_%s'%(i,a)

@@ -26,7 +26,7 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   Vector2 Object_GetFacing(Object* o)
   Vector2 Object_GetPosition(Object* o)
   Vector2 Object_GetVelocity(Object* o)
-  Vector2 ThwackerExtension_GetCentre(ThwackerExtension* t)
+  Vector2 ThwackerExtension_GetCenter(ThwackerExtension* t)
   Vector2 VecNormalize(const Vector2& v)
   Vector2 World_GetGravity()
   WalkingExtension* Object_GetWalkingExtension(Object* o)

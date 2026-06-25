@@ -428,8 +428,8 @@ inline void DrawTextOutlined(int x, int y, const char* text, int size,
 	DrawTextSized(x + 2, y + 2, text, size, shadow, style);
 	DrawTextSized(x, y, text, size, c, style);
 }
-// horizontally centre text on x: the engine measures the (proportional) font and offsets the start by
-// width/2 itself (DrawString's 6th arg = centred), so no strlen guessing. y is the baseline as usual.
+// horizontally center text on x: the engine measures the (proportional) font and offsets the start by
+// width/2 itself (DrawString's 6th arg = centered), so no strlen guessing. y is the baseline as usual.
 inline void DrawTextCentered(int x, int y, const char* text, int size, Color c = Color(), int style = STYLE_NORMAL, float dirx = 1.0f) {
 	EString s(text ? text : "");
 	Vector2 pos{(float)x, (float)y}, dir{dirx, 0.0f};
@@ -524,7 +524,7 @@ inline void DrawSpriteAt(void* sprite, int x, int y, Color tint = Color(), bool 
 	void* ge = GraphicsEngine_i();
 	if (!ge || !sprite) return;
 	if ((scale != 1.0f || rot != 0.0f) && addr::GraphicsEngine_DrawSpriteEx) {   // scaled/rotated path (BltSpriteEx)
-		// rotate about the sprite centre (origin = half-size, pos shifted to keep the top-left at x,y); else top-left pivot
+		// rotate about the sprite center (origin = half-size, pos shifted to keep the top-left at x,y); else top-left pivot
 		Vector2 origin{0.0f, 0.0f};
 		if (rot != 0.0f) { origin.x = (float)SpriteWidth(sprite) * 0.5f; origin.y = (float)SpriteHeight(sprite) * 0.5f; }
 		Vector2 pos{(float)x + origin.x, (float)y + origin.y}, sc{scale, scale};
@@ -575,7 +575,7 @@ inline float AnimFrameDuration(void* a) { return a ? *(float*)((char*)a + 0x30) 
 inline int AnimFrameCount(void* a) { return a ? (int)FC<unsigned(void*)>(addr::Animation_FrameCount)(a) : 0; }
 
 // frame >= 0 pins that exact frame (mirror a remote anim - no local looping); frame < 0 = cycle locally at fps.
-// footAnchor: treat (x,y) as the sprite's bottom-centre (feet) instead of top-left - keeps a varying-height
+// footAnchor: treat (x,y) as the sprite's bottom-center (feet) instead of top-left - keeps a varying-height
 // sprite grounded consistently (no float/sink across frames or emotion swaps).
 inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f, int frame = -1, bool footAnchor = false) {
 	void* a = LoadAnim(path);
@@ -717,10 +717,10 @@ inline bool ThwackerExtension_IsThwacking(ThwackerExtension* t) {
 	return EC<bool(ThwackerExtension*)>(addr::ThwackerExtension_IsThwacking)(t);
 #endif
 }
-inline Vector2 ThwackerExtension_GetCentre(ThwackerExtension* t) {
+inline Vector2 ThwackerExtension_GetCenter(ThwackerExtension* t) {
 	Vector2 r{0.0f, 0.0f};
 #ifdef _WIN32
-	// MSVC-inlined; centre = owner.pos + normalize(owner.facing)*reach. owner=*(Object**)(this+0x4), reach=*(float*)(this+0x3c)
+	// MSVC-inlined; center = owner.pos + normalize(owner.facing)*reach. owner=*(Object**)(this+0x4), reach=*(float*)(this+0x3c)
 	if (!t) return r;
 	Object* owner = *(Object**)((char*)t + 0x4);
 	if (!owner) return r;
@@ -730,7 +730,7 @@ inline Vector2 ThwackerExtension_GetCentre(ThwackerExtension* t) {
 	if (len > 0.0f) { r.x = pos.x + fac.x / len * reach; r.y = pos.y + fac.y / len * reach; }
 	else r = pos;
 #else
-	r = FC<Vector2(ThwackerExtension*)>(addr::ThwackerExtension_GetCentre)(t);
+	r = FC<Vector2(ThwackerExtension*)>(addr::ThwackerExtension_GetCenter)(t);
 #endif
 	return r;
 }

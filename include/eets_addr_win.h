@@ -215,7 +215,7 @@ inline uintptr_t WalkingExtension_ForceReset        = resolve(0x106e00);  // (Wa
 inline uintptr_t WalkingExtension_Reset             = resolve(0x105ab0);  // (Walking*)
 inline uintptr_t ThwackerExtension_SetThwackSpeed   = resolve(0x1036b0);  // (Thwacker*, float)
 inline uintptr_t ThwackerExtension_IsThwacking      = resolve(0);  // (Thwacker*) const -> bool; not found standalone (inlined/folded). closest FUN_00503600 (0x103600) = (state@this+0x30==0) inverse; thwacking == state!=0
-inline uintptr_t ThwackerExtension_GetCentre        = resolve(0);  // (Thwacker*) const -> Vector2; not found: no Vector2-returning method in Thwacker cluster (0x503000-0x503e00); inlined/folded
+inline uintptr_t ThwackerExtension_GetCenter        = resolve(0);  // (Thwacker*) const -> Vector2; not found: no Vector2-returning method in Thwacker cluster (0x503000-0x503e00); inlined/folded
 inline uintptr_t EdibleExtension_GetEaten           = resolve(0xfcca0);  // (Edible*) const -> bool
 inline uintptr_t EdibleExtension_GetEater           = resolve(0);  // (Edible*) const -> unsigned int; not found standalone (inlined/folded). eaters std::set<uint>@this+0x8; would return *begin(); use IsEatenBy(0xfccb0) for membership
 inline uintptr_t EdibleExtension_IsEatenBy          = resolve(0xfccb0);  // (Edible*, unsigned int) const -> bool; set<uint> membership lookup on eater-set @this+0x8; RET 0x4
