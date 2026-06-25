@@ -10,9 +10,9 @@ inline uintptr_t resolve(uintptr_t rva){ return rva?(uintptr_t)GetModuleHandleA(
 // ===== Lua-binding statics (all 76) =====
 inline uintptr_t Anim_GetCurrentFrameIndex          = resolve(0x53a70);  // (Anim::Animation*) -> [this+0x30]+1 (1-based)
 inline uintptr_t Anim_SetCurrentFrameIndex          = resolve(0x50880);  // (Anim::Animation*, unsigned) same setter as Animation_SetCurrentFrame
-inline uintptr_t Motion_GetCurrentAnim              = resolve(0);        // Anim::Motion::GetCurrentAnim (Win TBD; frame-sync is Linux-only for now)
-inline uintptr_t Motion_GetCurrentAnimName          = resolve(0);        // Anim::Motion::GetCurrentAnimName (Win TBD)
-inline uintptr_t MotionModel_GetCurrentMotion       = resolve(0);        // Anim::MotionModel::GetCurrentMotion (Win TBD)
+inline uintptr_t Motion_GetCurrentAnim              = resolve(0x56f00);  // Anim::Motion::GetCurrentAnim -> [[this+0x28]+0x18] (Animation*)
+inline uintptr_t Motion_GetCurrentAnimName          = resolve(0x56f10);  // Anim::Motion::GetCurrentAnimName -> char const* (current anim base name)
+inline uintptr_t MotionModel_GetCurrentMotion       = resolve(0x57cf0);  // Anim::MotionModel::GetCurrentMotion -> Motion* (0 if stack empty); ring slot[(head-1)&mask]
 inline uintptr_t Creator_Undo                       = resolve(0xd9c30);  // ()
 inline uintptr_t Misc_BindKey                       = resolve(0xd9d60);  // (char const*, char const*) wraps FUN_00498650
 inline uintptr_t Misc_PauseProfile                  = resolve(0xd9d80);  // ()
@@ -127,7 +127,7 @@ inline uintptr_t GraphicsEngine_DrawLine            = resolve(0x8d880);  // (GE*
 inline uintptr_t GraphicsEngine_DrawSquare          = resolve(0x8e030);  // (GE*,Vector2 const& topLeft,Vector2 const& botRight,Color const&) FNA3D prim 0 (TriList,2) filled rect
 inline uintptr_t GraphicsEngine_DrawCircleFilled    = resolve(0);  // absent in Win build: full GE vtable @0x564668 has no circle method; Eets draws circles as whitecircle sprites. FillCircle guards on 0
 
-// ===== level / simulation control (Win function addrs TBD - RE the PE build; calls null-guard on 0) =====
+// ===== level / simulation control (RE'd from the PE build; calls null-guard on 0) =====
 inline uintptr_t Simulator_StartSimulation          = resolve(0x138850); // (Simulator*, weak_ptr const&) snapshots object initial state, reseeds RNG, sets sim flag
 inline uintptr_t MainMenu_LoadSimulatorLevel        = resolve(0x133c70); // (MainMenu*, FileNamePair const*) load level into build phase; `this` scratch for "Music" string (Win offset differs from Linux)
 inline uintptr_t GameUtil_GetLevelManager           = resolve(0xc39b0);  // () -> LevelManager* = World::i()[+8]+0xa0
@@ -157,8 +157,8 @@ inline uintptr_t PRNG_seed                          = resolve(0x1a1790); // DAT_
 inline uintptr_t Simulator_FrameCounter             = resolve(0xae3da4); // _DAT_00ee3da4 (int32): TRUE engine sim-tick, ++ once per sim-step (FUN_00536440, gated +0xb8 run && !+0xb9 paused). Free-running; per-round tick = value - baseline@sim-start.
 inline uintptr_t GlobalSettings_i                   = resolve(0xc5de0);  // GlobalSettings::i() -> GlobalSettings* (m_instance @0xee3c60). Win profile name = an MSVC std::string DIRECTLY at GlobalSettings+0x08 (displayname; +0x20 is the filename), NOT the Linux FileNamePair@+0x18->name@+0x20 layout.
 inline unsigned  off_GlobalSettings_displayName     = 0x08;              // Win: GlobalSettings -> profile display-name std::string (MSVC: buf/ptr @+0x00, len @+0x10, cap @+0x14)
-inline unsigned  off_GlobalSettings_lastProfile     = 0x18;              // TODO Win: re-RE (Linux value; Win struct offsets differ)
-inline unsigned  off_FileNamePair_name              = 0x20;              // TODO Win: re-RE (Linux value; Win MSVC std::string layout differs)
+inline unsigned  off_GlobalSettings_lastProfile     = 0x18;              // unused on Win (Linux-only path); Win reads the display-name std::string at +displayName. kept for eets_addr.h parity
+inline unsigned  off_FileNamePair_name              = 0x20;              // unused on Win (Linux-only path); kept for eets_addr.h parity
 
 // ===== localization (StringPool) =====
 inline uintptr_t StringPool_instance                = resolve(0xae3be8);  // StringPool* global DAT_00ee3be8 (read the pointer)

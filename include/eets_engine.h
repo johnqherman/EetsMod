@@ -187,24 +187,24 @@ inline MotionModel* Object_GetMotionModel(Object* o) {
 // the object's current animation frame index (top of its motion stack); -1 if unavailable. Lets a mod
 // frame-sync a remote ghost so play-once anims (jump takeoff/windup, land, eat) mirror instead of looping.
 inline int Object_GetAnimFrameIndex(Object* o) {
-	if (!addr::MotionModel_GetCurrentMotion) return -1;   // Win: addr TBD -> ghost falls back to local cycling
+	if (!addr::MotionModel_GetCurrentMotion) return -1;   // unresolved -> ghost falls back to local cycling
 	MotionModel* mm = Object_GetMotionModel(o);
 	if (!mm) return -1;
-	void* motion = FC<void*(void*)>(addr::MotionModel_GetCurrentMotion)(mm);   // 0 if the motion stack is empty
+	void* motion = EC<void*(void*)>(addr::MotionModel_GetCurrentMotion)(mm);   // 0 if the motion stack is empty
 	if (!motion) return -1;
-	void* anim = FC<void*(void*)>(addr::Motion_GetCurrentAnim)(motion);
-	return anim ? FC<int(void*)>(addr::Anim_GetCurrentFrameIndex)(anim) : -1;
+	void* anim = EC<void*(void*)>(addr::Motion_GetCurrentAnim)(motion);
+	return anim ? EC<int(void*)>(addr::Anim_GetCurrentFrameIndex)(anim) : -1;
 }
 // the object's current animation's NAME (e.g. "eets_happy_squat" = the .anim base), "" if none. NOTE: this
 // is the ANIM name, not the motion name - the engine's motion names differ (motion "jump_begin" plays anim
 // "eets_*_squat", "rise" -> "eets_*_land"), so a remote ghost must mirror this, not GetCurrentMotionName.
 inline const char* Object_GetCurrentAnimName(Object* o) {
-	if (!addr::MotionModel_GetCurrentMotion) return "";   // Win: addr TBD -> ghost falls back to its emotion x motion enum
+	if (!addr::MotionModel_GetCurrentMotion) return "";   // unresolved -> ghost falls back to its emotion x motion enum
 	MotionModel* mm = Object_GetMotionModel(o);
 	if (!mm) return "";
-	void* motion = FC<void*(void*)>(addr::MotionModel_GetCurrentMotion)(mm);
+	void* motion = EC<void*(void*)>(addr::MotionModel_GetCurrentMotion)(mm);
 	if (!motion) return "";
-	const char* n = FC<const char*(void*)>(addr::Motion_GetCurrentAnimName)(motion);
+	const char* n = EC<const char*(void*)>(addr::Motion_GetCurrentAnimName)(motion);
 	return n ? n : "";
 }
 inline void Object_SetPosition(Object* o, const Vector2& p)   { EC<void(Object*, const Vector2&)>(addr::Object_SetPosition)(o, p); }
@@ -630,7 +630,7 @@ inline const char* Localize(const char* id) {
 }
 
 // ---- remaining binding statics (auto-wrapped; return types best-effort) ----
-inline unsigned Anim_GetCurrentFrameIndex(void* a) { return FC<unsigned(void*)>(addr::Anim_GetCurrentFrameIndex)(a); }
+inline unsigned Anim_GetCurrentFrameIndex(void* a) { return EC<unsigned(void*)>(addr::Anim_GetCurrentFrameIndex)(a); }
 inline void Anim_SetCurrentFrameIndex(void* a, unsigned int b) { FC<void(void*, unsigned int)>(addr::Anim_SetCurrentFrameIndex)(a, b); }
 inline void Creator_Undo() { FC<void()>(addr::Creator_Undo)(); }
 inline void Misc_BindKey(const char* a, const char* b) { FC<void(const char*, const char*)>(addr::Misc_BindKey)(a, b); }
