@@ -123,6 +123,14 @@ inline uintptr_t Simulator_i                        = resolve(0x138d80);  // () 
 inline uintptr_t GraphicsEngine_i                   = resolve(0x6ae51c);  // global DAT_00aae51c = GraphicsEngine (vtable 0x564668); +0x20 = FNA3D device; `this` for vtable draw 0x48d880/0x48e030; accessor 0x481c80
 inline uintptr_t printText                          = resolve(0xb9b30);  // (int x,int y,char const*,Color const&) cdecl wrapper -> DrawString(size=3,style=3)
 inline uintptr_t TextPrinter_DrawString             = resolve(0x83a40);  // (string const&,size,style,Color,Vector2,bool,Vector2 const&) cdecl; string by ptr, caller-owned (printText frees it)
+inline uintptr_t TextPrinter_DrawTextFromCache      = resolve(0x8a0a0);  // (char const*,Vector2 const&,bool,Colour const&,FontInfo const*,Vector2 const&); FontInfo glyph-size field @+4 (Linux: +8)
+// GetFont is inlined into DrawString on Win (no standalone fn). The per-style FontInfo globals (DrawTextPx
+// indexes these directly instead of calling GetFont):
+inline uintptr_t FontInfo_style1                    = resolve(0x6ae54c);  // komika
+inline uintptr_t FontInfo_style2                    = resolve(0x6ae574);  // geekabyte
+inline uintptr_t FontInfo_style3                    = resolve(0x6ae5d0);  // normal
+inline uintptr_t FontInfo_style4                    = resolve(0x6ae524);  // bradybunch (UI_FONT)
+inline uintptr_t FontInfo_default                   = resolve(0x6ae59c);  // komika (out-of-range style fallback)
 inline uintptr_t GraphicsEngine_DrawLine            = resolve(0x8d880);  // (GE*,Vector2 const&,Vector2 const&,Color const&) FNA3D prim 2 (LineList,1); R<->B swizzle confirmed
 inline uintptr_t GraphicsEngine_DrawSquare          = resolve(0x8e030);  // (GE*,Vector2 const& topLeft,Vector2 const& botRight,Color const&) FNA3D prim 0 (TriList,2) filled rect
 inline uintptr_t GraphicsEngine_DrawCircleFilled    = resolve(0);  // absent in Win build: full GE vtable @0x564668 has no circle method; Eets draws circles as whitecircle sprites. FillCircle guards on 0
@@ -138,6 +146,25 @@ inline uintptr_t Creator_StartSimulation            = resolve(0x12b8b0);  // Cre
 inline uintptr_t GUI_OnUpdate                       = resolve(0x96e50);  // GUI::OnUpdate(GUI*,float) - GUI prime for programmatic level load
 inline uintptr_t Creator_StopSimulation             = resolve(0x12bb00); // Creator::StopSimulation - reset sim->build (checks Simulator+0xb8, ResetSimulation, Toolbar enable)
 inline uintptr_t GUI_FindWidget                     = resolve(0x96600);  // GUI::FindWidget(GUI*,char* name) -> Widget* (GUI list @GUI+0x30)
+inline uintptr_t Widget_GetExt                      = resolve(0);        // Win TBD: Widget::GetExt(type) -> ext*
+inline uintptr_t TextExt_SetText                    = resolve(0);        // Win TBD: TextExt::SetText(char const*)
+inline unsigned  off_TextExt_string                 = 0;                 // Win TBD: TextExt -> MSVC std::string (layout differs from Linux)
+inline uintptr_t ProxyWidget_UseExt_TextExt         = resolve(0);        // Win TBD: ProxyWidget::UseExt<TextExt>() (welcome-text override no-ops until RE'd)
+inline unsigned  off_World_mainMenu                 = 0x08;              // World -> MainMenu* (likely same +0x08; verify on Win)
+inline unsigned  off_MainMenu_welcomeProxy          = 0;                 // Win TBD: MainMenu -> WelcomeBackText ProxyWidget
+inline unsigned  off_MainMenu_changeProfile         = 0;                 // Win TBD: MainMenu -> ChangeProfileText ProxyWidget
+inline unsigned  off_MainMenu_profileName           = 0;                 // Win TBD: MainMenu -> ProfileNameText ProxyWidget
+inline unsigned  off_MainMenu_statusText            = 0;                 // Win TBD: MainMenu -> StatusText ProxyWidget
+inline uintptr_t Object_SetVisibility               = resolve(0);        // Win TBD: Object::SetVisibility(bool)
+inline unsigned  off_TextExt_widget                 = 0x08;              // TextExt -> Widget/Object (likely same +0x08; verify on Win)
+inline uintptr_t World_GetActiveGUI                 = resolve(0);        // Win TBD: World::GetActiveGUI() -> GUI*
+inline uintptr_t GUI_IsInModalDialog                = resolve(0);        // Win TBD: GUI::IsInModalDialog() -> bool
+inline uintptr_t ProxyWidget_UseExt_ModalExt        = resolve(0);        // Win TBD: UseExt<ModalExt>()
+inline uintptr_t ModalExt_StartModal                = resolve(0);        // Win TBD
+inline uintptr_t ModalExt_StopModal                 = resolve(0);        // Win TBD
+inline uintptr_t ModalExt_IsActive                  = resolve(0);        // Win TBD
+inline uintptr_t GUI_SetModalFadeColour             = resolve(0);        // Win TBD
+inline uintptr_t GUI_RemoveEventListener            = resolve(0);        // Win TBD
 inline uintptr_t Widget_AddFlags                    = resolve(0xa7c10);  // Widget::AddFlags(Widget*,long): flags(@Widget+0x20) |= arg. 0x10=hidden, 0x2=no-input (hit-test skips on &3)
 inline uintptr_t Widget_RemoveFlags                 = resolve(0xa8790);  // Widget::RemoveFlags(Widget*,long): flags &= ~arg
 inline uintptr_t StopAllModalsImmediate             = resolve(0x97bd0);  // GUI::StopAllModalsImmediate(GUI*) - dismiss all modals (Creator GUI @creator+0x4)

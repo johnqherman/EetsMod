@@ -301,6 +301,48 @@ inline void Creator_SetWidgetHidden(void* creator, const char* name, bool hidden
 	if (hidden) { if (addr::Widget_AddFlags)    EC<void(void*, long)>(addr::Widget_AddFlags)(w, 0x12); }
 	else        { if (addr::Widget_RemoveFlags) EC<void(void*, long)>(addr::Widget_RemoveFlags)(w, 0x12); }
 }
+// the main-menu welcome/profile panel's text extension (the "WelcomeBackText" TextExt). The menu's GUI is
+// the active Creator's GUI (creator+8). null if not in the main menu or unresolved (Win until RE'd). Vanilla
+// swaps this text to a button's description on hover (e.g. OPTIONS -> "CHANGE YOUR SETTINGS"); a mod can do
+// the same for its own overlay button by setting it directly.
+// TextExt of a MainMenu text ProxyWidget, by its member offset (off_MainMenu_welcomeProxy / _profileName
+// / _changeProfile). null outside the menu or if unresolved (Win until RE'd).
+inline void* Menu_MainMenuTextExt(unsigned proxyOff) {
+	if (!addr::ProxyWidget_UseExt_TextExt || !proxyOff) return nullptr;
+	void* world = World_i();
+	if (!world) return nullptr;
+	void* mainMenu = *(void**)((char*)world + addr::off_World_mainMenu);   // MainMenu lives at World+0x08
+	if (!mainMenu) return nullptr;
+	return (void*)EC<uintptr_t(void*)>(addr::ProxyWidget_UseExt_TextExt)((char*)mainMenu + proxyOff);   // -> TextExt*
+}
+inline void* Menu_WelcomeTextExt() { return Menu_MainMenuTextExt(addr::off_MainMenu_welcomeProxy); }
+// show/hide a menu text widget (its backing Object's visible flag). Used to mirror vanilla's hover: hide
+// the greeting trio and show the geek-font StatusText description.
+inline void Menu_SetTextVisible(void* textExt, bool vis) {
+	if (!textExt || !addr::Object_SetVisibility || !addr::off_TextExt_widget) return;
+	void* w = *(void**)((char*)textExt + addr::off_TextExt_widget);
+	if (w) EC<void(void*, bool)>(addr::Object_SetVisibility)(w, vis);
+}
+// true when a menu sub-screen/dialog modal is up (Options, Bonus Features, Quit, profile select). The
+// game dims the menu behind the modal via GUI::DisplayList's fade quad. An overlay button drawn in the
+// present hook (after that fade) would float bright over the dim, so it should hide while this is true.
+inline bool Menu_ModalActive() {
+	if (!addr::World_GetActiveGUI || !addr::GUI_IsInModalDialog) return false;
+	void* gui = (void*)EC<uintptr_t(void*)>(addr::World_GetActiveGUI)(World_i());
+	if (!gui) return false;
+	return EC<bool(void*)>(addr::GUI_IsInModalDialog)(gui);
+}
+inline void Menu_SetWelcomeText(void* textExt, const char* s) {
+	if (textExt && s && addr::TextExt_SetText) EC<void(void*, const char*)>(addr::TextExt_SetText)(textExt, s);
+}
+// read the current welcome text, to cache the default before overriding it (so it can be restored on
+// un-hover). Linux libstdc++ std::string layout; "" if unavailable.
+inline std::string Menu_GetWelcomeText(void* textExt) {
+	if (!textExt || !addr::off_TextExt_string) return std::string();
+	const char* p = *(const char* const*)((char*)textExt + addr::off_TextExt_string);
+	size_t len = *(const size_t*)((char*)textExt + addr::off_TextExt_string + sizeof(void*));
+	return (p && len) ? std::string(p, len) : std::string();
+}
 // cancel the Creator's in-progress action (Creator+0x2218) - e.g. an object the player is mid-drag. Mirrors
 // Creator::Update's own cancel block: vtable+0x18 = (Add/Move)Action::Undo (removes/reverts the dragged
 // object, returns it to the toolbar), vtable+8 = deleting dtor, then clear the slot. Without this,
@@ -440,6 +482,42 @@ inline void DrawTextCenteredOutlined(int x, int y, const char* text, int size, C
 	DrawTextCentered(x + 2, y + 2, text, size, shadow, style);
 	DrawTextCentered(x, y, text, size, c, style);
 }
+// Draw text at an ARBITRARY pixel size, bypassing the FontSize enum's fixed 13..35 ladder. Mirrors how
+// the engine sizes text itself: GetFont(style) returns the shared FontInfo whose +8 pixel-size field the
+// glyph cache rasterizes on demand, so any px renders - and scales smoothly (for hover effects) past the
+// enum's 35px ceiling. center uses the engine's measured width (no strlen). Returns false and draws
+// nothing if the addrs are unresolved (e.g. Win until RE'd) so callers can fall back to the enum path.
+// the shared FontInfo for a style. Linux has a standalone GetFont(style); on Win it's inlined into
+// DrawString, so we index the per-style FontInfo globals directly. The glyph pixel-size field sits at a
+// different offset per platform (Linux +8, Win +4).
+inline void* uiFontInfo(int style) {
+#ifdef _WIN32
+	switch (style) {
+		case 1:  return (void*)addr::FontInfo_style1;
+		case 2:  return (void*)addr::FontInfo_style2;
+		case 3:  return (void*)addr::FontInfo_style3;
+		case 4:  return (void*)addr::FontInfo_style4;
+		default: return (void*)addr::FontInfo_default;
+	}
+#else
+	if (!addr::TextPrinter_GetFont) return nullptr;
+	return FC<void*(int)>(addr::TextPrinter_GetFont)(style);
+#endif
+}
+inline bool DrawTextPx(int x, int y, const char* text, int px, Color c, bool center = false, int style = STYLE_NORMAL) {
+	if (!addr::TextPrinter_DrawTextFromCache) return false;
+	void* f = uiFontInfo(style);
+	if (!f) return false;
+#ifdef _WIN32
+	*(int*)((char*)f + 4) = px;   // Win FontInfo glyph-size field offset
+#else
+	*(int*)((char*)f + 8) = px;   // Linux FontInfo glyph-size field offset
+#endif
+	Vector2 pos{(float)x, (float)y}, dir{1.0f, 0.0f};   // dir is normalized internally (direction only)
+	FC<void(const char*, const Vector2&, bool, const Color&, void*, const Vector2&)>(
+		addr::TextPrinter_DrawTextFromCache)(text ? text : "", pos, center, c, f, dir);
+	return true;
+}
 
 inline void* GraphicsEngine_i() { return GE_instance(); }
 // GraphicsEngine geometry funcs swap R<->B internally; pre-swap so our RGBA shows correctly
@@ -458,19 +536,27 @@ inline void FillRect(int x, int y, int w, int h, Color c) {
 }
 inline void FillCircle(int x, int y, float r, Color c, int segs = 24) {
 	void* g = GraphicsEngine_i(); if (!g) return;
-#ifdef _WIN32
-	// Win build has no filled-circle primitive; reproduce from FillRect scanlines to match Linux
+	// drawn as stacked horizontal FillRect scanlines on BOTH platforms: the engine's filled-circle
+	// primitive is unusable (the Linux GraphicsEngine::DrawCircleFilled is a `return 1;` stub; the Win
+	// build has no circle method at all - it draws circles as whitecircle sprites), but FillRect is solid.
+	// The left/right edge of each scanline is anti-aliased by blending a 1px pixel at fractional coverage
+	// (FillRect alpha-blends), so the curve doesn't stairstep like a hard scanline fill.
 	(void)segs;
-	int ri = (int)(r + 0.5f); if (ri < 1) return;
+	if (r < 1.0f) return;
+	int ri = (int)(r + 1.0f);
 	for (int dy = -ri; dy <= ri; ++dy) {
-		int half = (int)(__builtin_sqrtf((float)(ri * ri - dy * dy)) + 0.5f);
-		if (half > 0) FillRect(x - half, y + dy, half * 2, 1, c);
+		float inside = r * r - (float)(dy * dy);
+		if (inside < 0.0f) continue;
+		float half = __builtin_sqrtf(inside);
+		int hi = (int)half;
+		if (hi > 0) FillRect(x - hi, y + dy, hi * 2, 1, c);   // opaque core
+		float frac = half - (float)hi;                        // fractional edge coverage [0,1)
+		if (frac > 0.04f) {
+			Color e(c.r, c.g, c.b, (unsigned char)((float)c.a * frac));
+			FillRect(x + hi, y + dy, 1, 1, e);                // right edge pixel
+			FillRect(x - hi - 1, y + dy, 1, 1, e);            // left edge pixel
+		}
 	}
-#else
-	Color s = swab(c);
-	Vector2 p{(float)x, (float)y};
-	EC<void(void*, const Vector2&, float, const Color&, int)>(addr::GraphicsEngine_DrawCircleFilled)(g, p, r, s, segs);
-#endif
 }
 // built from filled bars - DrawLine ignores width
 inline void DrawRect(int x, int y, int w, int h, Color c, float t = 2.0f) {

@@ -122,6 +122,8 @@ constexpr uintptr_t Simulator_i                        = 0x62ae90;  // () -> Sim
 constexpr uintptr_t GraphicsEngine_i                   = 0x549100;  // () -> GraphicsEngine* (w@+0x40 h@+0x44)
 constexpr uintptr_t printText                          = 0x58a020;  // (int x,int y,char const*,Color const&)
 constexpr uintptr_t TextPrinter_DrawString             = 0x541380;  // (string,size,style,Color,Vector2,bool,Vector2 const&)
+constexpr uintptr_t TextPrinter_GetFont                = 0x541260;  // (FontPrintStyles) -> FontInfo*; [FontInfo+8] = glyph pixel size
+constexpr uintptr_t TextPrinter_DrawTextFromCache      = 0x5485d0;  // (char const*,Vector2 const&,bool center,Colour const&,FontInfo const*,Vector2 const& dir); rasterizes any px on demand
 constexpr uintptr_t GraphicsEngine_DrawLine            = 0x54a2f0;  // (GE*,Vector2 const&,Vector2 const&,Color const&,float) 1px line (width ignored)
 constexpr uintptr_t GraphicsEngine_DrawSquare          = 0x54a050;  // (GE*,Vector2 const& topLeft,Vector2 const& botRight,Color const&) filled rect
 constexpr uintptr_t GraphicsEngine_DrawCircleFilled    = 0x54a030;  // (GE*,Vector2 const&,float r,Color const&,int segs)
@@ -137,6 +139,50 @@ constexpr uintptr_t Creator_StartSimulation            = 0x61cfb0;  // Creator::
 constexpr uintptr_t GUI_OnUpdate                       = 0x555e70;  // GUI::OnUpdate(GUI*, float) - primes a GUI's widget tree. Creator::LoadLevel calls it twice on the Creator GUI (creator+8) ONLY on its param_3==0 path; a programmatic StartBuilder(dir=1) load must replicate this prime or Creator::OnNonDeterministicUpdate -> GUI::OnUpdate -> Widget::GetParent crashes on the unprimed tree.
 constexpr uintptr_t Creator_StopSimulation             = 0x61bb00;  // Creator::StopSimulation(Creator*) - reverts a running sim to build (Simulator::ResetSimulation + re-enable toolbar); used to abort an early "Go" before the synced build timer.
 constexpr uintptr_t GUI_FindWidget                     = 0x556350;  // GUI::FindWidget(GUI*, char const* name) -> Widget* (by name; the Creator GUI is at creator+8)
+constexpr uintptr_t Widget_GetExt                      = 0x572070;  // Widget::GetExt(unsigned long type) -> ext* (type 3 = TextExt)
+constexpr uintptr_t TextExt_SetText                    = 0x56e4d0;  // TextExt::SetText(char const*); the MainMenu "WelcomeBackText" panel is a TextExt
+constexpr unsigned  off_TextExt_string                 = 0x38;      // TextExt -> std::string (libstdc++: data ptr @+0x38, length @+0x40)
+constexpr uintptr_t ProxyWidget_UseExt_TextExt         = 0x563f30;  // ProxyWidget::UseExt<TextExt>() -> TextExt* (gets/creates the widget's text ext)
+constexpr unsigned  off_World_mainMenu                 = 0x08;      // World -> MainMenu* (StartMainMenu: SetActive(*(World+8)); the creator slot +0x20 is empty in the menu)
+constexpr unsigned  off_MainMenu_welcomeProxy          = 0x310;    // MainMenu -> "WelcomeBackText" ProxyWidget (greeting top line, e.g. "Welcome")
+constexpr unsigned  off_MainMenu_changeProfile         = 0x360;    // MainMenu -> "ChangeProfileText" ProxyWidget ("Click here to change profile")
+constexpr unsigned  off_MainMenu_profileName           = 0x3b0;    // MainMenu -> "ProfileNameText" ProxyWidget (the big profile name, e.g. "Raccoon")
+constexpr unsigned  off_MainMenu_statusText            = 0x400;    // MainMenu -> "StatusText" ProxyWidget (geek-font hover-description slot; hidden by default - vanilla shows it on button hover)
+constexpr uintptr_t Object_SetVisibility               = 0x573ae0;  // Object::SetVisibility(bool) -> [this+0x30]; menu widgets are objects, so call on TextExt's widget
+constexpr unsigned  off_TextExt_widget                 = 0x08;      // TextExt -> its Widget/Object (for visibility toggling)
+constexpr uintptr_t World_GetActiveGUI                 = 0x5df8b0;  // World::GetActiveGUI() -> GUI* (menu: *(World+8)+8; in-game: Creator+8)
+constexpr uintptr_t GUI_IsInModalDialog                = 0x557d10;  // GUI::IsInModalDialog() const -> bool (a sub-screen/dialog modal is up and the menu is dimmed)
+
+// ===== native UI widget system (RE'd to build real game widgets - buttons/labels - that the GUI
+// hover/dim/z-order/sound for free; see the recipe in MEMORY/eets-menu-widget-re). Widget=0x80 bytes,
+// ProxyWidget=0x50, TextExt=0xb8, ButtonExt=0xa0, AnimExt=0x50, ObjectExt=0x70, SoundExt=0x38. =====
+constexpr uintptr_t Widget_ctor                        = 0x570d60;  // Widget::Widget(GUI&); +0x30 flags(0=interactive), +0x38 pos, +0x40/44 w/h, +0x48/50 hit min/max, +0x68 ext list
+constexpr uintptr_t Widget_AddExt                      = 0x571ff0;  // Widget::AddExt(WidgetExt*)
+constexpr uintptr_t Widget_SetHitRegion               = 0x571cd0;  // Widget::SetHitRegion(Vector2 min, Vector2 max) - clickable AABB (relative to screen pos); REQUIRED for hit-test
+constexpr uintptr_t Widget_SetName                     = 0x571b80;  // Widget::SetName(char const*)
+constexpr uintptr_t GUI_AddWidget                      = 0x555de0;  // GUI::AddWidget(Widget*) - registers into gui+0x60 list -> drawn + hit-tested (replaces same-name)
+constexpr uintptr_t GUI_GetTopMostModal                = 0x557750;  // GUI::GetTopMostModal() -> Widget* (0 if none)
+constexpr uintptr_t ProxyWidget_ctorNamed             = 0x569930;  // ProxyWidget::ProxyWidget(GUI&, char const* name) -> binds to an existing named layout widget
+constexpr uintptr_t ProxyWidget_GetWidget             = 0x569c00;  // ProxyWidget::GetWidget() -> Widget* (lazily news one if unbound)
+constexpr uintptr_t ProxyWidget_UseExt_ButtonExt      = 0x5640f0;  // ProxyWidget::UseExt<ButtonExt>() -> ButtonExt* (id 1)
+constexpr uintptr_t ProxyWidget_UseExt_AnimExt        = 0x5fc0c0;  // ProxyWidget::UseExt<AnimExt>()   -> AnimExt*   (id 2)
+constexpr uintptr_t ProxyWidget_UseExt_ObjectExt      = 0x5a2540;  // ProxyWidget::UseExt<ObjectExt>() -> ObjectExt* (id 10; renderable + MotionModel for hover "enter" anim)
+constexpr uintptr_t ProxyWidget_UseExt_SoundExt       = 0x5f72d0;  // ProxyWidget::UseExt<SoundExt>()  -> SoundExt*  (id 0xf)
+constexpr uintptr_t TextExt_ctor                       = 0x56e1a0;  // TextExt::TextExt(Widget&); string@+0x38, color@+0x6c, font id@+0x68 (default 3)
+constexpr uintptr_t ButtonExt_ctor                     = 0x554300;  // ButtonExt::ButtonExt(Widget&)
+constexpr uintptr_t ButtonExt_BindClick                = 0x554c00;  // ButtonExt::BindClick(boost::function<void(Widget*)> const&) - the click callback
+constexpr uintptr_t ButtonExt_SetAutoFocusing          = 0x554ee0;  // ButtonExt::SetAutoFocusing(bool)
+constexpr uintptr_t AnimExt_ctor                       = 0x553840;  // AnimExt::AnimExt(Widget&) (AnimExt_LoadAnimation 0x553940 already defined below; SetWidgetMotion_5a0940 = the hover "enter" grow anim)
+constexpr uintptr_t AnimExt_UpdateHitRegion            = 0x5540d0;  // AnimExt::UpdateHitRegion() - derive the hit rect from the current sprite frame
+constexpr uintptr_t SoundExt_SetSoundData              = 0x56d9c0;  // SoundExt::SetSoundData(SoundType, SoundData const&); type 0=MouseOver(hover) 2=Click
+constexpr uintptr_t ModalExt_ctor                      = 0x564cd0;  // ModalExt::ModalExt(Widget&) - id 5 (active byte @+0x10 =0; StartModal sets it). registers a GUI event listener
+constexpr uintptr_t ModalDialog_ctor                   = 0x564450;  // ModalDialog::ModalDialog(GUI&, char const* name) - the PROPER modal: ProxyWidget@+0x10 + UseExt<ModalExt> + SetModalDialog (sets ModalExt+0x88, else the listener derefs null -> crash). dialog obj ~0x80 bytes; widget = GetWidget(dlg+0x10)
+constexpr uintptr_t ProxyWidget_UseExt_ModalExt       = 0x5647c0;  // ProxyWidget::UseExt<ModalExt>() -> ModalExt* (id 5): makes the widget a modal (dims bg, captures input, GUI z-order)
+constexpr uintptr_t ModalExt_StartModal               = 0x565180;  // ModalExt::StartModal() - activate (MoveToTop + SetWidgetInFocus + active, fade-in)
+constexpr uintptr_t ModalExt_StopModal                = 0x565450;  // ModalExt::StopModal(int ModalResult) - close (fade-out -> restores focus/flags, fires result cb)
+constexpr uintptr_t ModalExt_IsActive                 = 0x565270;  // ModalExt::IsActive() const -> bool ([this+0x10])
+constexpr uintptr_t GUI_SetModalFadeColour            = 0x557da0;  // GUI::SetModalFadeColour(Colour const&) -> GUI+0x170 (the dim quad ARGB)
+constexpr uintptr_t GUI_RemoveEventListener           = 0x557520;  // GUI::RemoveEventListener(UIEventListener*) - unregister a ModalExt's auto-registered listener (it crashes standalone)
 constexpr uintptr_t Widget_AddFlags                    = 0x571b20;  // Widget::AddFlags(Widget*, long): flags |= arg. Flag 0x10 = HIDDEN (see GUI::TutorialHideWidgets).
 constexpr uintptr_t Widget_RemoveFlags                 = 0x571bc0;  // Widget::RemoveFlags(Widget*, long): flags &= ~arg
 
