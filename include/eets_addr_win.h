@@ -146,25 +146,41 @@ inline uintptr_t Creator_StartSimulation            = resolve(0x12b8b0);  // Cre
 inline uintptr_t GUI_OnUpdate                       = resolve(0x96e50);  // GUI::OnUpdate(GUI*,float) - GUI prime for programmatic level load
 inline uintptr_t Creator_StopSimulation             = resolve(0x12bb00); // Creator::StopSimulation - reset sim->build (checks Simulator+0xb8, ResetSimulation, Toolbar enable)
 inline uintptr_t GUI_FindWidget                     = resolve(0x96600);  // GUI::FindWidget(GUI*,char* name) -> Widget* (GUI list @GUI+0x30)
-inline uintptr_t Widget_GetExt                      = resolve(0);        // Win TBD: Widget::GetExt(type) -> ext*
-inline uintptr_t TextExt_SetText                    = resolve(0);        // Win TBD: TextExt::SetText(char const*)
-inline unsigned  off_TextExt_string                 = 0;                 // Win TBD: TextExt -> MSVC std::string (layout differs from Linux)
-inline uintptr_t ProxyWidget_UseExt_TextExt         = resolve(0);        // Win TBD: ProxyWidget::UseExt<TextExt>() (welcome-text override no-ops until RE'd)
-inline unsigned  off_World_mainMenu                 = 0x08;              // World -> MainMenu* (likely same +0x08; verify on Win)
-inline unsigned  off_MainMenu_welcomeProxy          = 0;                 // Win TBD: MainMenu -> WelcomeBackText ProxyWidget
-inline unsigned  off_MainMenu_changeProfile         = 0;                 // Win TBD: MainMenu -> ChangeProfileText ProxyWidget
-inline unsigned  off_MainMenu_profileName           = 0;                 // Win TBD: MainMenu -> ProfileNameText ProxyWidget
-inline unsigned  off_MainMenu_statusText            = 0;                 // Win TBD: MainMenu -> StatusText ProxyWidget
-inline uintptr_t Object_SetVisibility               = resolve(0);        // Win TBD: Object::SetVisibility(bool)
-inline unsigned  off_TextExt_widget                 = 0x08;              // TextExt -> Widget/Object (likely same +0x08; verify on Win)
-inline uintptr_t World_GetActiveGUI                 = resolve(0);        // Win TBD: World::GetActiveGUI() -> GUI*
-inline uintptr_t GUI_IsInModalDialog                = resolve(0);        // Win TBD: GUI::IsInModalDialog() -> bool
-inline uintptr_t ProxyWidget_UseExt_ModalExt        = resolve(0);        // Win TBD: UseExt<ModalExt>()
-inline uintptr_t ModalExt_StartModal                = resolve(0);        // Win TBD
-inline uintptr_t ModalExt_StopModal                 = resolve(0);        // Win TBD
-inline uintptr_t ModalExt_IsActive                  = resolve(0);        // Win TBD
-inline uintptr_t GUI_SetModalFadeColour             = resolve(0);        // Win TBD
-inline uintptr_t GUI_RemoveEventListener            = resolve(0);        // Win TBD
+inline uintptr_t Widget_GetExt                      = resolve(0xa7d00);  // Widget::GetExt(type): walks ext list@+0x4c, vtbl+8=GetExtID, returns node+8
+inline uintptr_t TextExt_SetText                    = resolve(0xa6630);  // TextExt::SetText(char const*): autowrap(flag bit2@+8) word-wrap, std::string@+0x1c
+inline unsigned  off_TextExt_string                 = 0x1c;              // TextExt -> MSVC std::string (_Buf[16]@+0x1c, _Mysize@+0x2c, _Myres@+0x30)
+inline uintptr_t ProxyWidget_UseExt_TextExt         = resolve(0x9d300);  // ProxyWidget::UseExt<TextExt>(): GetExt(3) or new(0x78)+TextExt ctor(0x4a4f70)+AddExt
+inline unsigned  off_World_mainMenu                 = 0x08;              // World -> MainMenu* (confirmed: FUN_004f7640 stores the 0xaa8-byte MainMenu at World+8)
+inline unsigned  off_MainMenu_welcomeProxy          = 0x190;             // MainMenu -> WelcomeBackText ProxyWidget (ctor 0x531ff0, ProxyWidget stride 0x30)
+inline unsigned  off_MainMenu_changeProfile         = 0x1c0;             // MainMenu -> ChangeProfileText ProxyWidget
+inline unsigned  off_MainMenu_profileName           = 0x1f0;             // MainMenu -> ProfileNameText ProxyWidget
+inline unsigned  off_MainMenu_statusText            = 0x220;             // MainMenu -> StatusText ProxyWidget
+inline uintptr_t Object_SetVisibility               = resolve(0x5c400);  // Object::SetVisibility(bool): *(byte*)(this+0x30) = vis
+inline unsigned  off_TextExt_widget                 = 0x08;              // TextExt -> Widget/Object (Win: +8 is flags, not the widget ptr - re-verify before relying on it)
+inline uintptr_t World_GetActiveGUI                 = resolve(0);        // INLINED on Win (no standalone). Menu path = *(World+8)+4 (GUI embedded @ MainMenu+0x04, vtable is 4 bytes). 0 keeps the native menu gated off until inlined in the loader
+inline uintptr_t GUI_IsInModalDialog                = resolve(0x96920);  // GUI::IsInModalDialog(): scans GUI list@+0x30 for a ModalExt(id 5) whose IsActive() is true
+inline uintptr_t ProxyWidget_UseExt_ModalExt        = resolve(0x9da70);  // ProxyWidget::UseExt<ModalExt>(): GetExt(5) or new(0x68)+ModalExt ctor(0x49e4e0)+AddExt
+inline uintptr_t ModalExt_StartModal                = resolve(0x9f1e0);  // ModalExt::StartModal(): guards active-flag@+8==0, saves pos, dispatches UIEvent 0x10, sets active@+8=1
+inline uintptr_t ModalExt_StopModal                 = resolve(0x9f2b0);  // ModalExt::StopModal(result): stores result@+0x30, closing-flag@+0x34=1
+inline uintptr_t ModalExt_IsActive                  = resolve(0x9ed10);  // ModalExt::IsActive(): return *(byte*)(this+8)
+inline uintptr_t GUI_SetModalFadeColour             = resolve(0x979f0);  // GUI::SetModalFadeColour(Colour): *(this+0x98) = colour
+inline uintptr_t GUI_RemoveEventListener            = resolve(0x97580);  // GUI::RemoveEventListener(l): std::vector erase-by-value, listener vec@+0x24/+0x28
+// native widget construction (the MODS button + native modal content), RE'd on the Win build. NOTE: the
+// native button + modal stay GATED OFF on Win (ButtonExt_BindClick + World_GetActiveGUI are still 0, and
+// the loader guards on them) because the Win 32-bit struct layout differs from Linux (smaller offsets,
+// MSVC std::string/boost ABI). Wiring these up needs a struct-offset port pass; the addresses are here for
+// that. Win layout RE'd so far: Widget pos@+0x24/+0x28, hit-region@+0x34..+0x40, name std::string@+8,
+// ext list@+0x4c; ButtonExt std::string@+0x40, click boost::function@+0x58; list nodes are 0xc bytes.
+inline uintptr_t Widget_ctor                        = resolve(0xa7840);  // Widget::Widget(GUI&): vftable, +4=GUI, +0x58 1.0f, circular ext list
+inline uintptr_t Widget_SetName                     = resolve(0xa8870);  // Widget::SetName(char const*): strlen + std::string assign (FUN_0043fea0) into name@+8
+inline uintptr_t Widget_AddExt                      = resolve(0xa7b50);  // Widget::AddExt(WidgetExt*): GetExtID dedup, operator_new(0xc) node into list@+0x4c
+inline uintptr_t Widget_SetHitRegion                = resolve(0xa8840);  // Widget::SetHitRegion(Vector2 min,Vector2 max): writes +0x34/+0x38/+0x3c/+0x40
+inline uintptr_t TranslateTo                        = resolve(0xa88f0);  // Widget::TranslateTo(Vector2): writes pos @+0x24/+0x28 (absolute)
+inline uintptr_t GUI_AddWidget                      = resolve(0x95dc0);  // GUI::AddWidget(Widget*): GetName, dup-replace (Warningf), append to list@+0x38
+inline uintptr_t ButtonExt_ctor                     = resolve(0x93c70);  // ButtonExt::ButtonExt(Widget&): WidgetExt base + vftable + the hover/scale float consts
+inline uintptr_t ButtonExt_BindClick                = resolve(0);        // no standalone wrapper on Win (inlined). To bind: call boost::function::operator= (FUN_00493d30 = 0x93d30) with dest = ButtonExt+0x58 (the click member), src = &fn. 0 keeps the native button gated off until the loader does that on Win
+inline uintptr_t ButtonExt_BindClick_op              = resolve(0x93d30);  // boost::function<void(Widget*)>::operator=(dest_funcobj, src): clones src[manager,functor,invoker] into dest[0/1/2]
+inline unsigned  off_ButtonExt_click                = 0x58;              // ButtonExt -> click boost::function member (pass ButtonExt+0x58 as dest to ButtonExt_BindClick_op)
 inline uintptr_t Widget_AddFlags                    = resolve(0xa7c10);  // Widget::AddFlags(Widget*,long): flags(@Widget+0x20) |= arg. 0x10=hidden, 0x2=no-input (hit-test skips on &3)
 inline uintptr_t Widget_RemoveFlags                 = resolve(0xa8790);  // Widget::RemoveFlags(Widget*,long): flags &= ~arg
 inline uintptr_t StopAllModalsImmediate             = resolve(0x97bd0);  // GUI::StopAllModalsImmediate(GUI*) - dismiss all modals (Creator GUI @creator+0x4)
