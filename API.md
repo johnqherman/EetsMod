@@ -33,6 +33,7 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   bool Creator_StartSimulation(void* creator)
   bool Creator_StopSimulation(void* creator)
   bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f, int frame = -1, bool footAnchor = false)
+  bool DrawAnimFit(const char* path, int cx, int cy, int targetH, float dt, Color tint = Color(), bool flip = false)
   bool DrawAnimFrozenFit(const char* path, int cx, int cy, int targetH, Color tint = Color(), bool flip = false)
   bool DrawImage(const char* path, int x, int y, Color tint = Color())
   bool DrawImageHUD(const char* path, int x, int y, Color tint = Color())
@@ -73,7 +74,9 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   float VecLenSqr(const Vector2& v)
   int  SpriteHeight(void* s)
   int  SpriteWidth(void* s)
+  int AnimFitWidth(const char* path, int targetH)
   int AnimFrameCount(void* a)
+  int MeasureTextWidth(const char* text, int size, int style = STYLE_NORMAL)
   int Object_GetAnimFrameIndex(Object* o)
   int ScreenHeight()
   int ScreenWidth()
@@ -223,6 +226,8 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   Color titlebar()
   State& S()
   bool Button(const char* label)
+  bool CloseButton()
+  bool TabButton(int x, int y, const char* label)
   bool Toggle(const char* label, bool& value)
   bool hit(int x, int y, int w, int h)
   bool hover(int x, int y, int w, int h)
@@ -238,9 +243,12 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   void FeedMouse(int x, int y, int button, int down)
   void FillRoundRect(int x, int y, int w, int h, int r, Color c)
   void Label(const char* text)
+  void LabelRight(const char* text)
+  void NewFrame()
   void NextColumn()
   void RoundPanel(int x, int y, int w, int h, int r, Color fill, int border = 4, bool glossy = false)
   void Section(const char* label)
+  void SectionStatus(const char* label, Color dot)
   void Separator()
   void SetClickSound(const char* name)
   void SetHoverSound(const char* name)
@@ -265,7 +273,10 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   EETS_API void  SaveSet(const char* mod, const char* key, const char* val);
   EETS_API void  SaveSetFloat(const char* mod, const char* key, float v);
   EETS_API void  SaveSetInt(const char* mod, const char* key, int v);
+  EETS_API void ClipRect(int x, int y, int w, int h);
+  EETS_API void ClipReset();
   EETS_API void Log(const char* fmt, ...);
+  EETS_API void SetClipboard(const char* text);
   EETS_API void StartTextInput();
   EETS_API void StopTextInput();
 ```

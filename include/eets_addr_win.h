@@ -148,6 +148,7 @@ inline uintptr_t Creator_StopSimulation             = resolve(0x12bb00); // Crea
 inline uintptr_t GUI_FindWidget                     = resolve(0x96600);  // GUI::FindWidget(GUI*,char* name) -> Widget* (GUI list @GUI+0x30)
 inline uintptr_t Widget_GetExt                      = resolve(0xa7d00);  // Widget::GetExt(type): walks ext list@+0x4c, vtbl+8=GetExtID, returns node+8
 inline uintptr_t TextExt_SetText                    = resolve(0xa6630);  // TextExt::SetText(char const*): autowrap(flag bit2@+8) word-wrap, std::string@+0x1c
+inline uintptr_t GetStringWidth                     = resolve(0);        // Win TBD: TextPrinter::GetStringWidth(EString,size,style) - MeasureTextWidth falls back to an estimate
 inline unsigned  off_TextExt_string                 = 0x1c;              // TextExt -> MSVC std::string (_Buf[16]@+0x1c, _Mysize@+0x2c, _Myres@+0x30)
 inline uintptr_t ProxyWidget_UseExt_TextExt         = resolve(0x9d300);  // ProxyWidget::UseExt<TextExt>(): GetExt(3) or new(0x78)+TextExt ctor(0x4a4f70)+AddExt
 inline unsigned  off_World_mainMenu                 = 0x08;              // World -> MainMenu* (confirmed: FUN_004f7640 stores the 0xaa8-byte MainMenu at World+8)

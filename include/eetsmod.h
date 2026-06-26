@@ -47,6 +47,9 @@ namespace Eets {
 	// render backbuffer size; use for HUD instead of ScreenWidth/Height (configured res)
 	EETS_API int RenderWidth();
 	EETS_API int RenderHeight();
+	// scissor clip: ClipRect restricts subsequent draws to a rect (render-target pixels); ClipReset undoes it.
+	EETS_API void ClipRect(int x, int y, int w, int h);
+	EETS_API void ClipReset();
 
 	EETS_API const char* SaveGet(const char* mod, const char* key, const char* def);
 	EETS_API void  SaveSet(const char* mod, const char* key, const char* val);
@@ -60,6 +63,7 @@ namespace Eets {
 
 	EETS_API void StartTextInput();
 	EETS_API void StopTextInput();
+	EETS_API void SetClipboard(const char* text);
 }
 
 // minimal SDL keycode / modifier constants (so mods don't need SDL headers)

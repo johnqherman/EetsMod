@@ -482,6 +482,17 @@ inline void DrawTextCenteredOutlined(int x, int y, const char* text, int size, C
 	DrawTextCentered(x + 2, y + 2, text, size, shadow, style);
 	DrawTextCentered(x, y, text, size, c, style);
 }
+// pixel width of `text` at a FontSize + style via the engine measurer (0 if unavailable, e.g. Win).
+// GetStringWidth measures UTF-16, so widen ascii into a uint16 buffer (a char EString measures half).
+inline int MeasureTextWidth(const char* text, int size, int style = STYLE_NORMAL) {
+	if (!addr::GetStringWidth || !text || !*text) return 0;
+	unsigned short wbuf[256]; size_t n = 0;
+	while (text[n] && n < 255) { wbuf[n] = (unsigned char)text[n]; n++; }
+	wbuf[n] = 0;
+	struct { const void* p; size_t len; } ss;   // {data @0, len @8} as GetStringWidth expects
+	ss.p = wbuf; ss.len = n;
+	return (int)FC<unsigned long(const void*, int, int)>(addr::GetStringWidth)(&ss, size, style);
+}
 // Draw text at an ARBITRARY pixel size, bypassing the FontSize enum's fixed 13..35 ladder. Mirrors how
 // the engine sizes text itself: GetFont(style) returns the shared FontInfo whose +8 pixel-size field the
 // glyph cache rasterizes on demand, so any px renders - and scales smoothly (for hover effects) past the
@@ -707,6 +718,37 @@ inline bool DrawAnimFrozenFit(const char* path, int cx, int cy, int targetH, Col
 	int x = flip ? (cx + dw / 2) : (cx - dw / 2);
 	DrawSpriteAt(sprite, x, cy - targetH / 2, tint, flip, S);
 	return true;
+}
+
+// like DrawAnimFrozenFit but PLAYS the anim (cycles frames at native rate by dt), fit to targetH, centered at (cx,cy)
+inline bool DrawAnimFit(const char* path, int cx, int cy, int targetH, float dt, Color tint = Color(), bool flip = false) {
+	void* a = LoadAnim(path); if (!a) return false;
+	unsigned frames = (unsigned)AnimFrameCount(a);
+	if (frames > 1) {
+		float d = AnimFrameDuration(a); float fps = (d > 0.0001f) ? 1.0f / d : 12.0f;
+		static std::unordered_map<std::string, double>   acc;
+		static std::unordered_map<std::string, unsigned> idx;
+		double step = 1.0 / fps; double& t = acc[path]; t += dt;
+		while (t >= step) { t -= step; idx[path] = (idx[path] + 1) % frames; }
+		FC<void(void*, unsigned)>(addr::Animation_SetCurrentFrame)(a, idx[path]);
+	}
+	void* sprite = FC<void*(void*)>(addr::Animation_GetCurrentFrame)(a);
+	if (!sprite) return false;
+	int nh = SpriteHeight(sprite), nw = SpriteWidth(sprite);
+	if (nh <= 0) return false;
+	float S = (float)targetH / (float)nh;
+	int dw = (int)(nw * S), x = flip ? (cx + dw / 2) : (cx - dw / 2);
+	DrawSpriteAt(sprite, x, cy - targetH / 2, tint, flip, S);
+	return true;
+}
+
+// on-screen width of an anim's current frame fit to targetH (0 if unavailable); for masking around DrawAnimFit
+inline int AnimFitWidth(const char* path, int targetH) {
+	void* a = LoadAnim(path); if (!a) return 0;
+	void* sprite = FC<void*(void*)>(addr::Animation_GetCurrentFrame)(a);
+	if (!sprite) return 0;
+	int nh = SpriteHeight(sprite), nw = SpriteWidth(sprite);
+	return (nh > 0) ? (int)((float)nw * (float)targetH / (float)nh) : 0;
 }
 
 inline const char* Localize(const char* id) {

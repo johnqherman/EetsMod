@@ -65,6 +65,8 @@ unsigned long g_frame = 0;
 const unsigned RELOAD_POLL_FRAMES = 30;
 int g_mouse_x = 0, g_mouse_y = 0;        // in render (viewport) space
 bool g_overlay = false;
+bool g_text_input_active = false;   // a mod field has SDL text input on: swallow editor copy/paste keybinds
+void* g_fna_device = nullptr;   // FNA3D device (captured from the render hooks) - for GFX_SetClip scissor
 // overlay "open mods folder" button row (y set during draw, -1 when hidden)
 int g_folder_btn_y = -1;
 // real backbuffer size from FNA3D_SetViewport; differs from window res in fullscreen
@@ -1047,6 +1049,33 @@ namespace Eets {
 	int   MouseY() { return g_mouse_y; }
 	int   RenderWidth()  { return g_vp_w > 0 ? g_vp_w : ScreenWidth(); }
 	int   RenderHeight() { return g_vp_h > 0 ? g_vp_h : ScreenHeight(); }
+	// scissor clip to a rect (render-target pixels). FNA3D honors scissor only with a rasterizer state that enables it.
+	struct FNA_Rect { int x, y, w, h; };
+	struct FNA_RS   { int fill, cull; float depthBias, slopeBias; unsigned char scissor, msaa; };
+	static void (*p_setScissor)(void*, const FNA_Rect*) = nullptr;
+	static void (*p_applyRast)(void*, const FNA_RS*)    = nullptr;
+	static void clip_resolve() {
+#ifdef _WIN32
+		HMODULE m = GetModuleHandleA("FNA3D.dll");
+		if (!p_setScissor) p_setScissor = (void(*)(void*, const FNA_Rect*))(void*)GetProcAddress(m, "FNA3D_SetScissorRect");
+		if (!p_applyRast)  p_applyRast  = (void(*)(void*, const FNA_RS*))(void*)GetProcAddress(m, "FNA3D_ApplyRasterizerState");
+#else
+		if (!p_setScissor) p_setScissor = (void(*)(void*, const FNA_Rect*))dlsym(RTLD_DEFAULT, "FNA3D_SetScissorRect");
+		if (!p_applyRast)  p_applyRast  = (void(*)(void*, const FNA_RS*))dlsym(RTLD_DEFAULT, "FNA3D_ApplyRasterizerState");
+#endif
+	}
+	void ClipRect(int x, int y, int w, int h) {
+		clip_resolve();
+		if (!g_fna_device || !p_setScissor || !p_applyRast) return;
+		FNA_Rect r{ x, y, w, h }; p_setScissor(g_fna_device, &r);
+		FNA_RS rs{ 0, 0, 0.0f, 0.0f, 1, 1 }; p_applyRast(g_fna_device, &rs);   // solid / cull-none / scissor ON
+	}
+	void ClipReset() {
+		clip_resolve();
+		if (!g_fna_device || !p_setScissor || !p_applyRast) return;
+		FNA_Rect r{ 0, 0, RenderWidth(), RenderHeight() }; p_setScissor(g_fna_device, &r);
+		FNA_RS rs{ 0, 0, 0.0f, 0.0f, 0, 1 }; p_applyRast(g_fna_device, &rs);   // scissor OFF
+	}
 	const char* SaveGet(const char* mod, const char* key, const char* def) {
 		auto& m = save_for(mod); auto it = m.find(key);
 		return it != m.end() ? it->second.c_str() : def;
@@ -1060,8 +1089,9 @@ namespace Eets {
 	void  SaveSetFloat(const char* mod, const char* key, float v) { char b[48]; snprintf(b, sizeof(b), "%g", v); SaveSet(mod, key, b); }
 	double Time()      { return g_time; }
 	double DeltaTime() { return g_dt; }
-	void StartTextInput() { auto f = (void(*)())dlsym(RTLD_NEXT, "SDL_StartTextInput"); if (f) f(); }
-	void StopTextInput()  { auto f = (void(*)())dlsym(RTLD_NEXT, "SDL_StopTextInput");  if (f) f(); }
+	void StartTextInput() { g_text_input_active = true;  auto f = (void(*)())dlsym(RTLD_NEXT, "SDL_StartTextInput"); if (f) f(); }
+	void StopTextInput()  { g_text_input_active = false; auto f = (void(*)())dlsym(RTLD_NEXT, "SDL_StopTextInput");  if (f) f(); }
+	void SetClipboard(const char* text) { auto f = (int(*)(const char*))dlsym(RTLD_NEXT, "SDL_SetClipboardText"); if (f && text) f(text); }
 }
 
 extern "C" {
@@ -1069,6 +1099,7 @@ extern "C" {
 // capture the real backbuffer size (viewport); correct in fullscreen
 void FNA3D_SetViewport(void* device, void* viewport) {
 	static void (*real)(void*, void*) = nullptr;
+	g_fna_device = device;
 	if (!real) real = (decltype(real))dlsym(RTLD_NEXT, "FNA3D_SetViewport");
 	int w = ((int*)viewport)[2], h = ((int*)viewport)[3];   // {x,y,w,h,...}
 	if ((long)w * h > (long)g_vp_cur_w * g_vp_cur_h) { g_vp_cur_w = w; g_vp_cur_h = h; }
@@ -1248,6 +1279,7 @@ void mods_modal_sync() {
 
 void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 	static void (*real)(void*, void*, void*, void*) = nullptr;
+	g_fna_device = device;
 	if (!real) real = (decltype(real))dlsym(RTLD_NEXT, "FNA3D_SwapBuffers");
 	if (!g_loaded) { g_loaded = true; load_all(); }
 	{
@@ -1347,6 +1379,23 @@ int SDL_PollEvent(void* event) {
 		unsigned type = *(unsigned*)event;
 		if (type == SDL_KEYDOWN || type == SDL_KEYUP) {
 			KeyView* k = (KeyView*)event; int down = (type == SDL_KEYDOWN) ? 1 : 0;
+			// the engine binds Ctrl+C/X/V to editor copy/cut/paste Lua actions that segfault outside the editor.
+			// while a mod text field is active, paste ourselves (clipboard -> OnText) and swallow the key.
+			if (g_text_input_active && down) {
+				bool ctrl = (k->mod & 0x00c0), shift = (k->mod & 0x0003);
+				bool paste   = (ctrl && (k->sym=='v'||k->sym=='V')) || (shift && k->sym==0x40000049);  // Ctrl+V or Shift+Insert
+				bool copycut = ctrl && (k->sym=='c'||k->sym=='C'||k->sym=='x'||k->sym=='X');            // editor copy/cut binds
+				if (paste || copycut) {
+					if (paste) {
+						static char* (*getcb)()     = (char*(*)())dlsym(RTLD_NEXT, "SDL_GetClipboardText");
+						static void  (*freep)(void*) = (void(*)(void*))dlsym(RTLD_NEXT, "SDL_free");
+						char* cb = getcb ? getcb() : nullptr;
+						if (cb) { for (auto& m : g_mods) if (m.ontext && !m.disabled) guard(&m, [&]{ m.ontext(cb); }); if (freep) freep(cb); }
+					}
+					*(unsigned*)event = 0;   // SDL_FIRSTEVENT: engine main loop skips the swallowed key
+					return r;
+				}
+			}
 			for (auto& m : g_mods) if (m.onkey && !m.disabled) guard(&m, [&]{ m.onkey(k->sym, k->mod, down); });
 		} else if (type == SDL_MOUSEMOTION) {
 			MotionView* mv = (MotionView*)event; map_mouse(mv->x, mv->y, mv->win);

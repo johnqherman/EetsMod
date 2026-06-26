@@ -67,7 +67,8 @@ inline void RoundPanel(int x, int y, int w, int h, int r, Color fill, int border
 
 // vertically center a single text line of the given font within a row of height rowH, returning the
 // top y the text helpers expect (pos.y = text top)
-inline int centerY(int rowTop, int rowH, int size) { return rowTop + (rowH - fontPx(size)) / 2; }
+// the -fontPx/7 corrects for the UI font sitting low in its em box (glyphs render below center)
+inline int centerY(int rowTop, int rowH, int size) { return rowTop + (rowH - fontPx(size)) / 2 - fontPx(size) / 7; }
 
 // horizontally-centered text with a THICK uniform black outline (vanilla cartoon-button look, e.g. the
 // QUIT/PLAY labels): the fill is stamped in `outline` color across a filled disc of radius t, then the
@@ -135,9 +136,11 @@ inline void FeedMouse(int x, int y, int button, int down) {
 inline bool hit(int x, int y, int w, int h)  { State& s = S(); return s.clickX>=x && s.clickX<x+w && s.clickY>=y && s.clickY<y+h; }
 inline bool hover(int x, int y, int w, int h){ State& s = S(); return s.mx>=x && s.mx<x+w && s.my>=y && s.my<y+h; }
 
+// roll over hover tracking; call ONCE per frame before any widget, else standalone widgets re-fire hover sfx
+inline void NewFrame() { State& s = S(); s.hoverId = s.curHoverId; s.curHoverId = -1; }
+
 inline void Begin(int x, int y, int w, const char* title = nullptr) {
 	State& s = S();
-	s.hoverId = s.curHoverId; s.curHoverId = -1;   // roll over hover tracking for this frame
 	s.px = x; s.py = y; s.pw = w; s.top = y;
 	int H = s.lastH;
 	FillRoundRect(x + 6, y + 8, w, H, 16, col::shadow());        // drop shadow
@@ -167,6 +170,35 @@ inline bool Button(const char* label) {
 	return c;
 }
 
+// an X close button in the current panel's title bar (top-right). Call after Begin(title). Returns true on click.
+inline bool CloseButton() {
+	State& s = S();
+	int sz = s.rowh - 2, x = s.px + s.pw - 6 - sz - 3, y = s.py + 9;
+	bool hov = hover(x, y, sz, sz);
+	if (hov) noteHover(x, y);
+	FillRoundRect(x, y, sz, sz, 6, hov ? col::btnHover() : col::btn());
+	DrawTextCenteredOutlined(x + sz / 2, centerY(y, sz, FONT_BIG), "X", FONT_BIG,
+	                         hov ? col::textHover() : col::textC(), Color(0, 0, 0, 220), UI_FONT);
+	bool c = s.clicked && hit(x, y, sz, sz);
+	if (c) { s.clicked = false; if (s.clickSound) PlaySound(s.clickSound); }
+	return c;
+}
+
+// a standalone pill button at an absolute screen position (e.g. an always-visible "open" tab). Returns true on click.
+inline bool TabButton(int x, int y, const char* label) {
+	State& s = S();
+	int n = 0; while (label[n]) n++;
+	int w = n * 11 + 26, h = s.rowh + 2;
+	bool hov = hover(x, y, w, h);
+	if (hov) noteHover(x, y);
+	RoundPanel(x, y, w, h, 10, hov ? col::btnHover() : col::btn(), 4, true);
+	DrawTextCenteredOutlined(x + w / 2, centerY(y, h, FONT_NORMAL), label, FONT_NORMAL,
+	                         hov ? col::textHover() : col::textC(), Color(0, 0, 0, 220), UI_FONT);
+	bool c = s.clicked && hit(x, y, w, h);
+	if (c) { s.clicked = false; if (s.clickSound) PlaySound(s.clickSound); }
+	return c;
+}
+
 inline bool Toggle(const char* label, bool& value) {
 	State& s = S();
 	int x = s.px + s.pad, y = s.cy, w = s.pw - 2*s.pad, h = s.rowh + 10, box = h - 12;
@@ -188,6 +220,17 @@ inline void Label(const char* text) {
 	DrawTextOutlined(s.px + s.pad, centerY(s.cy, rowH, FONT_SMALL), text, FONT_SMALL,
 	                 col::label(), Color(0, 0, 0, 200), UI_FONT);
 	s.cy += rowH;
+}
+
+// right-aligned label on the CURRENT row (does not advance the cursor; pair with a left Label/Button).
+inline void LabelRight(const char* text) {
+	State& s = S();
+	int rowH = s.rowh - 2;
+	int w = MeasureTextWidth(text, FONT_SMALL, UI_FONT);   // exact engine measure
+	if (w <= 0) { int n = 0; while (text[n]) n++; w = n * fontPx(FONT_SMALL) * 3 / 5; }   // fallback (e.g. Win)
+	w += 2;   // outline shadow draws at +2
+	DrawTextOutlined(s.px + s.pw - s.pad - w, centerY(s.cy, rowH, FONT_SMALL), text, FONT_SMALL,
+	                 col::label(), Color(0, 0, 0, 200), UI_FONT);
 }
 
 inline float Slider(const char* label, float& value, float lo, float hi) {
@@ -212,6 +255,20 @@ inline void Section(const char* label) {
 	State& s = S();
 	s.cy += 6;
 	DrawTextOutlined(s.px + s.pad, s.cy, label, FONT_NORMAL, col::title(), Color(0, 0, 0, 220), UI_FONT);
+	s.cy += 24;
+	FillRoundRect(s.px + s.pad, s.cy, s.pw - 2 * s.pad, 3, 1, col::black());
+	s.cy += 8;
+}
+
+// a Section header with a colored status dot after the label
+inline void SectionStatus(const char* label, Color dot) {
+	State& s = S();
+	s.cy += 6;
+	DrawTextOutlined(s.px + s.pad, s.cy, label, FONT_NORMAL, col::title(), Color(0, 0, 0, 220), UI_FONT);
+	int n = 0; while (label[n]) n++;
+	int dx = s.px + s.pad + n * (fontPx(FONT_NORMAL) * 6 / 10) + 16, dy = s.cy + fontPx(FONT_NORMAL) * 3 / 5;
+	FillCircle(dx, dy, 8.0f, col::black());   // outline ring
+	FillCircle(dx, dy, 5.0f, dot);
 	s.cy += 24;
 	FillRoundRect(s.px + s.pad, s.cy, s.pw - 2 * s.pad, 3, 1, col::black());
 	s.cy += 8;
