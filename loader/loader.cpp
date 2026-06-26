@@ -114,6 +114,46 @@ void* nb_manager(void* f, int) { return f; }
 void  nb_invoker(void* f, void* w) { ((void(*)(void*))f)(w); }
 void  nb_on_click(void*) { g_overlay = !g_overlay; }
 struct FakeBoostFn { void* manager; void* functor; void* invoker; };
+// nb_manager/nb_invoker are plain (cdecl) free fns; that matches BOTH the Linux libstdc++ boost manager
+// (manager(functor,op)) and the Win MSVC boost manager/invoker (both __cdecl(functor, op|widget)) - verified.
+
+// ---- platform-specific native-widget layout. Linux is 64-bit, Win is 32-bit: struct sizes/offsets and
+// the WidgetExt vtable shape differ (RE'd in eets_addr_win.h). ----
+#ifdef _WIN32
+constexpr size_t   SZ_Widget = 0x54, SZ_ButtonExt = 0x70;   // Win Widget/ButtonExt allocation sizes
+constexpr unsigned OFF_ButtonExt_hover = 0x8;               // Win ButtonExt mouse-over flag (Linux +0x10)
+#else
+constexpr size_t   SZ_Widget = 0x80, SZ_ButtonExt = 0xa0;
+constexpr unsigned OFF_ButtonExt_hover = 0x10;
+#endif
+
+// the active main-menu GUI. Linux has a standalone World::GetActiveGUI; on Win it's inlined, so chase it:
+// World+0x08 = MainMenu*, and the GUI is embedded at MainMenu+0x04. The native menu only runs in the menu.
+void* active_menu_gui() {
+	using namespace Eets;
+	void* world = World_i();
+	if (!world) return nullptr;
+#ifdef _WIN32
+	void* mm = *(void**)((char*)world + addr::off_World_mainMenu);
+	return mm ? (char*)mm + 0x04 : nullptr;
+#else
+	return addr::World_GetActiveGUI ? (void*)EC<uintptr_t(void*)>(addr::World_GetActiveGUI)(world) : nullptr;
+#endif
+}
+
+// bind a click callback onto a ButtonExt. Linux: ButtonExt::BindClick(be, fn) targets the click member
+// internally. Win: no wrapper - assign straight into the click boost::function via operator=(be+off, fn).
+void bind_click(void* be, void* fn) {
+	using namespace Eets;
+	if (!be) return;
+#ifdef _WIN32
+	if (addr::ButtonExt_BindClick_op)
+		EC<void*(void*, void*)>(addr::ButtonExt_BindClick_op)((char*)be + addr::off_ButtonExt_click, fn);
+#else
+	if (addr::ButtonExt_BindClick)
+		EC<void(void*, void*)>(addr::ButtonExt_BindClick)(be, fn);
+#endif
+}
 
 // draw the MODS circle + "MODS" text at (cx,cy), text scaled by grow (0=rest, 1=full hover).
 void draw_mods_circle(int cx, int cy, float grow) {
@@ -129,22 +169,24 @@ void draw_mods_circle(int cx, int cy, float grow) {
 	UI::DrawTextPxHeavy(cx, ty, "MODS", px, Color(255, 255, 255, 255), Color(0, 0, 0, 255), 4);
 }
 
-// our custom WidgetExt: { vtable, owning Widget, hover-grow state }. 7-slot vtable (matches the engine's
-// WidgetExt interface): 0x00/0x08 dtors, 0x10 HandleEvent, 0x18 GetExtID, 0x20 Load, 0x28 Draw, 0x30 Update.
+// our custom WidgetExt: { vtable, owning Widget, hover-grow state }. The engine calls vtable methods as
+// __thiscall (this in ECX) on Win, plain (this in first arg) on Linux - so the callbacks carry ECALL.
+// Vtable shape differs: Linux 7 slots [dtor,dtor,HandleEvent,GetExtID,Load,Draw,OnUpdate]; Win 6 slots
+// (MSVC merges the two dtors) [dtor,HandleEvent,GetExtID,Load,Draw,OnUpdate].
 struct ModsExt { void* vtbl; void* widget; float grow; };
-void          me_dtor0(void*) {}
-void          me_dtor8(void* e) { free(e); }
-unsigned char me_handle(void*, void*) { return 0; }            // HandleEvent: not handled
-unsigned long me_getid(void*) { return 0x4d4f4453UL; }         // 'MODS' - unique, != 4 (container)/5 (modal)
-void          me_load(void*) {}
-void          me_update(void*, float) {}
-void          me_draw(void* e, const Eets::Vector2* pos) {     // slot 0x28 - GUI-driven draw (thiscall: e=RDI, pos=RSI)
+void          ECALL me_dtor0(void*) {}
+void          ECALL me_dtor8(void* e) { free(e); }
+unsigned char ECALL me_handle(void*, void*) { return 0; }      // HandleEvent: not handled
+unsigned long ECALL me_getid(void*) { return 0x4d4f4453UL; }   // 'MODS' - unique, != real ext ids
+void          ECALL me_load(void*) {}
+void          ECALL me_update(void*, float) {}
+void          ECALL me_draw(void* e, const Eets::Vector2* pos) {   // Draw slot - GUI-driven; we paint the circle
 	using namespace Eets;
 	ModsExt* m = (ModsExt*)e;
 	bool hot = false;
 	if (m->widget && addr::Widget_GetExt) {                     // hover from the sibling ButtonExt (id 1)
 		void* be = (void*)EC<uintptr_t(void*, unsigned long)>(addr::Widget_GetExt)(m->widget, 1);
-		if (be) hot = *((unsigned char*)be + 0x10) != 0;
+		if (be) hot = *((unsigned char*)be + OFF_ButtonExt_hover) != 0;
 	}
 	float target = hot ? 1.0f : 0.0f;                          // tween grow toward hover over ~0.1s
 	float step = (g_dt > 0.0) ? (float)(g_dt / 0.1) : 1.0f;
@@ -152,24 +194,34 @@ void          me_draw(void* e, const Eets::Vector2* pos) {     // slot 0x28 - GU
 	else if (m->grow > target) m->grow = (m->grow - step < target) ? target : m->grow - step;
 	draw_mods_circle((int)pos->x, (int)pos->y, m->grow);
 }
+#ifdef _WIN32
+void          ECALL me_dtor_w(void* e, unsigned) { (void)e; }  // Win scalar-deleting dtor (this,flags); no-op - the button persists
+void* g_mods_vtbl[6] = { (void*)me_dtor_w, (void*)me_handle, (void*)me_getid,
+                         (void*)me_load, (void*)me_draw, (void*)me_update };
+#else
 void* g_mods_vtbl[7] = { (void*)me_dtor0, (void*)me_dtor8, (void*)me_handle, (void*)me_getid,
                          (void*)me_load, (void*)me_draw, (void*)me_update };
+#endif
 
 void ensure_native_mods_button(int cx, int cy, int diameter) {
 	using namespace Eets;
-	if (!addr::World_GetActiveGUI || !addr::Widget_ctor || !addr::ButtonExt_BindClick) return;   // Win: TBD
-	void* gui = (void*)EC<uintptr_t(void*)>(addr::World_GetActiveGUI)(World_i());
+#ifdef _WIN32
+	if (!addr::Widget_ctor || !addr::ButtonExt_ctor || !addr::ButtonExt_BindClick_op || !addr::GUI_AddWidget) return;
+#else
+	if (!addr::World_GetActiveGUI || !addr::Widget_ctor || !addr::ButtonExt_BindClick) return;
+#endif
+	void* gui = active_menu_gui();
 	if (!gui) return;
 	void* w = (void*)EC<uintptr_t(void*, const char*)>(addr::GUI_FindWidget)(gui, "ModsButton");
 	if (!w) {
-		w = malloc(0x80);                                          // Widget (0x80)
+		w = malloc(SZ_Widget);                                     // Widget (Linux 0x80 / Win 0x54)
 		EC<void(void*, void*)>(addr::Widget_ctor)(w, gui);
 		EC<void(void*, const char*)>(addr::Widget_SetName)(w, "ModsButton");
-		void* be = malloc(0xa0);                                   // ButtonExt (0xa0): the click + hover state
+		void* be = malloc(SZ_ButtonExt);                           // ButtonExt (Linux 0xa0 / Win 0x70): click + hover
 		EC<void(void*, void*)>(addr::ButtonExt_ctor)(be, w);
 		EC<void(void*, void*)>(addr::Widget_AddExt)(w, be);
 		static FakeBoostFn fn = { (void*)nb_manager, (void*)nb_on_click, (void*)nb_invoker };
-		EC<void(void*, void*)>(addr::ButtonExt_BindClick)(be, &fn);
+		bind_click(be, &fn);
 		ModsExt* mx = (ModsExt*)malloc(sizeof(ModsExt));           // our draw-ext: the GUI paints the circle
 		mx->vtbl = (void*)g_mods_vtbl; mx->widget = w; mx->grow = 0.0f;
 		EC<void(void*, void*)>(addr::Widget_AddExt)(w, mx);
@@ -1049,13 +1101,13 @@ void set_widget_text(void* w, const char* t) {
 	void* te = (void*)EC<uintptr_t(void*, unsigned long)>(addr::Widget_GetExt)(w, 3);   // TextExt id 3
 	if (te) EC<void(void*, const char*)>(addr::TextExt_SetText)(te, t);
 }
-void          mm_dtor0(void*) {}
-void          mm_dtor8(void* e) { free(e); }
-unsigned char mm_handle(void*, void*) { return 0; }
-unsigned long mm_getid(void*) { return 0x4d4d4e55UL; }
-void          mm_load(void*) {}
-void          mm_update(void*, float) {}
-void          mm_draw(void*, const Eets::Vector2*) {   // not a draw: pushes current text into the native children
+void          ECALL mm_dtor0(void*) {}
+void          ECALL mm_dtor8(void* e) { free(e); }
+unsigned char ECALL mm_handle(void*, void*) { return 0; }
+unsigned long ECALL mm_getid(void*) { return 0x4d4d4e55UL; }
+void          ECALL mm_load(void*) {}
+void          ECALL mm_update(void*, float) {}
+void          ECALL mm_draw(void*, const Eets::Vector2*) {   // not a draw: pushes current text into the native children
 	g_menu_native = true;
 	char line[176];
 	snprintf(line, sizeof(line), "MODS v%s", EETSMOD_VERSION);
@@ -1085,15 +1137,21 @@ void mods_row_click(void* w) {
 		return;
 	}
 }
+#ifdef _WIN32
+void          ECALL mm_dtor_w(void* e, unsigned) { (void)e; }   // Win scalar-deleting dtor (this,flags); no-op - the dialog persists
+void* g_mm_vtbl[6] = { (void*)mm_dtor_w, (void*)mm_handle, (void*)mm_getid,
+                       (void*)mm_load, (void*)mm_draw, (void*)mm_update };
+#else
 void* g_mm_vtbl[7] = { (void*)mm_dtor0, (void*)mm_dtor8, (void*)mm_handle, (void*)mm_getid,
                        (void*)mm_load, (void*)mm_draw, (void*)mm_update };
+#endif
 struct MMExt { void* vtbl; void* widget; };
 
 void mods_modal_sync() {
 	using namespace Eets;
-	if (!addr::GUI_FindWidget || !addr::Widget_GetExt || !addr::ModalExt_StartModal || !addr::World_GetActiveGUI) return;
+	if (!addr::GUI_FindWidget || !addr::Widget_GetExt || !addr::ModalExt_StartModal) return;
 	if (!g_mods_modal_ext) {
-		void* gui = (void*)EC<uintptr_t(void*)>(addr::World_GetActiveGUI)(World_i());
+		void* gui = active_menu_gui();
 		if (!gui) return;
 		void* w = (void*)EC<uintptr_t(void*, const char*)>(addr::GUI_FindWidget)(gui, "ModsDialog");
 		if (!w) return;   // lua not patched / screen not loaded
@@ -1106,9 +1164,9 @@ void mods_modal_sync() {
 		// bind a clickable child's ButtonExt (id 1) to mods_row_click via the faked boost::function
 		static FakeBoostFn rowfn = { (void*)nb_manager, (void*)mods_row_click, (void*)nb_invoker };
 		auto bindclick = [&](void* cw) {
-			if (!cw || !addr::ButtonExt_BindClick) return;
+			if (!cw) return;
 			void* be = (void*)EC<uintptr_t(void*, unsigned long)>(addr::Widget_GetExt)(cw, 1);
-			if (be) EC<void(void*, void*)>(addr::ButtonExt_BindClick)(be, &rowfn);
+			bind_click(be, &rowfn);   // platform-correct (Linux BindClick / Win boost op= at click offset)
 		};
 		g_title_w = find("ModsDialogTitle");
 		g_add_w   = find("ModsDialogAdd");   bindclick(g_add_w);
