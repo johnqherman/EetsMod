@@ -1347,7 +1347,6 @@ int SDL_PollEvent(void* event) {
 		unsigned type = *(unsigned*)event;
 		if (type == SDL_KEYDOWN || type == SDL_KEYUP) {
 			KeyView* k = (KeyView*)event; int down = (type == SDL_KEYDOWN) ? 1 : 0;
-			if (down && k->sym == 0x4000003A) g_overlay = !g_overlay;   // f1 toggles overlay
 			for (auto& m : g_mods) if (m.onkey && !m.disabled) guard(&m, [&]{ m.onkey(k->sym, k->mod, down); });
 		} else if (type == SDL_MOUSEMOTION) {
 			MotionView* mv = (MotionView*)event; map_mouse(mv->x, mv->y, mv->win);
