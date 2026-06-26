@@ -7,10 +7,15 @@ These back the native main-menu MODS button + modal (the loader drives them at r
 - `ModsDialog.lua` — the `ModsDialog` definition block (a real `CreateModalDialog` with the title image,
   6 clickable row slots, and a BACK button). The loader finds these widgets by name and drives them.
 
-## Install (NOT yet automated — currently applied by hand to the game's Data/ for testing)
+## Install — automated by the loader at preboot
 
-For shipping, the loader must, at startup:
-1. Copy `mods_title.anim` → `<game>/Data/Animations/GUI/main_menu/mods_title.anim`.
-2. Inject the `ModsDialog.lua` block into `<game>/Data/GUI/MainMenu_Screen.lua` **and** add `ModsDialog,`
-   to the `widgets = { ... }` registration table near the end of that file (without that entry the GUI
-   never instantiates the dialog and `GUI::FindWidget("ModsDialog")` returns null).
+`install_menu_assets()` (loader.cpp, run from `eetsmod_preboot()` before the menu screen loads) does this
+idempotently from the copies embedded in `loader/menu_assets.h`:
+1. Writes `mods_title.anim` → `<game>/Data/Animations/GUI/main_menu/` (if missing or wrong size).
+2. Injects the `ModsDialog` block into `<game>/Data/GUI/MainMenu_Screen.lua` **and** adds `ModsDialog,`
+   to its `widgets = { ... }` table (without that entry `GUI::FindWidget("ModsDialog")` returns null).
+   Skipped if the file already contains `ModsDialog`.
+
+`loader/menu_assets.h` is generated from these source files — regenerate after editing either:
+
+    python3 tools/gen-menu-assets.py

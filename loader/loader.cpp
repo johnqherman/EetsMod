@@ -16,6 +16,7 @@
 #include "eetsmod.h"   // EETS_API marks service decls dllexport in the loader (Windows)
 #include "eets_ui.h"    // shared UI primitives (rounded puffy panels, geek font, vertical centering); needs eetsmod.h (EMBTN_*)
 #include "hook.h"
+#include "menu_assets.h"   // embedded native-menu title image + ModsDialog lua block (installed at preboot)
 
 #define EETSMOD_VERSION "0.19.1"
 
@@ -778,6 +779,40 @@ void install_assets() {
 }
 
 // must run before the engine's boot scan of Data/ so bundle assets are present on first scan
+// install the native-menu assets into the game's loose Data/ (idempotent). The MODS button/modal are
+// drawn by the loader, but the modal shell + title image live in game data: a title sprite + the
+// ModsDialog widget injected into MainMenu_Screen.lua (which must also be listed in its widgets table,
+// else GUI::FindWidget never sees it). Runs at preboot, before the menu screen is loaded.
+static void mkpath(const std::string& p) {
+	for (size_t i = 1; i < p.size(); i++) if (p[i] == '/') mkdir(p.substr(0, i).c_str(), 0755);
+	mkdir(p.c_str(), 0755);
+}
+void install_menu_assets() {
+	std::string data = base() + "/Data";
+	std::string adir = data + "/Animations/GUI/main_menu", apath = adir + "/mods_title.anim";
+	struct stat st;
+	if (stat(apath.c_str(), &st) != 0 || (size_t)st.st_size != MODS_TITLE_ANIM_LEN) {   // missing/stale -> (re)write
+		mkpath(adir);
+		FILE* f = fopen(apath.c_str(), "wb");
+		if (f) { fwrite(MODS_TITLE_ANIM, 1, MODS_TITLE_ANIM_LEN, f); fclose(f); logline("menu: wrote %s", apath.c_str()); }
+		else logline("menu: WARN could not write %s", apath.c_str());
+	}
+	std::string luap = data + "/GUI/MainMenu_Screen.lua";
+	FILE* rf = fopen(luap.c_str(), "rb");
+	if (!rf) { logline("menu: WARN %s not found - dialog not installed", luap.c_str()); return; }
+	std::string s; fseek(rf, 0, SEEK_END); long n = ftell(rf); fseek(rf, 0, SEEK_SET);
+	if (n > 0) { s.resize(n); s.resize(fread(&s[0], 1, n, rf)); } fclose(rf);
+	if (s.find("ModsDialog") != std::string::npos) return;          // already patched (idempotent)
+	size_t w = s.find("widgets =");
+	if (w == std::string::npos) { logline("menu: WARN no widgets table in MainMenu_Screen.lua"); return; }
+	s.insert(w, std::string(MODS_DIALOG_LUA) + "\n\n");             // define ModsDialog before the table
+	size_t brace = s.find('{', s.find("widgets ="));
+	if (brace != std::string::npos) s.insert(brace + 1, "\n  ModsDialog,");   // register it in the table
+	FILE* wf = fopen(luap.c_str(), "wb");
+	if (wf) { fwrite(s.data(), 1, s.size(), wf); fclose(wf); logline("menu: patched MainMenu_Screen.lua (ModsDialog)"); }
+	else logline("menu: WARN could not write %s", luap.c_str());
+}
+
 // Linux: ctor attribute at LD_PRELOAD time. Windows: DllMain calls it (NOT a ctor, would double-init)
 #ifndef _WIN32
 __attribute__((constructor))
@@ -790,6 +825,7 @@ void eetsmod_preboot() {
 	mkdir(cachedir().c_str(), 0755);
 	extract_bundles();
 	install_assets();
+	install_menu_assets();
 }
 
 void load_all() {
