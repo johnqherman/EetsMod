@@ -156,14 +156,14 @@ void bind_click(void* be, void* fn) {
 }
 
 // draw the MODS circle + "MODS" text at (cx,cy), text scaled by grow (0=rest, 1=full hover).
-void draw_mods_circle(int cx, int cy, float grow) {
+void draw_mods_circle(int cx, int cy, float scale) {
 	using namespace Eets;
 	const int D = 114;
 	float R = D / 2.0f;
 	FillCircle(cx, cy, R, Color(0, 0, 0, 255));                 // thick black ring
 	FillCircle(cx, cy, R - 7, Color(255, 0, 0, 255));           // pure vanilla red (~7px ring)
-	const int basePx = 34, peakPx = 38;                         // ~match OPTIONS text height; ~12% hover grow
-	int px = basePx + (int)((float)(peakPx - basePx) * grow + 0.5f);
+	const int basePx = 34;                                      // vanilla ButtonExt scales this: 1.0 rest / 1.1 hover / 0.8 press
+	int px = (int)((float)basePx * scale + 0.5f);
 	int ty = cy - (px * 3) / 5;                                 // font sits low; ~0.6*px lift centers it
 	DrawTextPx(cx + 1, ty + 6, "MODS", px, Color(0, 0, 0, 110), true, UI::UI_FONT);   // subtle drop shadow
 	UI::DrawTextPxHeavy(cx, ty, "MODS", px, Color(255, 255, 255, 255), Color(0, 0, 0, 255), 4);
@@ -173,7 +173,7 @@ void draw_mods_circle(int cx, int cy, float grow) {
 // __thiscall (this in ECX) on Win, plain (this in first arg) on Linux - so the callbacks carry ECALL.
 // Vtable shape differs: Linux 7 slots [dtor,dtor,HandleEvent,GetExtID,Load,Draw,OnUpdate]; Win 6 slots
 // (MSVC merges the two dtors) [dtor,HandleEvent,GetExtID,Load,Draw,OnUpdate].
-struct ModsExt { void* vtbl; void* widget; float grow; };
+struct ModsExt { void* vtbl; void* widget; float scale; float prevPressed; };
 void          ECALL me_dtor0(void*) {}
 void          ECALL me_dtor8(void* e) { free(e); }
 unsigned char ECALL me_handle(void*, void*) { return 0; }      // HandleEvent: not handled
@@ -183,16 +183,35 @@ void          ECALL me_update(void*, float) {}
 void          ECALL me_draw(void* e, const Eets::Vector2* pos) {   // Draw slot - GUI-driven; we paint the circle
 	using namespace Eets;
 	ModsExt* m = (ModsExt*)e;
-	bool hot = false;
-	if (m->widget && addr::Widget_GetExt) {                     // hover from the sibling ButtonExt (id 1)
-		void* be = (void*)EC<uintptr_t(void*, unsigned long)>(addr::Widget_GetExt)(m->widget, 1);
-		if (be) hot = *((unsigned char*)be + OFF_ButtonExt_hover) != 0;
+	// The sibling ButtonExt (id 1) animates a hover/press scale in its OnUpdate (which the engine runs on it
+	// every frame) but applies it to an AnimExt sprite we don't have. So we read that exact scale and apply
+	// it to our text ourselves: vanilla = 1.0 rest / 1.1 hover (0.1s) / 0.8 press (in 0.1s, out 0.15s).
+	float scale = 1.0f; bool pressed = false;
+	if (m->widget && addr::Widget_GetExt) {
+		unsigned char* B = (unsigned char*)EC<uintptr_t(void*, unsigned long)>(addr::Widget_GetExt)(m->widget, 1);
+		if (B) {
+			pressed = B[OFF_ButtonExt_hover + 1] != 0;          // pressed-anim flag (Linux +0x11 / Win +0x9)
+#ifndef _WIN32
+			// Linux: reproduce ButtonExt::OnUpdate's scale from its live timers/consts - bit-exact
+			float cap = *(float*)(B + 0x14), base = *(float*)(B + 0x1c);
+			float t18 = *(float*)(B + 0x18), t28 = *(float*)(B + 0x28), d28 = *(float*)(B + 0x24);
+			float t30 = *(float*)(B + 0x30), d2c = *(float*)(B + 0x2c), pscl = *(float*)(B + 0x34);
+			if (!pressed) { float t = t18 < 0 ? 0 : (t18 > cap ? cap : t18); scale = (-1.0f + base) * (1.0f - t / cap) + 1.0f; }
+			else if (t28 > 0.0f) scale = (base - pscl) * (t28 / d28) + pscl;
+			else if (t30 > 0.0f) scale = (pscl - base) * (t30 / d2c) + base;
+			else scale = base;
+#else
+			// Win: scale-timer offsets not RE'd - ease toward the same targets (hover@+0x8 / pressed@+0x9)
+			bool hover = B[OFF_ButtonExt_hover] != 0;
+			float target = pressed ? 0.8f : (hover ? 1.1f : 1.0f);
+			float k = (g_dt > 0.0) ? (float)(g_dt * 12.0) : 1.0f; if (k > 1.0f) k = 1.0f;
+			m->scale += (target - m->scale) * k; scale = m->scale;
+#endif
+			if (pressed && m->prevPressed == 0.0f) PlaySound("GUI Click 2");   // click sfx on the press edge (vanilla)
+			m->prevPressed = pressed ? 1.0f : 0.0f;
+		}
 	}
-	float target = hot ? 1.0f : 0.0f;                          // tween grow toward hover over ~0.1s
-	float step = (g_dt > 0.0) ? (float)(g_dt / 0.1) : 1.0f;
-	if (m->grow < target) m->grow = (m->grow + step > target) ? target : m->grow + step;
-	else if (m->grow > target) m->grow = (m->grow - step < target) ? target : m->grow - step;
-	draw_mods_circle((int)pos->x, (int)pos->y, m->grow);
+	draw_mods_circle((int)pos->x, (int)pos->y, scale);
 }
 #ifdef _WIN32
 void          ECALL me_dtor_w(void* e, unsigned) { (void)e; }  // Win scalar-deleting dtor (this,flags); no-op - the button persists
@@ -223,7 +242,7 @@ void ensure_native_mods_button(int cx, int cy, int diameter) {
 		static FakeBoostFn fn = { (void*)nb_manager, (void*)nb_on_click, (void*)nb_invoker };
 		bind_click(be, &fn);
 		ModsExt* mx = (ModsExt*)malloc(sizeof(ModsExt));           // our draw-ext: the GUI paints the circle
-		mx->vtbl = (void*)g_mods_vtbl; mx->widget = w; mx->grow = 0.0f;
+		mx->vtbl = (void*)g_mods_vtbl; mx->widget = w; mx->scale = 1.0f; mx->prevPressed = 0.0f;
 		EC<void(void*, void*)>(addr::Widget_AddExt)(w, mx);
 		EC<void(void*, void*)>(addr::GUI_AddWidget)(gui, w);
 		g_native_btn = w;
@@ -1092,7 +1111,7 @@ void* g_mods_dlg_w = nullptr, * g_mods_modal_ext = nullptr;
 // native menu content: the lua ModsDialog children are real CreateClickableText widgets. We set their text
 // each frame; the engine draws/hovers/scales them with the modal (native pop-in). Clicks route natively
 // through their ButtonExt (bound below) - exactly like the Options dialog's buttons.
-void* g_title_w = nullptr, * g_add_w = nullptr, * g_back_w = nullptr, * g_row_w[6] = { nullptr };
+void* g_title_w = nullptr, * g_back_w = nullptr, * g_row_w[6] = { nullptr };   // "+ ADD A MOD" is the last used row, not a fixed widget
 bool g_menu_native = false;                               // true while the native menu modal owns the overlay
 
 void set_widget_text(void* w, const char* t) {
@@ -1109,15 +1128,17 @@ void          ECALL mm_load(void*) {}
 void          ECALL mm_update(void*, float) {}
 void          ECALL mm_draw(void*, const Eets::Vector2*) {   // not a draw: pushes current text into the native children
 	g_menu_native = true;
+	set_widget_text(g_title_w, "MODS");
 	char line[176];
-	snprintf(line, sizeof(line), "MODS v%s", EETSMOD_VERSION);
-	set_widget_text(g_title_w, line);
+	int n = (int)g_mods.size();
 	for (int i = 0; i < 6; i++) {
-		if (i < (int)g_mods.size()) {
+		if (i < n) {
 			Mod& m = g_mods[i];
 			snprintf(line, sizeof(line), "%s  %s%s", m.disabled ? "OFF" : "ON", m.name.c_str(),
 			         m.version.empty() ? "" : (" v" + m.version).c_str());
 			set_widget_text(g_row_w[i], line);
+		} else if (i == n) {
+			set_widget_text(g_row_w[i], "+ ADD A MOD");   // the add option is the last list row
 		} else set_widget_text(g_row_w[i], "");
 	}
 }
@@ -1125,14 +1146,16 @@ void          ECALL mm_draw(void*, const Eets::Vector2*) {   // not a draw: push
 // native click handler, bound to every row/add/back ButtonExt via the faked boost::function. ButtonExt's
 // invoker passes the clicked Widget*, so we dispatch by comparing it against the cached child widgets.
 void mods_row_click(void* w) {
-	if (w == g_add_w)  { open_mods_folder(); return; }
 	if (w == g_back_w) { g_overlay = false; return; }   // mods_modal_sync then StopModals it
+	int n = (int)g_mods.size();
 	for (int i = 0; i < 6; i++) if (w == g_row_w[i]) {
-		if (i < (int)g_mods.size()) {
+		if (i < n) {
 			Mod& m = g_mods[i];
 			bool dis = !m.disabled; m.disabled = dis; set_user_disabled(m.name, dis);
 			logline("manager: %s %s", m.name.c_str(), dis ? "disabled" : "enabled");
 			if (!dis && m.init) guard(&m, [&] { m.init(); });
+		} else if (i == n) {
+			open_mods_folder();   // the "+ ADD A MOD" row
 		}
 		return;
 	}
@@ -1169,7 +1192,6 @@ void mods_modal_sync() {
 			bind_click(be, &rowfn);   // platform-correct (Linux BindClick / Win boost op= at click offset)
 		};
 		g_title_w = find("ModsDialogTitle");
-		g_add_w   = find("ModsDialogAdd");   bindclick(g_add_w);
 		g_back_w  = find("ModsDialogBack");  bindclick(g_back_w);
 		int nrows = 0;
 		for (int i = 0; i < 6; i++) {
@@ -1177,7 +1199,7 @@ void mods_modal_sync() {
 			g_row_w[i] = find(nm);
 			if (g_row_w[i]) { nrows++; bindclick(g_row_w[i]); }
 		}
-		logline("native ModsDialog bound (w=%p title=%p add=%p back=%p rows=%d)", w, g_title_w, g_add_w, g_back_w, nrows);
+		logline("native ModsDialog bound (w=%p title=%p back=%p rows=%d)", w, g_title_w, g_back_w, nrows);
 	}
 	if (!addr::ModalExt_IsActive) return;
 	static bool started = false;
