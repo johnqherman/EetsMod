@@ -14,6 +14,7 @@
 #include <exception>
 #include "eets_engine.h"
 #include "eetsmod.h"   // EETS_API marks service decls dllexport in the loader (Windows)
+#include "eets_ui.h"    // shared UI primitives (rounded puffy panels, geek font, vertical centering); needs eetsmod.h (EMBTN_*)
 #include "hook.h"
 
 #define EETSMOD_VERSION "0.19.1"
@@ -63,15 +64,14 @@ unsigned long g_frame = 0;
 const unsigned RELOAD_POLL_FRAMES = 30;
 int g_mouse_x = 0, g_mouse_y = 0;        // in render (viewport) space
 bool g_overlay = false;
-// main-menu MODS button hit-rect, refreshed each frame drawn (w=0 when hidden)
-int g_modbtn_x = 0, g_modbtn_y = 0, g_modbtn_w = 0, g_modbtn_h = 0;
 // overlay "open mods folder" button row (y set during draw, -1 when hidden)
 int g_folder_btn_y = -1;
 // real backbuffer size from FNA3D_SetViewport; differs from window res in fullscreen
 int g_vp_w = 0, g_vp_h = 0;              // committed (last full frame)
 int g_vp_cur_w = 0, g_vp_cur_h = 0;     // max seen during the current frame
 double g_time = 0.0, g_dt = 0.0;
-const int OV_X = 8, OV_Y = 8, OV_W = 320, OV_TITLE = 40, OV_ROWH = 26;  // f1 manager layout
+int OV_X = 8, OV_Y = 8;                       // panel origin - recentered each draw (manage_click reads these)
+const int OV_W = 280, OV_TITLE = 42, OV_ROWH = 34;   // manager content layout (fits the medium_dialog cream area ~280x250)
 std::string g_selected;
 
 // absolute game dir from this .so's own path; never use process cwd (LD_PRELOAD ctor runs before game chdir's)
@@ -99,6 +99,92 @@ void logline(const char* fmt, ...) {
 	fprintf(stderr, "[eetsmod] %s\n", buf);
 	FILE* f = logfile(); if (f) { fprintf(f, "%s\n", buf); fflush(f); }
 }
+
+// ---- native main-menu MODS button: a REAL game Widget, so the GUI draws/dims/z-orders it and routes
+// its hover+click exactly like OptionsButton/QuitButton. The widget carries two exts: the engine's
+// ButtonExt (id 1, the click, bound via a faked boost::function) and our own ModsExt draw-ext (a custom
+// 7-slot WidgetExt vtable whose Draw paints the procedural circle). Because the GUI draws our ext in its
+// normal pass (before the modal fade quad), the button dims behind sub-screen modals natively. ----
+void* g_native_btn = nullptr;   // the MODS Widget* (read for native hover state)
+
+namespace {
+// faked boost::function<void(Widget*)> for ButtonExt::BindClick: clone(op0)=return functor (no heap),
+// destroy(op1)=noop, invoke=call our plain fn pointer.
+void* nb_manager(void* f, int) { return f; }
+void  nb_invoker(void* f, void* w) { ((void(*)(void*))f)(w); }
+void  nb_on_click(void*) { g_overlay = !g_overlay; }
+struct FakeBoostFn { void* manager; void* functor; void* invoker; };
+
+// draw the MODS circle + "MODS" text at (cx,cy), text scaled by grow (0=rest, 1=full hover).
+void draw_mods_circle(int cx, int cy, float grow) {
+	using namespace Eets;
+	const int D = 114;
+	float R = D / 2.0f;
+	FillCircle(cx, cy, R, Color(0, 0, 0, 255));                 // thick black ring
+	FillCircle(cx, cy, R - 7, Color(255, 0, 0, 255));           // pure vanilla red (~7px ring)
+	const int basePx = 34, peakPx = 38;                         // ~match OPTIONS text height; ~12% hover grow
+	int px = basePx + (int)((float)(peakPx - basePx) * grow + 0.5f);
+	int ty = cy - (px * 3) / 5;                                 // font sits low; ~0.6*px lift centers it
+	DrawTextPx(cx + 1, ty + 6, "MODS", px, Color(0, 0, 0, 110), true, UI::UI_FONT);   // subtle drop shadow
+	UI::DrawTextPxHeavy(cx, ty, "MODS", px, Color(255, 255, 255, 255), Color(0, 0, 0, 255), 4);
+}
+
+// our custom WidgetExt: { vtable, owning Widget, hover-grow state }. 7-slot vtable (matches the engine's
+// WidgetExt interface): 0x00/0x08 dtors, 0x10 HandleEvent, 0x18 GetExtID, 0x20 Load, 0x28 Draw, 0x30 Update.
+struct ModsExt { void* vtbl; void* widget; float grow; };
+void          me_dtor0(void*) {}
+void          me_dtor8(void* e) { free(e); }
+unsigned char me_handle(void*, void*) { return 0; }            // HandleEvent: not handled
+unsigned long me_getid(void*) { return 0x4d4f4453UL; }         // 'MODS' - unique, != 4 (container)/5 (modal)
+void          me_load(void*) {}
+void          me_update(void*, float) {}
+void          me_draw(void* e, const Eets::Vector2* pos) {     // slot 0x28 - GUI-driven draw (thiscall: e=RDI, pos=RSI)
+	using namespace Eets;
+	ModsExt* m = (ModsExt*)e;
+	bool hot = false;
+	if (m->widget && addr::Widget_GetExt) {                     // hover from the sibling ButtonExt (id 1)
+		void* be = (void*)EC<uintptr_t(void*, unsigned long)>(addr::Widget_GetExt)(m->widget, 1);
+		if (be) hot = *((unsigned char*)be + 0x10) != 0;
+	}
+	float target = hot ? 1.0f : 0.0f;                          // tween grow toward hover over ~0.1s
+	float step = (g_dt > 0.0) ? (float)(g_dt / 0.1) : 1.0f;
+	if (m->grow < target) m->grow = (m->grow + step > target) ? target : m->grow + step;
+	else if (m->grow > target) m->grow = (m->grow - step < target) ? target : m->grow - step;
+	draw_mods_circle((int)pos->x, (int)pos->y, m->grow);
+}
+void* g_mods_vtbl[7] = { (void*)me_dtor0, (void*)me_dtor8, (void*)me_handle, (void*)me_getid,
+                         (void*)me_load, (void*)me_draw, (void*)me_update };
+
+void ensure_native_mods_button(int cx, int cy, int diameter) {
+	using namespace Eets;
+	if (!addr::World_GetActiveGUI || !addr::Widget_ctor || !addr::ButtonExt_BindClick) return;   // Win: TBD
+	void* gui = (void*)EC<uintptr_t(void*)>(addr::World_GetActiveGUI)(World_i());
+	if (!gui) return;
+	void* w = (void*)EC<uintptr_t(void*, const char*)>(addr::GUI_FindWidget)(gui, "ModsButton");
+	if (!w) {
+		w = malloc(0x80);                                          // Widget (0x80)
+		EC<void(void*, void*)>(addr::Widget_ctor)(w, gui);
+		EC<void(void*, const char*)>(addr::Widget_SetName)(w, "ModsButton");
+		void* be = malloc(0xa0);                                   // ButtonExt (0xa0): the click + hover state
+		EC<void(void*, void*)>(addr::ButtonExt_ctor)(be, w);
+		EC<void(void*, void*)>(addr::Widget_AddExt)(w, be);
+		static FakeBoostFn fn = { (void*)nb_manager, (void*)nb_on_click, (void*)nb_invoker };
+		EC<void(void*, void*)>(addr::ButtonExt_BindClick)(be, &fn);
+		ModsExt* mx = (ModsExt*)malloc(sizeof(ModsExt));           // our draw-ext: the GUI paints the circle
+		mx->vtbl = (void*)g_mods_vtbl; mx->widget = w; mx->grow = 0.0f;
+		EC<void(void*, void*)>(addr::Widget_AddExt)(w, mx);
+		EC<void(void*, void*)>(addr::GUI_AddWidget)(gui, w);
+		g_native_btn = w;
+		logline("native MODS button created (widget=%p)", w);
+	}
+	g_native_btn = w;
+	Vector2 pos{ (float)cx, (float)cy };
+	EC<void(void*, const Vector2&)>(addr::TranslateTo)(w, pos);
+	int hr = diameter / 2;
+	Vector2 mn{ (float)(-hr), (float)(-hr) }, mx{ (float)hr, (float)hr };
+	EC<void(void*, const Vector2&, const Vector2&)>(addr::Widget_SetHitRegion)(w, mn, mx);
+}
+} // namespace
 
 // crash guard: a faulting mod is disabled, the game survives
 #ifdef _WIN32
@@ -882,6 +968,168 @@ void FNA3D_SetViewport(void* device, void* viewport) {
 	if (real) real(device, viewport);
 }
 
+// the mods-manager panel art (was drawn inline in the swap hook). Drawn either by the native modal's
+// draw-ext (main menu) or procedurally as an in-game fallback.
+// draw the manager content centered on (cx,cy). withPanel draws our own red panel behind it (in-game
+// fallback); when false the content sits bare inside the native dialog's cream area.
+void draw_mods_overlay(int cx, int cy, bool withPanel) {
+	using namespace Eets;
+	int nMods = (int)g_mods.size();
+	int cfgRows = 0;
+	if (!g_selected.empty()) { cfgRows = 1; for (auto& kv : g_cfg[g_selected]) if (!is_reserved_key(kv.first)) cfgRows++; }
+	int H = OV_TITLE + nMods * OV_ROWH + cfgRows * OV_ROWH + OV_ROWH + 14;
+	OV_X = cx - OV_W / 2;
+	OV_Y = withPanel ? (cy - H / 2) : (cy - 105);   // native: top of the cream area; in-game: centered in our panel
+	if (withPanel) {
+		UI::FillRoundRect(OV_X + 5, OV_Y + 6, OV_W, H, 16, Color(0, 0, 0, 110));
+		UI::RoundPanel(OV_X, OV_Y, OV_W, H, 16, Color(205, 40, 35, 255), 5);
+	}
+	char line[160];
+	snprintf(line, sizeof(line), "MODS v%s", EETSMOD_VERSION);
+	DrawTextOutlined(OV_X + 12, UI::centerY(OV_Y + 6, OV_TITLE - 8, FONT_BIG), line, FONT_BIG,
+	                 Color(255, 232, 40, 255), Color(0, 0, 0, 220), UI::UI_FONT);
+	UI::RoundPanel(OV_X + OV_W - 32, OV_Y + 7, 26, 26, 7, Color(200, 44, 38, 255), 3, true);
+	DrawTextCenteredOutlined(OV_X + OV_W - 32 + 13, UI::centerY(OV_Y + 7, 26, FONT_BIG), "x", FONT_BIG,
+	                         Color(255, 232, 40, 255), Color(0, 0, 0, 220), UI::UI_FONT);
+	int y = OV_Y + OV_TITLE;
+	for (auto& m : g_mods) {
+		bool sel = (g_selected == m.name);
+		if (sel) UI::FillRoundRect(OV_X + 5, y + 1, OV_W - 10, OV_ROWH - 2, 6, Color(255, 120, 55, 150));
+		int ty = UI::centerY(y, OV_ROWH, FONT_NORMAL);
+		DrawTextOutlined(OV_X + 10, ty, m.disabled ? "OFF" : "ON", FONT_NORMAL,
+		                 m.disabled ? Color(255, 90, 80, 255) : Color(255, 210, 40, 255),
+		                 Color(0, 0, 0, 200), UI::UI_FONT);
+		snprintf(line, sizeof(line), "%s%s", m.name.c_str(), m.version.empty() ? "" : (" v" + m.version).c_str());
+		DrawTextOutlined(OV_X + 64, ty, line, FONT_NORMAL, Color(255, 255, 255, 255),
+		                 Color(0, 0, 0, 200), UI::UI_FONT);
+		y += OV_ROWH;
+	}
+	if (!g_selected.empty()) {
+		DrawTextOutlined(OV_X + 10, UI::centerY(y, OV_ROWH, FONT_SMALL), ("config: " + g_selected).c_str(),
+		                 FONT_SMALL, Color(255, 232, 40, 255), Color(0, 0, 0, 200), UI::UI_FONT);
+		y += OV_ROWH;
+		for (auto& kv : g_cfg[g_selected]) {
+			if (is_reserved_key(kv.first)) continue;
+			snprintf(line, sizeof(line), "%s = %s", kv.first.c_str(), kv.second.c_str());
+			DrawTextOutlined(OV_X + 14, UI::centerY(y, OV_ROWH, FONT_SMALL), line, FONT_SMALL,
+			                 Color(255, 255, 255, 255), Color(0, 0, 0, 200), UI::UI_FONT);
+			int byc = UI::centerY(y + 2, OV_ROWH - 6, FONT_NORMAL);
+			UI::RoundPanel(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, 6, Color(70, 50, 60, 255), 3);
+			DrawTextCenteredOutlined(OV_X + OV_W - 70 + 14, byc, "-", FONT_NORMAL, Color(255, 255, 255, 255),
+			                         Color(0, 0, 0, 200), UI::UI_FONT);
+			UI::RoundPanel(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, 6, Color(70, 50, 60, 255), 3);
+			DrawTextCenteredOutlined(OV_X + OV_W - 34 + 14, byc, "+", FONT_NORMAL, Color(255, 255, 255, 255),
+			                         Color(0, 0, 0, 200), UI::UI_FONT);
+			y += OV_ROWH;
+		}
+	}
+	y += 6; g_folder_btn_y = y;
+	bool fhot = g_mouse_x >= OV_X + 6 && g_mouse_x < OV_X + OV_W - 6 && g_mouse_y >= y && g_mouse_y < y + OV_ROWH;
+	UI::RoundPanel(OV_X + 6, y, OV_W - 12, OV_ROWH, 8, fhot ? Color(235, 70, 60, 255) : Color(165, 22, 20, 255), 3, fhot);
+	DrawTextCenteredOutlined(OV_X + OV_W / 2, UI::centerY(y, OV_ROWH, FONT_SMALL),
+	                         "+ Add a mod (open mods folder)", FONT_SMALL, Color(255, 232, 40, 255),
+	                         Color(0, 0, 0, 220), UI::UI_FONT);
+}
+
+// native mods modal: the lua-defined ModsDialog (DATA:GUI/MainMenu_Screen.lua, CreateModalDialog) is a
+// REAL, fully-formed engine modal (native panel sprite + ModalExt + the structure standalone construction
+// lacked). We just FIND it and Start/StopModal it - the engine dims/animates/captures it. Our content
+// draw-ext paints the mod list inside; clicks flow through the loader mouse hook.
+namespace {
+void* g_mods_dlg_w = nullptr, * g_mods_modal_ext = nullptr;
+// native menu content: the lua ModsDialog children are real CreateClickableText widgets. We set their text
+// each frame; the engine draws/hovers/scales them with the modal (native pop-in). Clicks route natively
+// through their ButtonExt (bound below) - exactly like the Options dialog's buttons.
+void* g_title_w = nullptr, * g_add_w = nullptr, * g_back_w = nullptr, * g_row_w[6] = { nullptr };
+bool g_menu_native = false;                               // true while the native menu modal owns the overlay
+
+void set_widget_text(void* w, const char* t) {
+	using namespace Eets;
+	if (!w || !addr::Widget_GetExt || !addr::TextExt_SetText) return;
+	void* te = (void*)EC<uintptr_t(void*, unsigned long)>(addr::Widget_GetExt)(w, 3);   // TextExt id 3
+	if (te) EC<void(void*, const char*)>(addr::TextExt_SetText)(te, t);
+}
+void          mm_dtor0(void*) {}
+void          mm_dtor8(void* e) { free(e); }
+unsigned char mm_handle(void*, void*) { return 0; }
+unsigned long mm_getid(void*) { return 0x4d4d4e55UL; }
+void          mm_load(void*) {}
+void          mm_update(void*, float) {}
+void          mm_draw(void*, const Eets::Vector2*) {   // not a draw: pushes current text into the native children
+	g_menu_native = true;
+	char line[176];
+	snprintf(line, sizeof(line), "MODS v%s", EETSMOD_VERSION);
+	set_widget_text(g_title_w, line);
+	for (int i = 0; i < 6; i++) {
+		if (i < (int)g_mods.size()) {
+			Mod& m = g_mods[i];
+			snprintf(line, sizeof(line), "%s  %s%s", m.disabled ? "OFF" : "ON", m.name.c_str(),
+			         m.version.empty() ? "" : (" v" + m.version).c_str());
+			set_widget_text(g_row_w[i], line);
+		} else set_widget_text(g_row_w[i], "");
+	}
+}
+
+// native click handler, bound to every row/add/back ButtonExt via the faked boost::function. ButtonExt's
+// invoker passes the clicked Widget*, so we dispatch by comparing it against the cached child widgets.
+void mods_row_click(void* w) {
+	if (w == g_add_w)  { open_mods_folder(); return; }
+	if (w == g_back_w) { g_overlay = false; return; }   // mods_modal_sync then StopModals it
+	for (int i = 0; i < 6; i++) if (w == g_row_w[i]) {
+		if (i < (int)g_mods.size()) {
+			Mod& m = g_mods[i];
+			bool dis = !m.disabled; m.disabled = dis; set_user_disabled(m.name, dis);
+			logline("manager: %s %s", m.name.c_str(), dis ? "disabled" : "enabled");
+			if (!dis && m.init) guard(&m, [&] { m.init(); });
+		}
+		return;
+	}
+}
+void* g_mm_vtbl[7] = { (void*)mm_dtor0, (void*)mm_dtor8, (void*)mm_handle, (void*)mm_getid,
+                       (void*)mm_load, (void*)mm_draw, (void*)mm_update };
+struct MMExt { void* vtbl; void* widget; };
+
+void mods_modal_sync() {
+	using namespace Eets;
+	if (!addr::GUI_FindWidget || !addr::Widget_GetExt || !addr::ModalExt_StartModal || !addr::World_GetActiveGUI) return;
+	if (!g_mods_modal_ext) {
+		void* gui = (void*)EC<uintptr_t(void*)>(addr::World_GetActiveGUI)(World_i());
+		if (!gui) return;
+		void* w = (void*)EC<uintptr_t(void*, const char*)>(addr::GUI_FindWidget)(gui, "ModsDialog");
+		if (!w) return;   // lua not patched / screen not loaded
+		void* me = (void*)EC<uintptr_t(void*, unsigned long)>(addr::Widget_GetExt)(w, 5);   // its ModalExt
+		if (!me) return;
+		MMExt* dx = (MMExt*)malloc(sizeof(MMExt)); dx->vtbl = (void*)g_mm_vtbl; dx->widget = w;
+		EC<void(void*, void*)>(addr::Widget_AddExt)(w, dx);   // our text-driver ext (records pos, sets child text)
+		g_mods_dlg_w = w; g_mods_modal_ext = me;
+		auto find = [&](const char* nm) { return (void*)EC<uintptr_t(void*, const char*)>(addr::GUI_FindWidget)(gui, nm); };
+		// bind a clickable child's ButtonExt (id 1) to mods_row_click via the faked boost::function
+		static FakeBoostFn rowfn = { (void*)nb_manager, (void*)mods_row_click, (void*)nb_invoker };
+		auto bindclick = [&](void* cw) {
+			if (!cw || !addr::ButtonExt_BindClick) return;
+			void* be = (void*)EC<uintptr_t(void*, unsigned long)>(addr::Widget_GetExt)(cw, 1);
+			if (be) EC<void(void*, void*)>(addr::ButtonExt_BindClick)(be, &rowfn);
+		};
+		g_title_w = find("ModsDialogTitle");
+		g_add_w   = find("ModsDialogAdd");   bindclick(g_add_w);
+		g_back_w  = find("ModsDialogBack");  bindclick(g_back_w);
+		int nrows = 0;
+		for (int i = 0; i < 6; i++) {
+			char nm[24]; snprintf(nm, sizeof(nm), "ModsDialogRow%d", i);
+			g_row_w[i] = find(nm);
+			if (g_row_w[i]) { nrows++; bindclick(g_row_w[i]); }
+		}
+		logline("native ModsDialog bound (w=%p title=%p add=%p back=%p rows=%d)", w, g_title_w, g_add_w, g_back_w, nrows);
+	}
+	if (!addr::ModalExt_IsActive) return;
+	static bool started = false;
+	bool active = EC<bool(void*)>(addr::ModalExt_IsActive)(g_mods_modal_ext);
+	if (started && !active) { started = false; g_overlay = false; }   // engine closed it (Esc/back) -> sync, don't reopen
+	if (g_overlay && !active && !started) { EC<void(void*)>(addr::ModalExt_StartModal)(g_mods_modal_ext); started = true; }
+	else if (!g_overlay && active)        { EC<void(void*, int)>(addr::ModalExt_StopModal)(g_mods_modal_ext, 0); }
+}
+} // namespace
+
 void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 	static void (*real)(void*, void*, void*, void*) = nullptr;
 	if (!real) real = (decltype(real))dlsym(RTLD_NEXT, "FNA3D_SwapBuffers");
@@ -897,78 +1145,66 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 	for (auto& m : g_mods) if (m.update && !m.disabled) guard(&m, [&]{ m.update(); });
 	if (++g_frame % RELOAD_POLL_FRAMES == 0) poll_reload();
 
-	if (g_loaded && Eets::World_IsInMainMenu()) {
+	if (g_loaded && Eets::World_IsInMainMenu()) {   // native widget dims/z-orders itself during modals
 		using namespace Eets;
 		size_t active = 0; for (auto& m : g_mods) if (!m.disabled) active++;
 		int h = RenderHeight(); if (h <= 0) h = 720;
-		// clickable bottom-left MODS button: opens the manager overlay (no F1 needed)
-		g_modbtn_x = 10; g_modbtn_w = 150; g_modbtn_h = 38; g_modbtn_y = h - g_modbtn_h - 10;
-		bool hot = g_mouse_x >= g_modbtn_x && g_mouse_x < g_modbtn_x + g_modbtn_w &&
-		           g_mouse_y >= g_modbtn_y && g_mouse_y < g_modbtn_y + g_modbtn_h;
-		FillRect(g_modbtn_x + 3, g_modbtn_y + 3, g_modbtn_w, g_modbtn_h, Color(0, 0, 0, 110));
-		FillRect(g_modbtn_x, g_modbtn_y, g_modbtn_w, g_modbtn_h, hot ? Color(235, 70, 60, 255) : Color(205, 40, 35, 255));
-		DrawRect(g_modbtn_x, g_modbtn_y, g_modbtn_w, g_modbtn_h, Color(0, 0, 0, 255), 3.0f);
-		char btn[64]; snprintf(btn, sizeof(btn), "MODS (%zu)", active);
-		DrawTextOutlined(g_modbtn_x + 12, g_modbtn_y + 8, btn, FONT_BIG, Color(255, 232, 40, 255));
-		static bool once = false;
-		if (!once) { once = true; logline("menu MODS button at %d,%d (screen h=%d)", g_modbtn_x, g_modbtn_y, h); }
-	} else { g_modbtn_w = 0; }
+		// MODS button: a real native Widget. ensure_native_mods_button creates/positions it; the GUI draws
+		// it (our ModsExt::Draw paints the circle) so it dims + z-orders with the menu and routes hover/click
+		// like OptionsButton. No procedural draw here anymore.
+		(void)active;
+		const int D = 114;
+		int mcx = (int)(RenderWidth() * 0.58f), mcy = (int)(h * 0.58f);   // above-left of OPTIONS (clears the PLAY panel)
+		ensure_native_mods_button(mcx, mcy, D);
+		// native hover state (set by the GUI on the button's ButtonExt) drives the description swap + sfx
+		bool hot = false;
+		if (g_native_btn) {
+			void* be = (void*)EC<uintptr_t(void*, unsigned long)>(addr::Widget_GetExt)(g_native_btn, 1);
+			if (be) hot = *((unsigned char*)be + 0x10) != 0;
+		}
+		// vanilla-style hover description: while hovering MODS, swap the welcome/profile panel text to
+		// "MANAGE YOUR MODS" (mirrors OPTIONS -> "CHANGE YOUR SETTINGS"). The game can't do this for our
+		// overlay button, so we set it directly here (the swap hook runs after the menu's own frame update,
+		// so our text wins). Cache the default on hover-enter and restore it on exit.
+		// vanilla shows a button's hover-description in the hidden geek-font StatusText widget while hiding the
+		// greeting trio (WelcomeBackText/ProfileNameText/ChangeProfileText). The game re-asserts the trio's
+		// VISIBILITY every frame (so SetVisibility(false) won't stick) but does NOT reset their TEXT - so we
+		// show StatusText and blank the trio's text, caching the defaults to restore on un-hover.
+		static bool modWasHover = false;
+		static std::string sWelcome, sName, sChange;
+		void* ste = Menu_MainMenuTextExt(addr::off_MainMenu_statusText);
+		void* wte = Menu_MainMenuTextExt(addr::off_MainMenu_welcomeProxy);
+		void* nte = Menu_MainMenuTextExt(addr::off_MainMenu_profileName);
+		void* cte = Menu_MainMenuTextExt(addr::off_MainMenu_changeProfile);
+		if (hot) {
+			if (!modWasHover) {   // on hover-enter: cache the greeting defaults, reveal StatusText, play the menu hover sfx
+				sWelcome = Menu_GetWelcomeText(wte); sName = Menu_GetWelcomeText(nte); sChange = Menu_GetWelcomeText(cte);
+				Menu_SetTextVisible(ste, true);
+				PlaySound("GUI MouseOver");   // same hover sfx as the vanilla menu buttons
+			}
+			Menu_SetWelcomeText(ste, "MANAGE YOUR\nMODS");
+			Menu_SetWelcomeText(wte, ""); Menu_SetWelcomeText(nte, ""); Menu_SetWelcomeText(cte, "");
+		} else if (modWasHover) {   // on hover-exit: clear+hide StatusText, restore the greeting
+			Menu_SetWelcomeText(ste, "");   // empty text renders nothing even if the visible flag lingers
+			Menu_SetTextVisible(ste, false);
+			Menu_SetWelcomeText(wte, sWelcome.c_str()); Menu_SetWelcomeText(nte, sName.c_str()); Menu_SetWelcomeText(cte, sChange.c_str());
+		}
+		modWasHover = hot;
+	}
 
 	if (g_loaded && !g_toast.empty() && g_time < g_toast_until) {
 		using namespace Eets;
 		DrawTextOutlined(10, 10, g_toast.c_str(), FONT_NORMAL,
-		                 g_toast_fail ? Color(255, 90, 80, 255) : Color(120, 255, 120, 255));
+		                 g_toast_fail ? Color(255, 90, 80, 255) : Color(120, 255, 120, 255),
+		                 Color(0, 0, 0, 200), UI::UI_FONT);
 	}
 
-	if (g_loaded && g_overlay) {
-		using namespace Eets;
-		int nMods = (int)g_mods.size();
-		int cfgRows = 0;
-		if (!g_selected.empty()) { cfgRows = 1; for (auto& kv : g_cfg[g_selected]) if (!is_reserved_key(kv.first)) cfgRows++; }   // +1 header, manifest keys hidden
-		int H = OV_TITLE + nMods * OV_ROWH + cfgRows * OV_ROWH + OV_ROWH + 18;  // +1 row for the folder button
-		FillRect(OV_X + 5, OV_Y + 6, OV_W, H, Color(0, 0, 0, 110));
-		FillRect(OV_X, OV_Y, OV_W, H, Color(205, 40, 35, 255));
-		DrawRect(OV_X, OV_Y, OV_W, H, Color(0, 0, 0, 255), 4.0f);
-		FillRect(OV_X + 4, OV_Y + 4, OV_W - 8, OV_TITLE - 6, Color(165, 22, 20, 255));
-		char line[160];
-		snprintf(line, sizeof(line), "MODS v%s", EETSMOD_VERSION);
-		DrawTextOutlined(OV_X + 10, OV_Y + 8, line, FONT_BIG, Color(255, 232, 40, 255));
-		FillRect(OV_X + OV_W - 32, OV_Y + 7, 26, 26, Color(165, 22, 20, 255));
-		DrawRect(OV_X + OV_W - 32, OV_Y + 7, 26, 26, Color(0, 0, 0, 255), 2.0f);
-		DrawTextOutlined(OV_X + OV_W - 26, OV_Y + 8, "x", FONT_BIG, Color(255, 232, 40, 255));
-		int y = OV_Y + OV_TITLE;
-		for (auto& m : g_mods) {
-			bool sel = (g_selected == m.name);
-			if (sel) FillRect(OV_X + 4, y, OV_W - 8, OV_ROWH, Color(255, 120, 55, 160));
-			DrawTextOutlined(OV_X + 10, y + 4, m.disabled ? "OFF" : "ON",
-			                 FONT_NORMAL, m.disabled ? Color(255, 90, 80, 255) : Color(255, 210, 40, 255));
-			snprintf(line, sizeof(line), "%s%s", m.name.c_str(), m.version.empty() ? "" : (" v" + m.version).c_str());
-			DrawTextOutlined(OV_X + 64, y + 4, line, FONT_NORMAL, Color(255, 255, 255, 255));
-			y += OV_ROWH;
-		}
-		if (!g_selected.empty()) {
-			DrawTextOutlined(OV_X + 10, y + 4, ("config: " + g_selected).c_str(), FONT_SMALL, Color(255, 232, 40, 255));
-			y += OV_ROWH;
-			for (auto& kv : g_cfg[g_selected]) {
-				if (is_reserved_key(kv.first)) continue;   // manifest/identity keys are not user-tunable
-				snprintf(line, sizeof(line), "%s = %s", kv.first.c_str(), kv.second.c_str());
-				DrawTextOutlined(OV_X + 14, y + 4, line, FONT_SMALL, Color(255, 255, 255, 255));
-				FillRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Color(70, 50, 60, 255));
-				DrawRect(OV_X + OV_W - 70, y + 2, 28, OV_ROWH - 6, Color(0, 0, 0, 255), 2.0f);
-				DrawTextOutlined(OV_X + OV_W - 63, y + 4, "-", FONT_NORMAL, Color(255, 255, 255, 255));
-				FillRect(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, Color(70, 50, 60, 255));
-				DrawRect(OV_X + OV_W - 34, y + 2, 28, OV_ROWH - 6, Color(0, 0, 0, 255), 2.0f);
-				DrawTextOutlined(OV_X + OV_W - 28, y + 4, "+", FONT_NORMAL, Color(255, 255, 255, 255));
-				y += OV_ROWH;
-			}
-		}
-		// open-mods-folder button: where players drop a .eetsmod to install one
-		y += 6; g_folder_btn_y = y;
-		bool fhot = g_mouse_x >= OV_X + 6 && g_mouse_x < OV_X + OV_W - 6 &&
-		            g_mouse_y >= y && g_mouse_y < y + OV_ROWH;
-		FillRect(OV_X + 6, y, OV_W - 12, OV_ROWH, fhot ? Color(235, 70, 60, 255) : Color(165, 22, 20, 255));
-		DrawRect(OV_X + 6, y, OV_W - 12, OV_ROWH, Color(0, 0, 0, 255), 2.0f);
-		DrawTextOutlined(OV_X + 14, y + 4, "+ Add a mod (open mods folder)", FONT_SMALL, Color(255, 232, 40, 255));
+	if (g_loaded && Eets::World_IsInMainMenu()) {
+		mods_modal_sync();                       // native lua ModsDialog: engine dims + animates; ext draws content
+	} else if (g_loaded && g_overlay) {          // in-game fallback (no menu GUI): procedural
+		g_menu_native = false;
+		Eets::FillRect(0, 0, Eets::RenderWidth(), Eets::RenderHeight(), Eets::Color(0, 0, 0, 150));
+		draw_mods_overlay(Eets::RenderWidth() / 2, Eets::RenderHeight() / 2, true);
 	}
 	g_vp_cur_w = g_vp_cur_h = 0;
 	if (real) real(device, src, dst, window);
@@ -1004,12 +1240,12 @@ int SDL_PollEvent(void* event) {
 		} else if (type == SDL_MOUSEBUTTONDOWN || type == SDL_MOUSEBUTTONUP) {
 			ButtonView* b = (ButtonView*)event; map_mouse(b->x, b->y, b->win);
 			int mx = g_mouse_x, my = g_mouse_y, down = (type == SDL_MOUSEBUTTONDOWN) ? 1 : 0, btn = b->button;
-			// MODS button in the main menu opens the manager (consume the click)
-			if (down && btn == 1 && g_modbtn_w > 0 &&
-			    mx >= g_modbtn_x && mx < g_modbtn_x + g_modbtn_w &&
-			    my >= g_modbtn_y && my < g_modbtn_y + g_modbtn_h) { g_overlay = !g_overlay; return r; }
-			// manager click (consume on press so it doesn't pass to mods/game)
-			if (g_overlay && down && btn == 1 && manage_click(mx, my)) { return r; }
+			// (MODS main-menu button click is handled natively by its game Widget/ButtonExt)
+			// overlay open = modal: handle panel clicks, swallow ALL mouse buttons so the menu/game behind
+			// (incl. the native widgets) stay inert until it's closed.
+			// native menu modal: clicks route through the dialog's own widgets (bound ButtonExts). In-game
+			// overlay has no GUI, so the procedural hit-test handles it. Either way, swallow our mods' callbacks.
+			if (g_overlay) { if (!g_menu_native && down && btn == 1) manage_click(mx, my); return r; }
 			for (auto& m : g_mods) if (m.onmouse && !m.disabled) guard(&m, [&]{ m.onmouse(mx, my, btn, down); });
 		} else if (type == SDL_TEXTINPUT) {
 			const char* txt = (const char*)event + 12;   // SDL_TextInputEvent.text[32]
