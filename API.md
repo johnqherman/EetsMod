@@ -59,6 +59,7 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   bool World_AnimationsEqual(void* a, void* b)
   bool World_IsInLevelEditor()
   bool World_IsInMainMenu()
+  bool World_IsLoading()
   bool World_IsPaused()
   bool World_IsSimulating()
   bool World_LightExists(unsigned short a)

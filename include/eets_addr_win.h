@@ -189,6 +189,7 @@ inline uintptr_t SetPaused                          = resolve(0x138700); // Simu
 
 // ===== struct offsets (Win 32-bit values; DIFFER from Linux - mirror eets_addr.h) =====
 constexpr unsigned off_World_creator      = 0x10;   // World -> active Creator/Builder (Linux 0x20)
+constexpr unsigned off_World_loading      = 0;      // loading flag offset not RE'd on Win yet (0 -> World_IsLoading() no-ops)
 constexpr unsigned off_Creator_gui        = 0x04;   // Creator -> GUI subobject (Linux 0x08)
 constexpr unsigned off_Creator_guiPrime   = 0x156c; // Creator -> GUI-prime flag set by LoadLevel dir==0 (Linux 0x2548)
 constexpr unsigned off_Creator_action     = 0x1398; // Creator -> in-progress action ptr (Linux 0x2218)

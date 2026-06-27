@@ -188,6 +188,7 @@ constexpr uintptr_t Widget_RemoveFlags                 = 0x571bc0;  // Widget::R
 
 // ===== struct offsets (Linux x86-64 values; the Win twin in eets_addr_win.h differs) =====
 constexpr unsigned off_World_creator      = 0x20;   // World -> active Creator/Builder
+constexpr unsigned off_World_loading      = 0x30;   // World -> loading flag (byte): World::StartLoading sets 1, StopLoading 0
 constexpr unsigned off_Creator_gui        = 0x08;   // Creator -> GUI subobject
 constexpr unsigned off_Creator_guiPrime   = 0x2548; // Creator -> GUI-prime flag set by LoadLevel dir==0
 constexpr unsigned off_Creator_action     = 0x2218; // Creator -> in-progress action ptr (the drag)

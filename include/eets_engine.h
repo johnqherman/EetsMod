@@ -267,6 +267,9 @@ inline void Simulator_StartSimulation(void* sim) {
 inline void* World_i() { return addr::World_i ? (void*)FC<uintptr_t()>(addr::World_i)() : nullptr; }
 // the active gameplay controller (Builder/Creator/LevelEditor) lives at World+0x20
 inline void* World_GetCreator() { void* w = World_i(); return w ? *(void**)((char*)w + addr::off_World_creator) : nullptr; }
+// true while a loading screen is up (World::StartLoading..StopLoading). Distinguishes a real pause from the
+// level-load transition (both report paused). off 0 (Win, not RE'd) -> no-op false.
+inline bool World_IsLoading() { void* w = World_i(); return (w && addr::off_World_loading) ? *(uint8_t*)((char*)w + addr::off_World_loading) != 0 : false; }
 // the real "Go": start the sim on the active builder (full init - input recording, stat tags, Eets release)
 inline bool Creator_StartSimulation(void* creator) {
 	if (!creator || !addr::Creator_StartSimulation) return false;
