@@ -36,6 +36,7 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   bool DrawAnimFit(const char* path, int cx, int cy, int targetH, float dt, Color tint = Color(), bool flip = false)
   bool DrawAnimFrozenFit(const char* path, int cx, int cy, int targetH, Color tint = Color(), bool flip = false)
   bool DrawImage(const char* path, int x, int y, Color tint = Color())
+  bool DrawImageFit(const char* path, int cx, int cy, int targetH, Color tint = Color(), bool flip = false)
   bool DrawImageHUD(const char* path, int x, int y, Color tint = Color())
   bool DrawTextPx(int x, int y, const char* text, int px, Color c, bool center = false, int style = STYLE_NORMAL)
   bool EdibleExtension_GetEaten(EdibleExtension* e)
@@ -278,6 +279,7 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   EETS_API void ClipReset();
   EETS_API void Log(const char* fmt, ...);
   EETS_API void SetClipboard(const char* text);
+  EETS_API void SetEscapeSwallow(bool on);
   EETS_API void StartTextInput();
   EETS_API void StopTextInput();
 ```
