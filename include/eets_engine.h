@@ -523,13 +523,16 @@ inline bool DrawTextPx(int x, int y, const char* text, int px, Color c, bool cen
 	void* f = uiFontInfo(style);
 	if (!f) return false;
 #ifdef _WIN32
-	*(int*)((char*)f + 4) = px;   // Win FontInfo glyph-size field offset
+	int* szf = (int*)((char*)f + 4);   // Win FontInfo glyph-size field offset
 #else
-	*(int*)((char*)f + 8) = px;   // Linux FontInfo glyph-size field offset
+	int* szf = (int*)((char*)f + 8);   // Linux FontInfo glyph-size field offset
 #endif
+	int saved = *szf;   // this FontInfo is SHARED per style; restore it or later enum-path
+	*szf = px;          // draws (DrawTextCentered etc) inherit our px and render mis-sized glyphs
 	Vector2 pos{(float)x, (float)y}, dir{1.0f, 0.0f};   // dir is normalized internally (direction only)
 	FC<void(const char*, const Vector2&, bool, const Color&, void*, const Vector2&)>(
 		addr::TextPrinter_DrawTextFromCache)(text ? text : "", pos, center, c, f, dir);
+	*szf = saved;
 	return true;
 }
 
@@ -714,6 +717,18 @@ inline bool DrawAnimFrozenFit(const char* path, int cx, int cy, int targetH, Col
 	void* a = LoadAnim(path); if (!a) return false;
 	void* sprite = FC<void*(void*)>(addr::Animation_GetCurrentFrame)(a);
 	if (!sprite) return false;
+	int nh = SpriteHeight(sprite), nw = SpriteWidth(sprite);
+	if (nh <= 0) return false;
+	float S = (float)targetH / (float)nh;
+	int dw = (int)(nw * S);
+	int x = flip ? (cx + dw / 2) : (cx - dw / 2);
+	DrawSpriteAt(sprite, x, cy - targetH / 2, tint, flip, S);
+	return true;
+}
+
+// static image fit to targetH, centered at (cx,cy), optional horizontal flip (mirror about cx)
+inline bool DrawImageFit(const char* path, int cx, int cy, int targetH, Color tint = Color(), bool flip = false) {
+	void* sprite = LoadSprite(path); if (!sprite) return false;
 	int nh = SpriteHeight(sprite), nw = SpriteWidth(sprite);
 	if (nh <= 0) return false;
 	float S = (float)targetH / (float)nh;
