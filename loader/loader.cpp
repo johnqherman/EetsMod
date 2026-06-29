@@ -66,6 +66,7 @@ const unsigned RELOAD_POLL_FRAMES = 30;
 int g_mouse_x = 0, g_mouse_y = 0;        // in render (viewport) space
 bool g_overlay = false;
 bool g_text_input_active = false;   // a mod field has SDL text input on: swallow editor copy/paste keybinds
+bool g_swallow_escape = false;      // a mod owns Esc (e.g. in-match menu): hide Esc from the engine entirely
 void* g_fna_device = nullptr;   // FNA3D device (captured from the render hooks) - for GFX_SetClip scissor
 // overlay "open mods folder" button row (y set during draw, -1 when hidden)
 int g_folder_btn_y = -1;
@@ -1091,6 +1092,7 @@ namespace Eets {
 	double DeltaTime() { return g_dt; }
 	void StartTextInput() { g_text_input_active = true;  auto f = (void(*)())dlsym(RTLD_NEXT, "SDL_StartTextInput"); if (f) f(); }
 	void StopTextInput()  { g_text_input_active = false; auto f = (void(*)())dlsym(RTLD_NEXT, "SDL_StopTextInput");  if (f) f(); }
+	void SetEscapeSwallow(bool on) { g_swallow_escape = on; }   // mod owns Esc: keep it from the engine (no vanilla pause/menu/sound)
 	void SetClipboard(const char* text) { auto f = (int(*)(const char*))dlsym(RTLD_NEXT, "SDL_SetClipboardText"); if (f && text) f(text); }
 }
 
@@ -1397,6 +1399,9 @@ int SDL_PollEvent(void* event) {
 				}
 			}
 			for (auto& m : g_mods) if (m.onkey && !m.disabled) guard(&m, [&]{ m.onkey(k->sym, k->mod, down); });
+			// a mod owns Esc (in-match menu): hide it from the engine so no vanilla pause/menu/sound/frame-step.
+			// onkey already ran above, so the mod's own Esc handling still fires.
+			if (g_swallow_escape && k->sym == 0x1b) { *(unsigned*)event = 0; return r; }   // SDLK_ESCAPE
 		} else if (type == SDL_MOUSEMOTION) {
 			MotionView* mv = (MotionView*)event; map_mouse(mv->x, mv->y, mv->win);
 			int mx = g_mouse_x, my = g_mouse_y;
