@@ -30,6 +30,10 @@ is the same everywhere.
      ```
 3. **Add mods.** Put `.eetsmod` files in the `mods` folder. Press **Play**.
 
+Or skip steps 1 & 3: from the extracted release folder run `./install.sh` (Linux) or
+`install.bat` (Windows) — it copies the loader and bundled mods into the game folder for
+you. You still set the Linux launch option in step 2.
+
 In-game: on the main menu, click the **MODS** button (bottom left) to enable/disable
 mods, change their settings, or open the mods folder.
 

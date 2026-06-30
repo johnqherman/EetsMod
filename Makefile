@@ -54,21 +54,22 @@ install-examples: install bundles
 	@for f in examples/build/*.eetsmod; do [ -f "$$f" ] && install -m644 "$$f" "$(GAME)/mods/$$(basename $$f)"; done; true
 	@echo "installed example .eetsmod mods to $(GAME)/mods/"
 
-release: all bundles
+# ships BOTH loaders (Linux .so + Windows version.dll) so the release works on either platform
+release: all win bundles
 	@echo "packaging eetsmod-$(VERSION)"
 	rm -rf dist/eetsmod-$(VERSION)
 	mkdir -p dist/eetsmod-$(VERSION)/eetsmod-include dist/eetsmod-$(VERSION)/examples dist/eetsmod-$(VERSION)/mods
-	cp build/libeetsmod.so dist/eetsmod-$(VERSION)/
+	cp build/libeetsmod.so build/version.dll dist/eetsmod-$(VERSION)/
 	cp include/*.h          dist/eetsmod-$(VERSION)/eetsmod-include/
 	@for f in examples/*.cpp examples/*.cfg; do [ -f "$$f" ] && cp "$$f" dist/eetsmod-$(VERSION)/examples/; done; true
 	@for f in examples/build/*.eetsmod; do [ -f "$$f" ] && cp "$$f" dist/eetsmod-$(VERSION)/mods/; done; true
 	cp README.md dist/eetsmod-$(VERSION)/ 2>/dev/null || true
 	cp bin/eetsmod tools/check-mod.sh tools/new-mod.sh tools/add-sound.sh dist/eetsmod-$(VERSION)/ 2>/dev/null || true
-	cp API.md dist/eetsmod-$(VERSION)/ 2>/dev/null || true
-	printf '#!/usr/bin/env bash\nset -e\nG="$${1:-$$HOME/.local/share/Steam/steamapps/common/Eets}"\n[ -x "$$G/Eets" ] || { echo "no Eets at $$G"; exit 1; }\ninstall -m644 libeetsmod.so "$$G/"\nmkdir -p "$$G/eetsmod-include" "$$G/mods"\ninstall -m644 eetsmod-include/*.h "$$G/eetsmod-include/"\nfor m in mods/*.eetsmod; do [ -f "$$m" ] && cp "$$m" "$$G/mods/"; done\necho "installed. Steam launch option (paste as-is): LD_PRELOAD=./libeetsmod.so %%command%%"\n' > dist/eetsmod-$(VERSION)/install.sh
+	cp API.md KNOWN_ISSUES.md dist/eetsmod-$(VERSION)/ 2>/dev/null || true
+	cp tools/install.sh tools/install.bat dist/eetsmod-$(VERSION)/
 	chmod +x dist/eetsmod-$(VERSION)/install.sh
 	cd dist && tar czf eetsmod-$(VERSION).tar.gz eetsmod-$(VERSION)
-	@echo "-> dist/eetsmod-$(VERSION).tar.gz"
+	@echo "-> dist/eetsmod-$(VERSION).tar.gz (Linux .so + Windows version.dll)"
 
 clean:
 	rm -rf build dist examples/build
