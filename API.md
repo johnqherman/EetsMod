@@ -261,6 +261,7 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
 ```cpp
   EETS_API bool Hook(void* target, void* detour, void** original);
   EETS_API const char* ConfigGet(const char* mod, const char* key, const char* def);
+  EETS_API const char* ModBundlePath(const char* mod);
   EETS_API const char* SaveGet(const char* mod, const char* key, const char* def);
   EETS_API double DeltaTime();
   EETS_API double Time();

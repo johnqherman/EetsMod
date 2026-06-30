@@ -304,12 +304,10 @@ inline void Creator_SetWidgetHidden(void* creator, const char* name, bool hidden
 	if (hidden) { if (addr::Widget_AddFlags)    EC<void(void*, long)>(addr::Widget_AddFlags)(w, 0x12); }
 	else        { if (addr::Widget_RemoveFlags) EC<void(void*, long)>(addr::Widget_RemoveFlags)(w, 0x12); }
 }
-// the main-menu welcome/profile panel's text extension (the "WelcomeBackText" TextExt). The menu's GUI is
-// the active Creator's GUI (creator+8). null if not in the main menu or unresolved (Win until RE'd). Vanilla
-// swaps this text to a button's description on hover (e.g. OPTIONS -> "CHANGE YOUR SETTINGS"); a mod can do
-// the same for its own overlay button by setting it directly.
 // TextExt of a MainMenu text ProxyWidget, by its member offset (off_MainMenu_welcomeProxy / _profileName
-// / _changeProfile). null outside the menu or if unresolved (Win until RE'd).
+// / _changeProfile). null outside the menu or if unresolved (Win until RE'd). Vanilla swaps this text to a
+// button's description on hover (e.g. OPTIONS -> "CHANGE YOUR SETTINGS"); a mod can do the same for its
+// own overlay button by setting it directly.
 inline void* Menu_MainMenuTextExt(unsigned proxyOff) {
 	if (!addr::ProxyWidget_UseExt_TextExt || !proxyOff) return nullptr;
 	void* world = World_i();

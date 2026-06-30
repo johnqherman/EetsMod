@@ -18,7 +18,7 @@
 #include "hook.h"
 #include "menu_assets.h"   // embedded native-menu title image + ModsDialog lua block (installed at preboot)
 
-#define EETSMOD_VERSION "0.19.1"
+#define EETSMOD_VERSION "0.20.0"
 
 // mod native binary ext: .dll on Windows, .so on Linux (.eetsmod bundles carry both)
 #ifdef _WIN32
@@ -1088,6 +1088,9 @@ namespace Eets {
 	void  SaveSetInt(const char* mod, const char* key, int v)     { char b[32]; snprintf(b, sizeof(b), "%d", v); SaveSet(mod, key, b); }
 	float SaveGetFloat(const char* mod, const char* key, float d) { const char* v = SaveGet(mod, key, nullptr); return v ? (float)atof(v) : d; }
 	void  SaveSetFloat(const char* mod, const char* key, float v) { char b[48]; snprintf(b, sizeof(b), "%g", v); SaveSet(mod, key, b); }
+	const char* ModBundlePath(const char* mod) {
+		static std::string p; p = modsdir() + "/" + (mod ? mod : "") + ".eetsmod"; return p.c_str();
+	}
 	double Time()      { return g_time; }
 	double DeltaTime() { return g_dt; }
 	void StartTextInput() { g_text_input_active = true;  auto f = (void(*)())dlsym(RTLD_NEXT, "SDL_StartTextInput"); if (f) f(); }
@@ -1108,10 +1111,9 @@ void FNA3D_SetViewport(void* device, void* viewport) {
 	if (real) real(device, viewport);
 }
 
-// the mods-manager panel art (was drawn inline in the swap hook). Drawn either by the native modal's
-// draw-ext (main menu) or procedurally as an in-game fallback.
-// draw the manager content centered on (cx,cy). withPanel draws our own red panel behind it (in-game
-// fallback); when false the content sits bare inside the native dialog's cream area.
+// draws the manager content centered on (cx,cy), via the native modal's draw-ext (main menu) or
+// procedurally as an in-game fallback. withPanel draws our own red panel behind it (in-game fallback);
+// when false the content sits bare inside the native dialog's cream area.
 void draw_mods_overlay(int cx, int cy, bool withPanel) {
 	using namespace Eets;
 	int nMods = (int)g_mods.size();
@@ -1301,7 +1303,7 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		int h = RenderHeight(); if (h <= 0) h = 720;
 		// MODS button: a real native Widget. ensure_native_mods_button creates/positions it; the GUI draws
 		// it (our ModsExt::Draw paints the circle) so it dims + z-orders with the menu and routes hover/click
-		// like OptionsButton. No procedural draw here anymore.
+		// like OptionsButton.
 		(void)active;
 		const int D = 114;
 		int mcx = (int)(RenderWidth() * 0.58f), mcy = (int)(h * 0.58f);   // above-left of OPTIONS (clears the PLAY panel)
@@ -1315,7 +1317,7 @@ void FNA3D_SwapBuffers(void* device, void* src, void* dst, void* window) {
 		// vanilla-style hover description: while hovering MODS, swap the welcome/profile panel text to
 		// "MANAGE YOUR MODS" (mirrors OPTIONS -> "CHANGE YOUR SETTINGS"). The game can't do this for our
 		// overlay button, so we set it directly here (the swap hook runs after the menu's own frame update,
-		// so our text wins). Cache the default on hover-enter and restore it on exit.
+		// so our text wins).
 		// vanilla shows a button's hover-description in the hidden geek-font StatusText widget while hiding the
 		// greeting trio (WelcomeBackText/ProfileNameText/ChangeProfileText). The game re-asserts the trio's
 		// VISIBILITY every frame (so SetVisibility(false) won't stick) but does NOT reset their TEXT - so we

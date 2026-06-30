@@ -40,9 +40,12 @@ namespace Eets {
 
 	EETS_API bool Hook(void* target, void* detour, void** original);
 
-	// route Esc to the mod only (in-match menu): while on, the engine never sees Esc, so no vanilla
-	// pause/menu/sound/frame-step. EetsMod_OnKey still fires. Call each frame with the match state.
+	// while on, the engine never sees Esc (no vanilla pause/menu/sound); EetsMod_OnKey still fires
 	EETS_API void SetEscapeSwallow(bool on);
+
+	// a mod's .eetsmod path (<game>/mods/<mod>.eetsmod); overwrite it and the loader re-unpacks on next
+	// launch. Pointer valid until the next call.
+	EETS_API const char* ModBundlePath(const char* mod);
 
 	// last mouse position in render space (correct in fullscreen)
 	EETS_API int MouseX();
