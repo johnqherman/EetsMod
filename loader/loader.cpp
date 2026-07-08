@@ -18,7 +18,7 @@
 #include "hook.h"
 #include "menu_assets.h"   // embedded native-menu title image + ModsDialog lua block (installed at preboot)
 
-#define EETSMOD_VERSION "0.20.0"
+#define EETSMOD_VERSION "0.21.0"
 
 // mod native binary ext: .dll on Windows, .so on Linux (.eetsmod bundles carry both)
 #ifdef _WIN32

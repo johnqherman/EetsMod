@@ -33,6 +33,7 @@ All symbols live in namespace `Eets`. Signatures only; see the headers for offse
   bool Creator_StartSimulation(void* creator)
   bool Creator_StopSimulation(void* creator)
   bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f, int frame = -1, bool footAnchor = false)
+  bool DrawAnimCentered(const char* path, int cx, int cy, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f, int frame = -1)
   bool DrawAnimFit(const char* path, int cx, int cy, int targetH, float dt, Color tint = Color(), bool flip = false)
   bool DrawAnimFrozenFit(const char* path, int cx, int cy, int targetH, Color tint = Color(), bool flip = false)
   bool DrawImage(const char* path, int x, int y, Color tint = Color())

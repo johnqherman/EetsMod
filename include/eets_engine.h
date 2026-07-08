@@ -705,6 +705,34 @@ inline bool DrawAnim(const char* path, int x, int y, float dt, float fps = 0.0f,
 	return true;
 }
 
+// DrawAnim with (cx,cy) as the sprite's center at native size - matches an object's
+// world position (Object_GetPosition is the center), unlike DrawAnimFit which rescales.
+inline bool DrawAnimCentered(const char* path, int cx, int cy, float dt, float fps = 0.0f, Color tint = Color(), bool flip = false, float scale = 1.0f, float rot = 0.0f, int frame = -1) {
+	void* a = LoadAnim(path);
+	if (!a) return false;
+	unsigned frames = (unsigned)AnimFrameCount(a);
+	if (frames > 1) {
+		if (frame >= 0) {                       // pinned: show exactly this frame
+			FC<void(void*, unsigned)>(addr::Animation_SetCurrentFrame)(a, (unsigned)frame % frames);
+		} else {                                // locally cycle at the native (or given) rate
+			if (fps <= 0.0f) {
+				float d = AnimFrameDuration(a);
+				fps = (d > 0.0001f) ? 1.0f / d : 12.0f;
+			}
+			static std::unordered_map<std::string, double>   acc;
+			static std::unordered_map<std::string, unsigned> idx;
+			double step = 1.0 / fps;
+			double& t = acc[path]; t += dt;
+			while (t >= step) { t -= step; idx[path] = (idx[path] + 1) % frames; }
+			FC<void(void*, unsigned)>(addr::Animation_SetCurrentFrame)(a, idx[path]);
+		}
+	}
+	void* sprite = FC<void*(void*)>(addr::Animation_GetCurrentFrame)(a);
+	if (!sprite) return false;
+	DrawSpriteAt(sprite, cx - (int)(SpriteWidth(sprite) * scale) / 2, cy - (int)(SpriteHeight(sprite) * scale) / 2, tint, flip, scale, rot);
+	return true;
+}
+
 inline void GFX_ResetViewOffset() {
 	if (!addr::World_SetGFXViewOffset) return;
 	Vector2 z{0.0f, 0.0f};
